@@ -364,6 +364,8 @@ class Retriever(BaseRagNode):
         filter_metadata: Optional[Dict[str, Any]],
     ) -> List[Dict[str, Any]]:
         """FAISS 检索。"""
+        import numpy as np  # type: ignore
+
         index = self._collections.get(collection_name)
         if index is None:
             raise ValueError(
