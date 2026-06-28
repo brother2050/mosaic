@@ -207,10 +207,25 @@ class BaseTextNode(Node):
         # 构造输入：优先使用 chat template
         input_ids = self._apply_chat_template(messages)
 
+        # 确保 2D: (batch=1, seq_len)
+        if hasattr(input_ids, "dim") and callable(input_ids.dim):
+            try:
+                if input_ids.dim() == 1 and hasattr(input_ids, "unsqueeze"):
+                    input_ids = input_ids.unsqueeze(0)
+            except (TypeError, RuntimeError):
+                pass
+
         # 迁移到模型所在设备
         model_device = self._infer_device()
-        input_ids = input_ids.to(model_device)
-        input_length = input_ids.shape[-1]
+        if hasattr(input_ids, "to"):
+            input_ids = input_ids.to(model_device)
+        input_length = input_ids.shape[-1] if hasattr(input_ids, "shape") else 0
+
+        # 构造 attention_mask（全 1，与 input_ids 同设备）
+        try:
+            attention_mask = torch.ones_like(input_ids)
+        except Exception:  # noqa: BLE001
+            attention_mask = None
 
         # 生成
         gen_kwargs: Dict[str, Any] = {
@@ -218,6 +233,8 @@ class BaseTextNode(Node):
             "do_sample": do_sample,
             "pad_token_id": self._tokenizer.pad_token_id,
         }
+        if attention_mask is not None:
+            gen_kwargs["attention_mask"] = attention_mask
         if do_sample:
             gen_kwargs["temperature"] = max(temperature, 1e-5)
             gen_kwargs["top_p"] = top_p
@@ -236,16 +253,58 @@ class BaseTextNode(Node):
         """应用 tokenizer 的 chat template 构造输入张量。
 
         若 tokenizer 不支持 ``apply_chat_template``，回退为直接编码纯文本。
+
+        Returns
+        -------
+        Any
+            ``torch.Tensor`` 形状的 token id 张量 ``(batch, seq_len)``。
         """
+        import torch  # type: ignore
+
         if hasattr(self._tokenizer, "apply_chat_template"):
-            return self._tokenizer.apply_chat_template(
+            result = self._tokenizer.apply_chat_template(
                 messages,
                 add_generation_prompt=True,
+                tokenize=True,
                 return_tensors="pt",
             )
+            return self._coerce_to_tensor(result)
+
         # 回退：拼接所有 content
         flat = "\n".join(m.get("content", "") for m in messages)
-        return self._tokenizer(flat, return_tensors="pt")["input_ids"]
+        encoded = self._tokenizer(flat, return_tensors="pt")
+        return self._coerce_to_tensor(encoded)
+
+    def _coerce_to_tensor(self, result: Any) -> Any:
+        """将 tokenizer 返回值统一为 ``torch.Tensor``。
+
+        ``apply_chat_template`` / ``__call__`` 在不同 transformers 版本下
+        可能返回 ``Tensor``、``BatchEncoding``（dict-like）、``list`` 或
+        ``str``。本方法提取其中的 ``input_ids`` 张量。
+        """
+        # duck-typing：看起来像 tensor（有 .to/.dim/.shape）直接返回
+        if hasattr(result, "to") and hasattr(result, "dim") and hasattr(result, "shape"):
+            return result
+        # BatchEncoding / dict：提取 input_ids
+        if isinstance(result, dict) and "input_ids" in result:
+            ids = result["input_ids"]
+            if hasattr(ids, "to") and hasattr(ids, "dim"):
+                return ids
+            # input_ids 可能是 list
+            import torch  # type: ignore
+            return torch.tensor([ids], dtype=torch.long)
+        # 列表/元组：tokenize=True 时通常不会走到这里
+        if isinstance(result, (list, tuple)):
+            import torch  # type: ignore
+            return torch.tensor([result], dtype=torch.long)
+        # 字符串：未 tokenize 的回退
+        if isinstance(result, str):
+            encoded = self._tokenizer(result, return_tensors="pt")
+            if isinstance(encoded, dict):
+                return encoded["input_ids"]
+            return encoded
+        # 最后回退：直接返回（可能是 MagicMock 等测试 mock）
+        return result
 
     def _infer_device(self) -> str:
         """推断模型所在设备。"""

@@ -42,8 +42,15 @@ def _mock_torch_module():
         _mt.float16 = "fp16"
         _mt.float32 = "fp32"
         _mt.bfloat16 = "bf16"
+        _mt.Generator = MagicMock
+        _mt.Tensor = MagicMock
+        _mt.ones_like = MagicMock(return_value=MagicMock())
+        _mt.ones = MagicMock(return_value=MagicMock())
+        _mt.tensor = MagicMock(return_value=MagicMock())
         _mcuda = types.ModuleType("torch.cuda")
         _mcuda.is_available = MagicMock(return_value=False)
+        _mcuda.get_device_properties = MagicMock()
+        _mcuda.memory_allocated = MagicMock(return_value=0)
         _mt.cuda = _mcuda
         sys.modules["torch"] = _mt
         sys.modules["torch.cuda"] = _mcuda

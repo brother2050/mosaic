@@ -22,7 +22,11 @@ sys.path.insert(0, "/workspace/mosaic")
 # ---------------------------------------------------------------------------
 @pytest.fixture(scope="session", autouse=True)
 def _mock_torch():
-    """注入 mock torch 模块。"""
+    """注入 mock torch 模块。
+
+    若 Phase 1 conftest 已注入 mock torch（不含 Generator 等属性），
+    在此补齐 Phase 2 图像节点所需的属性。
+    """
     if "torch" not in sys.modules:
         mt = types.ModuleType("torch")
         _ctx = MagicMock()
@@ -40,6 +44,27 @@ def _mock_torch():
         mt.cuda = _mcuda
         sys.modules["torch"] = mt
         sys.modules["torch.cuda"] = _mcuda
+    else:
+        # Phase 1 可能已注入 mock torch，补齐 Phase 2 所需属性
+        mt = sys.modules["torch"]
+        if not hasattr(mt, "Generator"):
+            mt.Generator = MagicMock
+        if not hasattr(mt, "Tensor"):
+            mt.Tensor = MagicMock
+        if not hasattr(mt, "ones_like"):
+            mt.ones_like = MagicMock(return_value=MagicMock())
+        if not hasattr(mt, "ones"):
+            mt.ones = MagicMock(return_value=MagicMock())
+        if not hasattr(mt, "tensor"):
+            mt.tensor = MagicMock(return_value=MagicMock())
+        if not hasattr(mt, "bfloat16"):
+            mt.bfloat16 = "bfloat16"
+        # 确保 cuda 子模块也有完整属性
+        cuda = getattr(mt, "cuda", None)
+        if cuda is not None and not hasattr(cuda, "get_device_properties"):
+            cuda.get_device_properties = MagicMock()
+        if cuda is not None and not hasattr(cuda, "memory_allocated"):
+            cuda.memory_allocated = MagicMock(return_value=0)
     yield
 
 
