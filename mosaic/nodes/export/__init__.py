@@ -1,11 +1,24 @@
 # mosaic/nodes/export/__init__.py
-"""多格式导出域节点包（规划中）。
+"""导出域节点包。
 
-计划实现的节点：
-- VideoExporter — 视频导出（MP4/WebM/GIF）
-- AudioExporter — 音频导出（WAV/MP3/FLAC）
-- ImageExporter — 图像导出（PNG/JPEG/WebP）
-- DocumentExporter — 文档导出（PDF/DOCX/MD）
+导出域全部 3 个节点：
 
-当前为占位包，节点尚未实现。
+* VideoEncoder         —— 视频编码封装（FFmpeg）
+* Livestreamer         —— 直播推流（RTMP/SRT）
+* MultiFormatExporter  —— 多格式导出（视频/图像/音频/字幕）
+
+——
+导出域为纯工程域，不涉及 AI 模型推理，不需要 GPU。
+所有节点继承 :class:`Node` 基类，通过 ``@registry.register``
+自动注册到全局节点注册表。
 """
+
+from mosaic.nodes.export.video_encoder import VideoEncoder
+from mosaic.nodes.export.livestream import Livestreamer
+from mosaic.nodes.export.multi_format_exporter import MultiFormatExporter
+
+__all__ = [
+    "VideoEncoder",
+    "Livestreamer",
+    "MultiFormatExporter",
+]

@@ -10,18 +10,18 @@
 - :mod:`mosaic.nodes.audio`    — 音频域（5 节点：TTS/ASR/音乐/音效/克隆）
 - :mod:`mosaic.nodes.subtitle` — 字幕域（3 节点：生成/翻译/对齐）
 - :mod:`mosaic.nodes.video`    — 视频域（5 节点：文生视频/图生视频/续写/插帧/拆帧）
+- :mod:`mosaic.nodes.export`   — 导出域（3 节点：编码/推流/多格式导出）
 
 规划中的域
 ----------
 - :mod:`mosaic.nodes.rag`            — RAG 检索增强生成
-- :mod:`mosaic.nodes.export`         — 多格式导出
 - :mod:`mosaic.nodes.digital_human`  — 数字人
 - :mod:`mosaic.nodes.consistency`    — 一致性检查
 
 便捷导入
 --------
 >>> from mosaic.nodes import TextGenerator, TextToImage, TTS, SubtitleGenerator
->>> from mosaic.nodes import TextToVideo, FrameExtractor
+>>> from mosaic.nodes import TextToVideo, FrameExtractor, VideoEncoder
 """
 
 # 导入已实现的域
@@ -30,6 +30,7 @@ from mosaic.nodes import image as image
 from mosaic.nodes import audio as audio
 from mosaic.nodes import subtitle as subtitle
 from mosaic.nodes import video as video
+from mosaic.nodes import export as export
 
 # 便捷导出：基类
 from mosaic.nodes.text import BaseTextNode
@@ -78,6 +79,12 @@ from mosaic.nodes.video import (
     TextToVideo,
     VideoContinuation,
 )
+# 便捷导出：export 域节点
+from mosaic.nodes.export import (
+    Livestreamer,
+    MultiFormatExporter,
+    VideoEncoder,
+)
 
 __all__ = [
     # 子包
@@ -86,6 +93,7 @@ __all__ = [
     "audio",
     "subtitle",
     "video",
+    "export",
     # base classes
     "BaseTextNode",
     "BaseImageNode",
@@ -122,4 +130,8 @@ __all__ = [
     "VideoContinuation",
     "FrameInterpolator",
     "FrameExtractor",
+    # export nodes
+    "VideoEncoder",
+    "Livestreamer",
+    "MultiFormatExporter",
 ]
