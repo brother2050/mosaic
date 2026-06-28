@@ -1,0 +1,106 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mosaic"
+version = "0.1.0"
+description = "A modular, composable generative AI framework for multimodal content creation powered by Transformers and Diffusers."
+readme = "README.md"
+license = { text = "Apache-2.0" }
+requires-python = ">=3.10"
+authors = [
+    { name = "[Your Name]", email = "you@example.com" },
+]
+keywords = [
+    "multimodal",
+    "generative-ai",
+    "transformers",
+    "diffusers",
+    "text-to-image",
+    "text-to-video",
+    "text-to-audio",
+    "digital-human",
+    "rag",
+    "deep-learning",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+dependencies = [
+    "torch>=2.0.0",
+    "transformers>=4.36.0",
+    "diffusers>=0.25.0",
+    "Pillow>=10.0.0",
+    "numpy>=1.24.0",
+]
+
+[project.optional-dependencies]
+video = [
+    "opencv-python>=4.8.0",
+    "imageio>=2.31.0",
+    "imageio-ffmpeg>=0.4.9",
+]
+audio = [
+    "soundfile>=0.12.0",
+    "librosa>=0.10.0",
+    "scipy>=1.11.0",
+]
+rag = [
+    "faiss-cpu>=1.7.4",
+    "chromadb>=0.4.0",
+    "unstructured>=0.11.0",
+]
+digital-human = [
+    "onnxruntime>=1.16.0",
+    "trimesh>=3.23.0",
+]
+dev = [
+    "pytest>=7.4.0",
+    "ruff>=0.1.0",
+    "mypy>=1.7.0",
+]
+all = [
+    "mosaic[video,audio,rag,digital-human,dev]",
+]
+
+[project.urls]
+Homepage = "https://github.com/your-org/mosaic"
+Repository = "https://github.com/your-org/mosaic.git"
+Documentation = "https://mosaic.readthedocs.io"
+Issues = "https://github.com/your-org/mosaic/issues"
+
+[project.scripts]
+mosaic = "mosaic.cli.main:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["mosaic*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP"]
+
+[tool.mypy]
+python_version = "3.10"
+strict = true
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+markers = [
+    "integration: marks tests as integration tests (deselect with '-m \"not integration\"')",
+]
