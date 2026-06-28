@@ -55,12 +55,26 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# ONNX Runtime 有两个互斥的 PyPI 包：
+#   onnxruntime       — 仅 CPU
+#   onnxruntime-gpu   — GPU (CUDA)，包含 CPU 功能
+# 两者不能同时安装。用户根据硬件选择其一。
+# 参考: https://onnxruntime.ai/docs/get-started/with-python.html
+onnx = [
+    # ONNX Runtime CPU 版本（帧插值 RIFE / 数字人推理）
+    "onnxruntime>=1.16.0,<2.0.0",
+]
+onnx-gpu = [
+    # ONNX Runtime GPU 版本（CUDA 12.x），包含 CPU 功能
+    # 安装前请确保未安装 onnxruntime（CPU 版本）
+    "onnxruntime-gpu>=1.16.0,<2.0.0",
+]
 video = [
     "opencv-python>=4.8.0,<5.0.0",
     "imageio>=2.31.0,<3.0.0",
     "imageio-ffmpeg>=0.4.9,<1.0.0",
-    # 帧插值 (RIFE) 使用 ONNX Runtime
-    "onnxruntime>=1.16.0,<2.0.0",
+    # 帧插值 (RIFE) 需要 ONNX Runtime，
+    # 请额外安装 mosaic[onnx] (CPU) 或 mosaic[onnx-gpu] (GPU)
 ]
 audio = [
     "soundfile>=0.12.0,<1.0.0",
@@ -83,7 +97,8 @@ rag = [
     "unstructured>=0.11.0,<1.0.0",
 ]
 digital-human = [
-    "onnxruntime>=1.16.0,<2.0.0",
+    # 数字人推理需要 ONNX Runtime，
+    # 请额外安装 mosaic[onnx] (CPU) 或 mosaic[onnx-gpu] (GPU)
     "trimesh>=3.23.0,<5.0.0",
 ]
 dev = [
@@ -91,8 +106,11 @@ dev = [
     "ruff>=0.1.0,<1.0.0",
     "mypy>=1.7.0,<3.0.0",
 ]
+# all 组默认使用 CPU 版本的 ONNX Runtime。
+# GPU 用户请安装 mosaic[all,onnx-gpu] 并手动卸载 onnxruntime:
+#   pip uninstall onnxruntime && pip install mosaic[all,onnx-gpu]
 all = [
-    "mosaic[video,audio,export,rag,digital-human,dev]",
+    "mosaic[onnx,video,audio,export,rag,digital-human,dev]",
 ]
 
 [project.urls]
