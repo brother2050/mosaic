@@ -16,6 +16,7 @@ from mosaic.core.context import (
     Context,
     Event,
     EventHandler,
+    NodeOutput,
     RunConfig,
 )
 from mosaic.core.events import (
@@ -26,14 +27,14 @@ from mosaic.core.events import (
     get_event_bus,
 )
 from mosaic.core.node import Node, NodeSpec
+from mosaic.core.branch import Branch, Merge
 from mosaic.core.pipeline import (
-    Branch,
     DryRunResult,
-    Merge,
     Pipeline,
     PipelineError,
 )
 from mosaic.core.registry import NodeRegistry, get_default_registry, registry
+from mosaic.core.result import NodeError, PipelineResult
 from mosaic.core.scheduler import Scheduler, get_scheduler, set_scheduler
 from mosaic.core.types import (
     AudioData,
@@ -80,6 +81,9 @@ __all__ = [
     "Merge",
     "PipelineError",
     "DryRunResult",
+    "PipelineResult",
+    "NodeError",
+    "NodeOutput",
     # events
     "EventBus",
     "EventType",

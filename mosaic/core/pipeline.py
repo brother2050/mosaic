@@ -1,8 +1,8 @@
 # mosaic/core/pipeline.py
 """Mosaic 管道编排引擎。
 
-本模块实现了框架最核心的用户 API —— :class:`Pipeline`，以及配套的
-分支 (:class:`Branch`) 与合并 (:class:`Merge`) 编排指令。
+本模块实现了框架最核心的用户 API —— :class:`Pipeline`，支持串行与并行执行、
+分支 (:class:`Branch`) 与合并 (:class:`Merge`) 编排，以及完整的中间产物检查。
 
 设计要点
 --------
@@ -10,9 +10,13 @@
   嵌套（管道也是一种节点），并支持 ``load``/``unload``/``run``/``describe``。
 * 内部使用有向无环图（DAG）表示节点拓扑，由用户提供的元素列表
   （``Node`` / ``Branch`` / ``Merge``）编译而来。
+* **并行执行**：DAG 中互相独立的节点（如 Branch 的多条路径）使用
+  ``concurrent.futures.ThreadPoolExecutor`` 并行执行。
 * 运行前执行 DAG 合法性检查（环检测、连通性、死端节点）。
 * ``dry_run`` 模式只校验节点输入/输出类型是否匹配，不实际执行。
 * 支持 ``|`` 运算符声明式串联：``node_a | node_b | node_c``。
+* ``execute_result()`` 返回 :class:`PipelineResult`，含完整运行信息；
+  ``execute()`` 保持返回 ``MosaicData`` 以兼容旧代码。
 
 拓扑语义
 --------
@@ -24,13 +28,16 @@
 
 from __future__ import annotations
 
+import concurrent.futures
 import time
 from collections import deque
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
+from mosaic.core.branch import Branch, Merge, PathLike
 from mosaic.core.context import Context, Event, EventHandler, RunConfig
 from mosaic.core.node import Node, NodeSpec
+from mosaic.core.result import NodeError, PipelineResult
 from mosaic.core.types import MosaicData
 
 __all__ = [
@@ -39,6 +46,8 @@ __all__ = [
     "Merge",
     "PipelineError",
     "DryRunResult",
+    "PipelineResult",
+    "NodeError",
 ]
 
 
@@ -74,181 +83,6 @@ class DryRunResult:
     def __repr__(self) -> str:
         status = "OK" if self.ok else "FAIL"
         return f"DryRunResult({status}, issues={len(self.issues)}, steps={len(self.steps)})"
-
-
-# ---------------------------------------------------------------------------
-# Branch — 分支（fan-out / 条件分支）
-# ---------------------------------------------------------------------------
-PathLike = Union[Node, "Pipeline", List[Union[Node, "Pipeline"]]]
-
-
-class Branch:
-    """分支编排指令：fan-out 或条件分支。
-
-    用作 :class:`Pipeline` 元素列表中的一项，**本身不是节点**。
-
-    * **fan-out**（不传 ``condition``）：输入同时喂给所有路径，各路径并行
-      执行，输出在 :class:`Merge` 处汇合或在管道末端以命名键聚合。
-    * **条件分支**（传 ``condition``）：运行时对输入数据求值 ``condition``，
-      返回的键决定执行哪一条路径（其余路径跳过）。
-
-    Parameters
-    ----------
-    paths:
-        可选的 ``{路径名: 路径}`` 字典。路径可为单个 ``Node``/``Pipeline``
-        或由它们组成的列表（线性子链）。
-    condition:
-        条件回调，签名 ``(MosaicData) -> str``，返回值须为某条路径名。
-        为 ``None`` 时表示 fan-out。
-    **named:
-        以关键字形式指定路径，如 ``Branch(en=Translator(), ja=Translator())``。
-
-    Examples
-    --------
-    fan-out::
-
-        Pipeline("demo", [
-            TextGenerator(),
-            Branch(en=Translator(target="en"), ja=Translator(target="ja")),
-            Merge(),
-        ])
-
-    条件分支::
-
-        Pipeline("cond", [
-            TextGenerator(),
-            Branch(
-                upper=UpperNode(),
-                lower=LowerNode(),
-                condition=lambda d: "upper" if d.get("flag") else "lower",
-            ),
-        ])
-    """
-
-    def __init__(
-        self,
-        paths: Optional[Dict[str, PathLike]] = None,
-        *,
-        condition: Optional[Callable[[MosaicData], str]] = None,
-        **named: PathLike,
-    ) -> None:
-        merged: Dict[str, PathLike] = {}
-        if paths:
-            merged.update(paths)
-        merged.update(named)
-        if not merged:
-            raise ValueError("Branch requires at least one named path.")
-        self.paths: Dict[str, PathLike] = merged
-        self.condition: Optional[Callable[[MosaicData], str]] = condition
-
-    @property
-    def is_conditional(self) -> bool:
-        """是否为条件分支。"""
-        return self.condition is not None
-
-    def __or__(self, other: Any) -> "Pipeline":
-        """支持 ``Branch | node`` 语法。"""
-        if isinstance(other, (Node, Branch)):
-            return Pipeline("anonymous", [self, other])
-        if isinstance(other, Pipeline):
-            return Pipeline("anonymous", [self, *other.elements])
-        return NotImplemented
-
-    def __repr__(self) -> str:
-        kind = "conditional" if self.is_conditional else "fan-out"
-        return f"Branch({kind}, paths={list(self.paths.keys())})"
-
-
-# ---------------------------------------------------------------------------
-# Merge — 合并（fan-in）
-# ---------------------------------------------------------------------------
-class Merge(Node):
-    """合并节点：将多条上游输出合并为单个 :class:`MosaicData`。
-
-    在 DAG 中拥有多个前驱。运行时引擎会把各前驱输出按其路径名/节点名
-    组装成一个 ``MosaicData``（键为标签，值为对应输出），再交给本节点。
-
-    Parameters
-    ----------
-    strategy:
-        合并策略：
-
-        * ``"dict"``（默认）：原样返回组装好的 ``MosaicData``，
-          下游可通过 ``result["路径名"]`` 访问各分支输出。
-        * ``"flatten"``：将各分支 ``MosaicData`` 的键值平铺合并到一个
-          ``MosaicData``（后出现的键覆盖先前的）。
-    merge_fn:
-        自定义合并函数，签名 ``(MosaicData) -> MosaicData``。提供时优先于
-        ``strategy`` 生效。
-
-    Note
-    ----
-    若 ``Merge`` 只有一个前驱（例如位于条件分支之后），其行为退化为
-    透传：``"dict"`` 原样返回，``"flatten"`` 平铺该单一输入的键。
-    """
-
-    name = "merge"
-    domain = "core"
-    description = "Fan-in: merge multiple upstream outputs into one MosaicData."
-    version = "0.1.0"
-    input_types: List[str] = ["mosaic"]
-    output_types: List[str] = ["mosaic"]
-
-    def __init__(
-        self,
-        strategy: str = "dict",
-        merge_fn: Optional[Callable[[MosaicData], MosaicData]] = None,
-        **kwargs: Any,
-    ) -> None:
-        super().__init__(**kwargs)
-        if strategy not in {"dict", "flatten"}:
-            raise ValueError(f"Invalid merge strategy {strategy!r}, expected 'dict' or 'flatten'.")
-        self._strategy = strategy
-        self._merge_fn = merge_fn
-
-    # -- Node 接口 ---------------------------------------------------------
-    def load(self) -> None:
-        """合并节点无需加载模型。"""
-        self._loaded = True
-
-    def unload(self) -> None:
-        """释放资源。"""
-        self._loaded = False
-
-    def run(self, input_data: MosaicData) -> MosaicData:
-        """执行合并。
-
-        ``input_data`` 已由引擎组装为 ``{标签: 分支输出}`` 形式。
-        """
-        if self._merge_fn is not None:
-            return self._merge_fn(input_data)
-        if self._strategy == "flatten":
-            merged = MosaicData()
-            for _label, value in input_data.items():
-                if isinstance(value, MosaicData):
-                    for inner_key, inner_val in value.items():
-                        merged[inner_key] = inner_val
-                else:
-                    # 非数据容器值直接保留在原标签下
-                    pass
-            return merged
-        # "dict": 原样返回
-        return input_data
-
-    def describe(self) -> NodeSpec:
-        """返回节点规格说明。"""
-        return NodeSpec(
-            name=self.name,
-            domain=self.domain,
-            description=self.description,
-            version=self.version,
-            input_types=list(self.input_types),
-            output_types=list(self.output_types),
-            model_info={"strategy": self._strategy},
-        )
-
-    def __repr__(self) -> str:
-        return f"<Merge strategy={self._strategy!r}>"
 
 
 # ---------------------------------------------------------------------------
@@ -335,6 +169,9 @@ class _DAGNode:
         多前驱时组装合并输入。
     successors:
         后继节点 id 列表。
+    branch_name:
+        所属分支名（如果是 Branch fan-out 路径中的节点），``None`` 表示
+        不属于任何分支。用于错误报告。
     """
 
     node_id: str
@@ -342,6 +179,7 @@ class _DAGNode:
     predecessors: List[str] = field(default_factory=list)
     input_labels: List[str] = field(default_factory=list)
     successors: List[str] = field(default_factory=list)
+    branch_name: Optional[str] = None
 
 
 def _normalize_path(path: PathLike) -> List[Any]:
@@ -380,17 +218,19 @@ class Pipeline(Node):
         ])
         result = pipe.run(input_data)
 
-    运算符语法::
+    并行分支 + 合并::
 
-        pipe = TextGenerator() | TextToImage() | VideoEncoder()
-
-    分支与合并::
-
-        pipe = Pipeline("split", [
-            TextGenerator(),
-            Branch(en=Translator(target="en"), ja=Translator(target="ja")),
+        pipe = Pipeline("parallel", [
+            ImageLoader(),
+            Branch(
+                bg=BackgroundRemover(),
+                style=Stylizer(),
+            ),
             Merge(),
         ])
+        result = pipe.execute_result(input_data)
+        # result.intermediate["bg"] → BackgroundRemover 输出
+        # result.intermediate["style"] → Stylizer 输出
     """
 
     name = "pipeline"
@@ -414,6 +254,7 @@ class Pipeline(Node):
         self._sources: List[str] = []
         self._id_counter: Dict[str, int] = {}
         self._last_context: Optional[Context] = None
+        self._last_result: Optional[PipelineResult] = None
 
     # -- 元素管理 ----------------------------------------------------------
     @property
@@ -521,13 +362,13 @@ class Pipeline(Node):
         self._terminals = frontier
         self._sources = [nid for nid, dn in self._dag.items() if not dn.predecessors]
 
-    def _add_node(self, node: Node) -> str:
+    def _add_node(self, node: Node, branch_name: Optional[str] = None) -> str:
         """注册一个节点，返回唯一 id（重名加 ``#n`` 后缀）。"""
         base = getattr(node, "name", "node")
         n = self._id_counter.get(base, 0)
         self._id_counter[base] = n + 1
         nid = base if n == 0 else f"{base}#{n}"
-        self._dag[nid] = _DAGNode(node_id=nid, node=node)
+        self._dag[nid] = _DAGNode(node_id=nid, node=node, branch_name=branch_name)
         return nid
 
     def _connect(self, pred_id: str, succ_id: str, label: str) -> None:
@@ -573,10 +414,10 @@ class Pipeline(Node):
                 self._connect(pid, nid, label)
             return [(cnode.name, nid)]
 
-        # fan-out：每条路径作为扁平子链加入父 DAG
+        # fan-out：每条路径作为扁平子链加入父 DAG，标记 branch_name
         new_frontier: List[Tuple[str, str]] = []
         for pname, path in branch.paths.items():
-            chain_ids = self._add_chain(path, frontier)
+            chain_ids = self._add_chain(path, frontier, branch_name=pname)
             new_frontier.append((pname, chain_ids[-1]))
         return new_frontier
 
@@ -584,6 +425,7 @@ class Pipeline(Node):
         self,
         path: PathLike,
         source_frontier: List[Tuple[str, str]],
+        branch_name: Optional[str] = None,
     ) -> List[str]:
         """将一条路径（单节点或线性子链）加入 DAG，返回节点 id 列表。"""
         items = _normalize_path(path)
@@ -594,7 +436,7 @@ class Pipeline(Node):
                 raise TypeError(
                     f"Branch path item must be a Node/Pipeline, got {type(item).__name__}."
                 )
-            nid = self._add_node(item)
+            nid = self._add_node(item, branch_name=branch_name)
             ids.append(nid)
             if i == 0:
                 for label, pid in source_frontier:
@@ -733,7 +575,7 @@ class Pipeline(Node):
                     queue.append(pred)
         return seen
 
-    # -- 执行 --------------------------------------------------------------
+    # -- 执行（增强版：支持并行） -------------------------------------------
     def execute(
         self,
         input_data: MosaicData,
@@ -741,8 +583,13 @@ class Pipeline(Node):
         config: Optional[RunConfig] = None,
         callbacks: Optional[List[EventHandler]] = None,
         context: Optional[Context] = None,
+        fail_fast: bool = True,
+        max_workers: int = 4,
     ) -> MosaicData:
-        """执行管道。
+        """执行管道，返回最终输出 :class:`MosaicData`。
+
+        向后兼容的执行入口。如需获取完整运行信息（中间产物、错误列表、
+        耗时统计），请使用 :meth:`execute_result`。
 
         Parameters
         ----------
@@ -754,12 +601,65 @@ class Pipeline(Node):
             事件回调列表，每个回调会在节点开始/结束及管道级事件时被触发。
         context:
             外部传入的运行上下文。``None`` 时创建新上下文。
+        fail_fast:
+            某节点失败时是否立即抛出异常。``True``（默认）立即抛出；
+            ``False`` 收集所有错误后返回（最终输出可能为 ``None``）。
+        max_workers:
+            并行执行的最大线程数。Branch 的多条路径会并行执行。
 
         Returns
         -------
         MosaicData
             管道最终输出。若存在多个终点，则返回以各终点标签为键、对应
             输出为值的 ``MosaicData``；单终点时直接返回该输出。
+            ``fail_fast=False`` 且有节点失败时，最终输出可能为 ``None``
+            （转为空 ``MosaicData``）。
+        """
+        result = self.execute_result(
+            input_data,
+            config=config,
+            callbacks=callbacks,
+            context=context,
+            fail_fast=fail_fast,
+            max_workers=max_workers,
+        )
+        return result.output if result.output is not None else MosaicData()
+
+    def execute_result(
+        self,
+        input_data: MosaicData,
+        *,
+        config: Optional[RunConfig] = None,
+        callbacks: Optional[List[EventHandler]] = None,
+        context: Optional[Context] = None,
+        fail_fast: bool = True,
+        max_workers: int = 4,
+    ) -> PipelineResult:
+        """执行管道，返回完整的 :class:`PipelineResult`。
+
+        与 :meth:`execute` 相同的执行逻辑，但返回包含中间产物、错误列表、
+        各节点耗时的完整结果对象。
+
+        Parameters
+        ----------
+        input_data:
+            管道输入数据。
+        config:
+            运行配置。``None`` 使用默认配置。
+        callbacks:
+            事件回调列表。
+        context:
+            外部传入的运行上下文。``None`` 时创建新上下文。
+        fail_fast:
+            某节点失败时是否立即抛出异常。``True``（默认）立即抛出；
+            ``False`` 收集所有错误，其他分支继续执行。
+        max_workers:
+            并行执行的最大线程数。
+
+        Returns
+        -------
+        PipelineResult
+            包含最终输出、中间产物、错误列表和耗时统计的完整结果。
         """
         self._build_dag_if_needed()
         self.validate()
@@ -769,49 +669,274 @@ class Pipeline(Node):
             for cb in callbacks:
                 ctx.on_event(cb)
 
+        t_start = time.perf_counter()
+
         with ctx:
             # 空管道：原样返回输入
             if not self._dag:
                 ctx.store_artifact("__input__", input_data)
                 self._last_context = ctx
-                return input_data
-
-            order = self._topological_order()
-            outputs: Dict[str, MosaicData] = {}
-
-            for nid in order:
-                dn = self._dag[nid]
-                node_input = self._gather_input(dn, outputs, input_data)
-
-                ctx.emit(
-                    Event(
-                        type="node_start",
-                        node_name=dn.node.name,
-                        payload={"input_keys": list(node_input.keys())},
-                    )
+                elapsed = time.perf_counter() - t_start
+                result = PipelineResult(
+                    output=input_data,
+                    intermediate={"__input__": input_data},
+                    duration=elapsed,
+                    pipeline_name=self.name,
                 )
-                t0 = time.perf_counter()
+                self._last_result = result
+                return result
+
+            # 并行执行 DAG
+            outputs, errors, node_durations = self._execute_dag(
+                ctx, input_data, fail_fast=fail_fast, max_workers=max_workers
+            )
+
+            # 收集最终输出
+            final_output = self._collect_output(outputs)
+
+        elapsed = time.perf_counter() - t_start
+        self._last_context = ctx
+
+        # 构建中间产物字典
+        intermediate = {nid: out for nid, out in outputs.items()}
+
+        result = PipelineResult(
+            output=final_output,
+            intermediate=intermediate,
+            errors=errors,
+            duration=elapsed,
+            node_durations=node_durations,
+            pipeline_name=self.name,
+        )
+        self._last_result = result
+        return result
+
+    def _execute_dag(
+        self,
+        ctx: Context,
+        input_data: MosaicData,
+        *,
+        fail_fast: bool = True,
+        max_workers: int = 4,
+    ) -> Tuple[Dict[str, MosaicData], List[NodeError], Dict[str, float]]:
+        """执行 DAG，支持并行。
+
+        使用依赖驱动的就绪队列：当一个节点的所有前驱都完成时，它变为
+        "就绪"状态。多个就绪节点使用 ``ThreadPoolExecutor`` 并行执行。
+
+        Returns
+        -------
+        Tuple[outputs, errors, node_durations]
+            ``(节点输出字典, 错误列表, 节点耗时字典)``。
+        """
+        outputs: Dict[str, MosaicData] = {}
+        errors: List[NodeError] = []
+        node_durations: Dict[str, float] = {}
+        completed: set = set()
+        pending: set = set(self._dag.keys())
+
+        # 检测是否有可并行的节点（多前驱的 fan-out）
+        has_parallel = self._has_parallel_paths()
+
+        if not has_parallel or max_workers <= 1:
+            # 串行执行（兼容模式）
+            return self._execute_serial(ctx, input_data, fail_fast=fail_fast)
+
+        # 并行执行
+        executor = concurrent.futures.ThreadPoolExecutor(max_workers=max_workers)
+        try:
+            futures: Dict[concurrent.futures.Future, str] = {}
+
+            while pending or futures:
+                # 找出就绪节点（所有前驱已完成）
+                ready: List[str] = []
+                for nid in list(pending):
+                    preds = self._dag[nid].predecessors
+                    if all(p in completed for p in preds):
+                        ready.append(nid)
+
+                # 提交就绪节点
+                for nid in ready:
+                    pending.discard(nid)
+                    dn = self._dag[nid]
+                    # 在主线程组装输入（线程安全读取 outputs）
+                    node_input = self._gather_input(dn, outputs, input_data)
+                    # 提交节点执行到线程池
+                    future = executor.submit(
+                        self._run_single_node, dn, node_input, ctx
+                    )
+                    futures[future] = nid
+
+                if not futures:
+                    if pending:
+                        # 死锁：有待执行节点但无就绪节点
+                        raise PipelineError(
+                            f"Deadlock in DAG execution. Pending: {sorted(pending)}, "
+                            f"Completed: {sorted(completed)}"
+                        )
+                    break
+
+                # 等待至少一个完成
+                done, _not_done = concurrent.futures.wait(
+                    futures, return_when=concurrent.futures.FIRST_COMPLETED
+                )
+
+                for future in done:
+                    nid = futures.pop(future)
+                    dn = self._dag[nid]
+                    try:
+                        out, duration = future.result()
+                        outputs[nid] = out
+                        node_durations[nid] = duration
+                        completed.add(nid)
+                    except Exception as exc:
+                        if fail_fast:
+                            # 取消所有未完成的 future
+                            for f in futures:
+                                f.cancel()
+                            raise
+                        # 收集错误，标记为已完成（避免死锁）
+                        errors.append(NodeError(
+                            node_id=nid,
+                            node_name=dn.node.name,
+                            error=exc,
+                            branch_name=dn.branch_name,
+                        ))
+                        completed.add(nid)
+        finally:
+            executor.shutdown(wait=True)
+
+        return outputs, errors, node_durations
+
+    def _execute_serial(
+        self,
+        ctx: Context,
+        input_data: MosaicData,
+        *,
+        fail_fast: bool = True,
+    ) -> Tuple[Dict[str, MosaicData], List[NodeError], Dict[str, float]]:
+        """串行执行 DAG（兼容旧逻辑）。
+
+        当 ``max_workers <= 1`` 或无并行路径时使用。
+        """
+        outputs: Dict[str, MosaicData] = {}
+        errors: List[NodeError] = []
+        node_durations: Dict[str, float] = {}
+        order = self._topological_order()
+
+        for nid in order:
+            dn = self._dag[nid]
+            node_input = self._gather_input(dn, outputs, input_data)
+
+            ctx.emit(
+                Event(
+                    type="node_start",
+                    node_name=dn.node.name,
+                    payload={"input_keys": list(node_input.keys())},
+                )
+            )
+            t0 = time.perf_counter()
+            try:
                 if not dn.node.is_loaded():
                     dn.node.load()
                 out = dn.node.run(node_input)
+            except Exception as exc:
                 elapsed = time.perf_counter() - t0
-                outputs[nid] = out
-                ctx.store_artifact(nid, out)
-                ctx.emit(
-                    Event(
-                        type="node_end",
-                        node_name=dn.node.name,
-                        payload={
-                            "output_keys": list(out.keys()),
-                            "elapsed_seconds": elapsed,
-                        },
-                    )
+                node_durations[nid] = elapsed
+                if fail_fast:
+                    raise
+                errors.append(NodeError(
+                    node_id=nid,
+                    node_name=dn.node.name,
+                    error=exc,
+                    branch_name=dn.branch_name,
+                ))
+                # 失败节点输出为空 MosaicData，不阻塞后续
+                out = MosaicData()
+            elapsed = time.perf_counter() - t0
+            outputs[nid] = out
+            node_durations[nid] = elapsed
+            ctx.store_artifact(nid, out, duration=elapsed)
+            ctx.emit(
+                Event(
+                    type="node_end",
+                    node_name=dn.node.name,
+                    payload={
+                        "output_keys": list(out.keys()),
+                        "elapsed_seconds": elapsed,
+                    },
                 )
+            )
 
-            result = self._collect_output(outputs)
+        return outputs, errors, node_durations
 
-        self._last_context = ctx
-        return result
+    def _run_single_node(
+        self,
+        dn: _DAGNode,
+        node_input: MosaicData,
+        ctx: Context,
+    ) -> Tuple[MosaicData, float]:
+        """在并行执行中运行单个节点（工作线程调用）。
+
+        Returns
+        -------
+        Tuple[MosaicData, float]
+            ``(节点输出, 耗时秒数)``。
+        """
+        ctx.emit(
+            Event(
+                type="node_start",
+                node_name=dn.node.name,
+                payload={"input_keys": list(node_input.keys())},
+            )
+        )
+        t0 = time.perf_counter()
+        if not dn.node.is_loaded():
+            dn.node.load()
+        out = dn.node.run(node_input)
+        elapsed = time.perf_counter() - t0
+        ctx.store_artifact(dn.node_id, out, duration=elapsed)
+        ctx.emit(
+            Event(
+                type="node_end",
+                node_name=dn.node.name,
+                payload={
+                    "output_keys": list(out.keys()),
+                    "elapsed_seconds": elapsed,
+                },
+            )
+        )
+        return out, elapsed
+
+    def _has_parallel_paths(self) -> bool:
+        """检测 DAG 中是否存在可并行执行的路径。
+
+        以下任一条件成立时返回 True：
+        1. 某个节点有多个后继（fan-out）。
+        2. 多个源节点（无前驱）同时存在（它们天然可并行）。
+        3. 多个节点同时就绪（共享前驱集，且前驱已完成）。
+        """
+        if self._dag is None:
+            return False
+        # 条件 1：fan-out 节点
+        for dn in self._dag.values():
+            if len(dn.successors) > 1:
+                return True
+        # 条件 2：多个源节点
+        sources = [nid for nid, dn in self._dag.items() if not dn.predecessors]
+        if len(sources) > 1:
+            return True
+        # 条件 3：多个节点共享同一前驱集（同一层可并行）
+        from collections import Counter
+        pred_sig_count: Counter = Counter()
+        for dn in self._dag.values():
+            if dn.predecessors:
+                sig = tuple(sorted(dn.predecessors))
+                pred_sig_count[sig] += 1
+        for count in pred_sig_count.values():
+            if count > 1:
+                return True
+        return False
 
     def _gather_input(
         self,
@@ -825,23 +950,30 @@ class Pipeline(Node):
             return pipeline_input
         if len(dn.predecessors) == 1:
             # 单前驱：直接透传
-            return outputs[dn.predecessors[0]]
+            pred_id = dn.predecessors[0]
+            if pred_id in outputs:
+                return outputs[pred_id]
+            # 前驱失败（fail_fast=False），返回空
+            return MosaicData()
         # 多前驱（fan-in）：按标签组装为 {标签: 前驱输出}
         combined = MosaicData()
         for label, pid in zip(dn.input_labels, dn.predecessors):
-            combined[label] = outputs[pid]
+            if pid in outputs:
+                combined[label] = outputs[pid]
         return combined
 
-    def _collect_output(self, outputs: Dict[str, MosaicData]) -> MosaicData:
+    def _collect_output(self, outputs: Dict[str, MosaicData]) -> Optional[MosaicData]:
         """从终点收集管道最终输出。"""
         if not self._terminals:
             return MosaicData()
         if len(self._terminals) == 1:
-            return outputs[self._terminals[0][1]]
+            tid = self._terminals[0][1]
+            return outputs.get(tid, MosaicData())
         # 多终点：以标签聚合
         result = MosaicData()
         for label, tid in self._terminals:
-            result[label] = outputs[tid]
+            if tid in outputs:
+                result[label] = outputs[tid]
         return result
 
     # -- 中间产物访问 ------------------------------------------------------
@@ -878,6 +1010,11 @@ class Pipeline(Node):
             f"No intermediate for {name!r}. "
             f"Available: {list(artifacts.keys())}"
         )
+
+    @property
+    def last_result(self) -> Optional[PipelineResult]:
+        """上次运行的 :class:`PipelineResult`（``execute_result`` 后可用）。"""
+        return self._last_result
 
     @property
     def node_specs(self) -> List[NodeSpec]:
