@@ -196,7 +196,12 @@ class BaseImageNode(Node):
         return dtype_map.get(self._dtype_str, torch.float16)
 
     def _apply_optimizations(self) -> None:
-        """对已加载的 Pipeline 应用显存优化配置。"""
+        """对已加载的 Pipeline 应用显存优化配置。
+
+        兼容 diffusers 0.40+ 的 API 变更：
+        - ``pipe.enable_vae_slicing()`` 已废弃，改用 ``pipe.vae.enable_slicing()``
+        - ``pipe.enable_attention_slicing()`` 仍然有效，但添加容错
+        """
         pipe = self._pipeline
         if pipe is None:
             return
@@ -209,11 +214,7 @@ class BaseImageNode(Node):
                 pass
 
         if self._enable_vae_slicing:
-            try:
-                pipe.enable_vae_slicing()
-                self._logger.debug("Enabled VAE slicing.")
-            except Exception:  # noqa: BLE001
-                pass
+            self._enable_vae_slicing_safe(pipe)
 
         if self._enable_model_cpu_offload:
             try:
@@ -221,6 +222,35 @@ class BaseImageNode(Node):
                 self._logger.debug("Enabled model CPU offload.")
             except Exception:  # noqa: BLE001
                 pass
+
+    def _enable_vae_slicing_safe(self, pipe: Any) -> None:
+        """安全启用 VAE slicing，兼容新旧 diffusers 版本。
+
+        diffusers 0.40+ 废弃了 ``pipe.enable_vae_slicing()``，
+        改用 ``pipe.vae.enable_slicing()``。本方法优先使用新 API，
+        回退到旧 API 以兼容旧版本。
+
+        Parameters
+        ----------
+        pipe:
+            diffusers Pipeline 实例。
+        """
+        # 优先使用新 API：pipe.vae.enable_slicing()
+        vae = getattr(pipe, "vae", None)
+        if vae is not None and hasattr(vae, "enable_slicing"):
+            try:
+                vae.enable_slicing()
+                self._logger.debug("Enabled VAE slicing (via pipe.vae).")
+                return
+            except Exception:  # noqa: BLE001
+                pass
+
+        # 回退到旧 API：pipe.enable_vae_slicing()
+        try:
+            pipe.enable_vae_slicing()
+            self._logger.debug("Enabled VAE slicing (via pipe).")
+        except Exception:  # noqa: BLE001
+            pass
 
     def _switch_scheduler(self) -> None:
         """可选：切换 Pipeline 的调度器。"""

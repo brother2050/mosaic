@@ -133,28 +133,55 @@ class TTS(BaseAudioNode):
         self._backend: str = "edge_tts" if use_edge_tts else "xtts"
 
     def _load_model(self) -> None:
-        """加载 TTS 模型。"""
+        """加载 TTS 模型。
+
+        三种后端按优先级尝试：
+
+        1. **XTTS-v2**（Coqui TTS 库）：支持多语言与语音克隆，需要
+           ``pip install TTS``。当 ``self._model_name`` 是 Coqui 模型
+           （如 ``coqui/XTTS-v2``）时使用此后端。
+        2. **transformers pipeline**：当 ``self._model_name`` 是
+           HuggingFace transformers 兼容的 TTS 模型（如
+           ``facebook/mms-tts-eng``）时使用此后端。
+        3. **edge-tts**：轻量级云端 TTS，无需 GPU，作为最终回退方案。
+
+        关键修复：``coqui/XTTS-v2`` 不是 transformers 兼容模型，
+        ``transformers.pipeline`` 会抛出 ``ValueError``（而非
+        ``ImportError``），因此本方法捕获 ``Exception`` 以确保能正确
+        回退到 edge-tts。
+        """
         if self._use_edge_tts:
             self._backend = "edge_tts"
             self._logger.info("Using edge-tts backend (no GPU required).")
             return
 
-        # 尝试使用 TTS 库加载 XTTS-v2
-        try:
-            from TTS.api import TTS as CoquiTTS  # type: ignore
+        # 判断模型是否为 Coqui TTS 模型（非 transformers 兼容）
+        _COQUI_MODELS = {"coqui/XTTS-v2", "coqui/XTTS-v1"}
+        is_coqui_model = self._model_name in _COQUI_MODELS
 
-            self._model = CoquiTTS(self._model_name)
-            self._backend = "xtts"
-            self._logger.info(
-                "XTTS-v2 model loaded (device=%s).", self._resolve_device()
-            )
-            return
-        except ImportError:
-            self._logger.warning(
-                "TTS library not available, trying transformers backend."
-            )
+        # 尝试使用 TTS 库加载（适用于 Coqui 模型）
+        if is_coqui_model:
+            try:
+                from TTS.api import TTS as CoquiTTS  # type: ignore
 
-        # 尝试使用 transformers pipeline
+                self._model = CoquiTTS(self._model_name)
+                self._backend = "xtts"
+                self._logger.info(
+                    "XTTS-v2 model loaded (device=%s).", self._resolve_device()
+                )
+                return
+            except ImportError:
+                self._logger.warning(
+                    "TTS library not available for %s. "
+                    "Install via `pip install TTS`, or falling back to edge-tts.",
+                    self._model_name,
+                )
+                # Coqui 模型不能用 transformers 加载，直接回退到 edge-tts
+                self._backend = "edge_tts"
+                self._logger.info("Falling back to edge-tts backend.")
+                return
+
+        # 非 Coqui 模型：尝试使用 transformers pipeline
         try:
             import torch  # type: ignore
             from transformers import pipeline  # type: ignore
@@ -172,14 +199,19 @@ class TTS(BaseAudioNode):
                 device,
             )
             return
-        except ImportError:
+        except Exception as exc:
+            # 捕获所有异常（ImportError / ValueError / OSError 等），
+            # 确保能回退到 edge-tts
             self._logger.warning(
-                "transformers not available, falling back to edge-tts."
+                "Transformers TTS failed for %s: %s. "
+                "Falling back to edge-tts.",
+                self._model_name,
+                exc,
             )
 
         # 回退到 edge-tts
         self._backend = "edge_tts"
-        self._logger.info("Falling back to edge-tts backend.")
+        self._logger.info("Using edge-tts backend.")
 
     def run(self, input_data: MosaicData) -> MosaicData:
         """执行文本转语音。
