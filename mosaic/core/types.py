@@ -27,6 +27,7 @@ __all__ = [
     "VideoData",
     "SubtitleData",
     "DocumentData",
+    "RagQueryResult",
     "DATA_TYPE_REGISTRY",
     "data_from_dict",
 ]
@@ -571,7 +572,10 @@ class DocumentData(MosaicData):
     chunks:
         文本分块列表。
     metadata:
-        附加元数据（如来源、页码等）。
+        文档级元信息（文件名、页码、标题等）。
+    chunk_metadata:
+        每个 chunk 对应的元信息列表，长度与 ``chunks`` 一致。每个元素是
+        一个字典，可包含 ``source``、``page``、``paragraph`` 等字段。
     """
 
     data_type = "document"
@@ -580,11 +584,13 @@ class DocumentData(MosaicData):
         self,
         chunks: Optional[List[str]] = None,
         metadata: Optional[Dict[str, Any]] = None,
+        chunk_metadata: Optional[List[Dict[str, Any]]] = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(
             chunks=chunks or [],
             metadata=metadata or {},
+            chunk_metadata=chunk_metadata or [],
             **kwargs,
         )
 
@@ -595,8 +601,13 @@ class DocumentData(MosaicData):
 
     @property
     def metadata(self) -> Dict[str, Any]:
-        """附加元数据。"""
+        """文档级附加元数据。"""
         return self._data["metadata"]
+
+    @property
+    def chunk_metadata(self) -> List[Dict[str, Any]]:
+        """每个 chunk 的元信息列表。"""
+        return self._data["chunk_metadata"]
 
     @classmethod
     def validate(cls, data: "MosaicData") -> bool:
@@ -610,6 +621,80 @@ class DocumentData(MosaicData):
 
 
 # ---------------------------------------------------------------------------
+# RagQueryResult — RAG 检索结果
+# ---------------------------------------------------------------------------
+class RagQueryResult(MosaicData):
+    """RAG 检索结果数据。
+
+    Parameters
+    ----------
+    query:
+        原始查询文本。
+    results:
+        检索结果列表，每个 dict 包含 ``content`` (str)、``score`` (float)、
+        ``source`` (str)、``metadata`` (dict)。
+    answer:
+        生成的回答文本（可选，由 CitationGenerator 填充）。
+    citations:
+        引用列表（可选），每个 dict 包含 ``citation_id``、``source``、
+        ``content``、``score``。
+    """
+
+    data_type = "rag_query_result"
+
+    def __init__(
+        self,
+        query: str = "",
+        results: Optional[List[Dict[str, Any]]] = None,
+        answer: Optional[str] = None,
+        citations: Optional[List[Dict[str, Any]]] = None,
+        **kwargs: Any,
+    ) -> None:
+        super().__init__(
+            query=query,
+            results=results or [],
+            answer=answer,
+            citations=citations,
+            **kwargs,
+        )
+
+    @property
+    def query(self) -> str:
+        """原始查询文本。"""
+        return self._data["query"]
+
+    @property
+    def results(self) -> List[Dict[str, Any]]:
+        """检索结果列表。"""
+        return self._data["results"]
+
+    @property
+    def answer(self) -> Optional[str]:
+        """生成的回答（可能为 None）。"""
+        return self._data.get("answer")
+
+    @property
+    def citations(self) -> Optional[List[Dict[str, Any]]]:
+        """引用列表（可能为 None）。"""
+        return self._data.get("citations")
+
+    @classmethod
+    def validate(cls, data: "MosaicData") -> bool:
+        """校验 RAG 检索结果。"""
+        if not isinstance(data, RagQueryResult):
+            return False
+        results = data.get("results")
+        if not isinstance(results, list):
+            return False
+        for item in results:
+            if not isinstance(item, dict):
+                return False
+            if "content" not in item or "score" not in item:
+                return False
+        return True
+
+
+# ---------------------------------------------------------------------------
 # 类型注册表：支撑 from_dict 的多态分发
 # ---------------------------------------------------------------------------
 DATA_TYPE_REGISTRY: Dict[str, Type[MosaicData]] = {
@@ -620,6 +705,7 @@ DATA_TYPE_REGISTRY: Dict[str, Type[MosaicData]] = {
     "video": VideoData,
     "subtitle": SubtitleData,
     "document": DocumentData,
+    "rag_query_result": RagQueryResult,
 }
 
 
