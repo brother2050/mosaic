@@ -37,40 +37,62 @@ classifiers = [
 ]
 
 dependencies = [
-    "torch>=2.0.0",
-    "transformers>=4.36.0",
-    "diffusers>=0.25.0",
-    "Pillow>=10.0.0",
-    "numpy>=1.24.0",
+    # PyTorch: 2.x 系列，<3.0 防止未来大版本破坏
+    "torch>=2.0.0,<3.0.0",
+    # Transformers: 4.x 系列。v5.0 有重大破坏性变更
+    # (apply_chat_template 返回类型变更、encode_plus 移除等)，
+    # 项目代码基于 4.x API 编写，暂不兼容 5.x
+    "transformers>=4.36.0,<5.0.0",
+    # Diffusers: 0.27+ 引入所需 Pipeline；<0.41 因为 0.40 废弃了
+    # enable_vae_slicing (已兼容处理)，更高版本可能有更多破坏性变更
+    "diffusers>=0.27.0,<0.41.0",
+    # Pillow: 图像处理基础库
+    "Pillow>=10.0.0,<16.0.0",
+    # NumPy: 1.24+ 支持，<3.0 防止未来大版本破坏
+    "numpy>=1.24.0,<3.0.0",
+    # Accelerate: device_map="auto" 和 enable_model_cpu_offload 所需
+    "accelerate>=0.20.0,<2.0.0",
 ]
 
 [project.optional-dependencies]
 video = [
-    "opencv-python>=4.8.0",
-    "imageio>=2.31.0",
-    "imageio-ffmpeg>=0.4.9",
+    "opencv-python>=4.8.0,<5.0.0",
+    "imageio>=2.31.0,<3.0.0",
+    "imageio-ffmpeg>=0.4.9,<1.0.0",
+    # 帧插值 (RIFE) 使用 ONNX Runtime
+    "onnxruntime>=1.16.0,<2.0.0",
 ]
 audio = [
-    "soundfile>=0.12.0",
-    "librosa>=0.10.0",
-    "scipy>=1.11.0",
+    "soundfile>=0.12.0,<1.0.0",
+    "librosa>=0.10.0,<1.0.0",
+    "scipy>=1.11.0,<2.0.0",
+    # TTS 轻量回退方案 (无需 GPU)
+    "edge-tts>=6.1.0,<8.0.0",
+]
+export = [
+    # 视频编码与推流需要 FFmpeg
+    "imageio-ffmpeg>=0.4.9,<1.0.0",
+    # 音频导出需要 soundfile
+    "soundfile>=0.12.0,<1.0.0",
 ]
 rag = [
-    "faiss-cpu>=1.7.4",
-    "chromadb>=0.4.0",
-    "unstructured>=0.11.0",
+    "faiss-cpu>=1.7.4,<2.0.0",
+    # ChromaDB 1.0 有重大破坏性变更 (Rust 重写、API 重构)，
+    # 项目代码基于 0.x API 编写
+    "chromadb>=0.4.0,<1.0.0",
+    "unstructured>=0.11.0,<1.0.0",
 ]
 digital-human = [
-    "onnxruntime>=1.16.0",
-    "trimesh>=3.23.0",
+    "onnxruntime>=1.16.0,<2.0.0",
+    "trimesh>=3.23.0,<5.0.0",
 ]
 dev = [
-    "pytest>=7.4.0",
-    "ruff>=0.1.0",
-    "mypy>=1.7.0",
+    "pytest>=7.4.0,<10.0.0",
+    "ruff>=0.1.0,<1.0.0",
+    "mypy>=1.7.0,<3.0.0",
 ]
 all = [
-    "mosaic[video,audio,rag,digital-human,dev]",
+    "mosaic[video,audio,export,rag,digital-human,dev]",
 ]
 
 [project.urls]
