@@ -11,6 +11,7 @@
 * :class:`TextClassifier` —— 文本分类（专用/生成/zero-shot）
 """
 
+from mosaic.nodes.text._base import BaseTextNode
 from mosaic.nodes.text.chat import Chat
 from mosaic.nodes.text.classifier import TextClassifier
 from mosaic.nodes.text.generator import TextGenerator
@@ -19,6 +20,7 @@ from mosaic.nodes.text.summarizer import TextSummarizer
 from mosaic.nodes.text.translator import Translator
 
 __all__ = [
+    "BaseTextNode",
     "TextGenerator",
     "Chat",
     "TextRewriter",

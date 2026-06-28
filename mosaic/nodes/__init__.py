@@ -23,14 +23,19 @@
 >>> from mosaic.nodes import TextGenerator, TextToImage, TTS, SubtitleGenerator
 """
 
-# 导入已实现的域（惰性导入，避免未安装依赖时报错）
-# 各域 __init__ 内部均使用惰性导入，此处仅导入包本身
+# 导入已实现的域
 from mosaic.nodes import text as text
 from mosaic.nodes import image as image
 from mosaic.nodes import audio as audio
 from mosaic.nodes import subtitle as subtitle
 
-# 便捷导出常用节点类
+# 便捷导出：基类
+from mosaic.nodes.text import BaseTextNode
+from mosaic.nodes.image import BaseImageNode
+from mosaic.nodes.audio import BaseAudioNode
+from mosaic.nodes.subtitle import BaseSubtitleNode
+
+# 便捷导出：text 域节点
 from mosaic.nodes.text import (
     Chat,
     TextClassifier,
@@ -39,6 +44,7 @@ from mosaic.nodes.text import (
     TextSummarizer,
     Translator,
 )
+# 便捷导出：image 域节点
 from mosaic.nodes.image import (
     BackgroundRemover,
     ImageToImage,
@@ -47,6 +53,7 @@ from mosaic.nodes.image import (
     TextToImage,
     Upscaler,
 )
+# 便捷导出：audio 域节点
 from mosaic.nodes.audio import (
     ASR,
     MusicGenerator,
@@ -54,6 +61,7 @@ from mosaic.nodes.audio import (
     TTS,
     VoiceClone,
 )
+# 便捷导出：subtitle 域节点
 from mosaic.nodes.subtitle import (
     SubtitleAligner,
     SubtitleGenerator,
@@ -66,6 +74,11 @@ __all__ = [
     "image",
     "audio",
     "subtitle",
+    # base classes
+    "BaseTextNode",
+    "BaseImageNode",
+    "BaseAudioNode",
+    "BaseSubtitleNode",
     # text nodes
     "TextGenerator",
     "Chat",

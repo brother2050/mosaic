@@ -1,13 +1,13 @@
 # mosaic/nodes/audio/__init__.py
-"""音频域节点包。
+"""音频域节点。
 
-导出音频域全部 5 个节点：
+导出该域所有节点类。当前包含 5 个节点：
 
-- :class:`TTS` — 文本转语音
-- :class:`ASR` — 语音识别
-- :class:`MusicGenerator` — 音乐生成
-- :class:`SoundEffectGenerator` — 音效生成
-- :class:`VoiceClone` — 语音克隆
+* :class:`TTS`                  —— 文本转语音（XTTS-v2 / edge-tts）
+* :class:`ASR`                  —— 语音识别（Whisper）
+* :class:`MusicGenerator`       —— 音乐生成（MusicGen）
+* :class:`SoundEffectGenerator` —— 音效生成（AudioLDM2）
+* :class:`VoiceClone`           —— 语音克隆（XTTS-v2）
 """
 
 from mosaic.nodes.audio._base import BaseAudioNode

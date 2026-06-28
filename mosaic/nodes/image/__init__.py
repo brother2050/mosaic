@@ -11,6 +11,7 @@
 * :class:`Stylizer`          —— 艺术风格化（SDXL Img2Img + IP-Adapter）
 """
 
+from mosaic.nodes.image._base import BaseImageNode
 from mosaic.nodes.image.background_remover import BackgroundRemover
 from mosaic.nodes.image.image_to_image import ImageToImage
 from mosaic.nodes.image.inpainting import Inpainting
@@ -19,6 +20,7 @@ from mosaic.nodes.image.text_to_image import TextToImage
 from mosaic.nodes.image.upscaler import Upscaler
 
 __all__ = [
+    "BaseImageNode",
     "TextToImage",
     "ImageToImage",
     "Inpainting",
