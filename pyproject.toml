@@ -106,6 +106,9 @@ digital-human = [
     # 数字人推理需要 ONNX Runtime，
     # 请额外安装 mosaic[onnx] (CPU) 或 mosaic[onnx-gpu] (GPU)
     "trimesh>=3.23.0,<5.0.0",
+    # 人脸检测与特征提取（数字人域 _detect_face / _extract_face_embedding 使用）
+    # insightface 是可选依赖，缺失时自动回退到中心裁剪
+    "insightface>=0.7.3,<1.0.0",
 ]
 consistency = [
     # 人脸检测（IdentityKeeper 的 _prepare_face_region 使用）

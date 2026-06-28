@@ -28,6 +28,8 @@ __all__ = [
     "SubtitleData",
     "DocumentData",
     "RagQueryResult",
+    "MotionData",
+    "AvatarData",
     "DATA_TYPE_REGISTRY",
     "data_from_dict",
 ]
@@ -695,6 +697,167 @@ class RagQueryResult(MosaicData):
 
 
 # ---------------------------------------------------------------------------
+# MotionData — 动作数据
+# ---------------------------------------------------------------------------
+class MotionData(MosaicData):
+    """动作数据，用于数字人域。
+
+    Parameters
+    ----------
+    keypoints:
+        ``numpy.ndarray`` 骨骼关键点数据，形状
+        ``(frame_count, num_keypoints, dim)`` 或
+        ``(frame_count, num_keypoints * dim)``。
+    frame_count:
+        帧数。
+    fps:
+        帧率。
+    skeleton_type:
+        骨骼类型，如 ``"coco"`` / ``"openpose"`` / ``"smpl"``。
+    metadata:
+        附加元数据。
+    """
+
+    data_type = "motion"
+
+    def __init__(
+        self,
+        keypoints: Any = None,
+        frame_count: int = 0,
+        fps: int = 30,
+        skeleton_type: str = "coco",
+        metadata: Optional[Dict[str, Any]] = None,
+        **kwargs: Any,
+    ) -> None:
+        super().__init__(
+            keypoints=keypoints,
+            frame_count=frame_count,
+            fps=fps,
+            skeleton_type=skeleton_type,
+            metadata=metadata or {},
+            **kwargs,
+        )
+
+    @property
+    def keypoints(self) -> Any:
+        """骨骼关键点数据。"""
+        return self._data["keypoints"]
+
+    @property
+    def frame_count(self) -> int:
+        """帧数。"""
+        return self._data["frame_count"]
+
+    @property
+    def fps(self) -> int:
+        """帧率。"""
+        return self._data["fps"]
+
+    @property
+    def skeleton_type(self) -> str:
+        """骨骼类型。"""
+        return self._data["skeleton_type"]
+
+    @property
+    def metadata(self) -> Dict[str, Any]:
+        """附加元数据。"""
+        return self._data["metadata"]
+
+    @classmethod
+    def validate(cls, data: "MosaicData") -> bool:
+        """校验动作数据：``frame_count`` 为非负整数，``fps`` 为正整数。"""
+        if not isinstance(data, MotionData):
+            return False
+        fc = data.get("frame_count")
+        fps = data.get("fps")
+        if not isinstance(fc, int) or fc < 0:
+            return False
+        if not isinstance(fps, int) or fps <= 0:
+            return False
+        return True
+
+
+# ---------------------------------------------------------------------------
+# AvatarData — 数字人形象数据
+# ---------------------------------------------------------------------------
+class AvatarData(MosaicData):
+    """数字人形象数据。
+
+    Parameters
+    ----------
+    image:
+        ``PIL.Image.Image`` 数字人形象图片。
+    face_embedding:
+        ``numpy.ndarray`` 人脸特征向量（可选）。
+    motion:
+        :class:`MotionData` 绑定的动作数据（可选）。
+    audio:
+        :class:`AudioData` 绑定的音频数据（可选）。
+    metadata:
+        附加元数据。
+    """
+
+    data_type = "avatar"
+
+    def __init__(
+        self,
+        image: Any = None,
+        face_embedding: Any = None,
+        motion: Any = None,
+        audio: Any = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        **kwargs: Any,
+    ) -> None:
+        super().__init__(
+            image=image,
+            face_embedding=face_embedding,
+            motion=motion,
+            audio=audio,
+            metadata=metadata or {},
+            **kwargs,
+        )
+
+    @property
+    def image(self) -> Any:
+        """数字人形象图片。"""
+        return self._data["image"]
+
+    @property
+    def face_embedding(self) -> Any:
+        """人脸特征向量。"""
+        return self._data.get("face_embedding")
+
+    @property
+    def motion(self) -> Any:
+        """绑定的动作数据。"""
+        return self._data.get("motion")
+
+    @property
+    def audio(self) -> Any:
+        """绑定的音频数据。"""
+        return self._data.get("audio")
+
+    @property
+    def metadata(self) -> Dict[str, Any]:
+        """附加元数据。"""
+        return self._data["metadata"]
+
+    @classmethod
+    def validate(cls, data: "MosaicData") -> bool:
+        """校验数字人形象数据：``image`` 应为 PIL.Image 或 None。"""
+        if not isinstance(data, AvatarData):
+            return False
+        img = data.get("image")
+        if img is None:
+            return True
+        try:
+            Image = _import_pil()
+            return isinstance(img, Image.Image)
+        except ImportError:
+            return True
+
+
+# ---------------------------------------------------------------------------
 # 类型注册表：支撑 from_dict 的多态分发
 # ---------------------------------------------------------------------------
 DATA_TYPE_REGISTRY: Dict[str, Type[MosaicData]] = {
@@ -706,6 +869,8 @@ DATA_TYPE_REGISTRY: Dict[str, Type[MosaicData]] = {
     "subtitle": SubtitleData,
     "document": DocumentData,
     "rag_query_result": RagQueryResult,
+    "motion": MotionData,
+    "avatar": AvatarData,
 }
 
 
