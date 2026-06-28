@@ -107,6 +107,14 @@ digital-human = [
     # 请额外安装 mosaic[onnx] (CPU) 或 mosaic[onnx-gpu] (GPU)
     "trimesh>=3.23.0,<5.0.0",
 ]
+consistency = [
+    # 人脸检测（IdentityKeeper 的 _prepare_face_region 使用）
+    # insightface 是可选依赖，缺失时自动回退到中心裁剪
+    "insightface>=0.7.3,<1.0.0",
+    # 图像相似度计算（_compute_image_similarity 使用）
+    # scikit-image 是可选依赖，缺失时自动回退到归一化互相关
+    "scikit-image>=0.21.0,<1.0.0",
+]
 dev = [
     "pytest>=7.4.0,<10.0.0",
     "ruff>=0.1.0,<1.0.0",
@@ -116,7 +124,7 @@ dev = [
 # GPU 用户请安装 mosaic[all,onnx-gpu] 并手动卸载 onnxruntime:
 #   pip uninstall onnxruntime && pip install mosaic[all,onnx-gpu]
 all = [
-    "mosaic[onnx,video,audio,export,rag,digital-human,dev]",
+    "mosaic[onnx,video,audio,export,rag,digital-human,consistency,dev]",
 ]
 
 [project.urls]
