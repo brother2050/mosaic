@@ -139,6 +139,13 @@ Issues = "https://github.com/your-org/mosaic/issues"
 [project.scripts]
 mosaic = "mosaic.cli.main:main"
 
+# 节点插件 entry_points 组。
+# 内置节点通过 registry.discover() 自动注册，无需在此声明。
+# 第三方插件包可通过此组注册自定义节点，例如:
+#
+# [project.entry-points."mosaic.nodes"]
+# my-custom-node = "my_package.nodes:MyCustomNode"
+
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["mosaic*"]

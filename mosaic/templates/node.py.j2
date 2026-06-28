@@ -1,0 +1,118 @@
+# $node_name_snake.py
+"""$node_name 节点 —— $description.
+
+由 mosaic CLI (create-node) 自动生成。
+
+域 (Domain): $domain
+模型: $model_name
+作者: $author
+许可证: $license
+"""
+
+from __future__ import annotations
+
+from typing import Any, List
+
+from mosaic.core.node import Node, NodeSpec
+from mosaic.core.registry import registry
+from mosaic.core.types import MosaicData
+
+__all__ = ["$node_name"]
+
+
+@registry.register
+class $node_name(Node):
+    """$description.
+
+    Parameters
+    ----------
+    device:
+        运行设备，如 ``"cuda"`` / ``"cpu"`` / ``"auto"``。
+    dtype:
+        权重精度，如 ``"fp16"`` / ``"fp32"`` / ``"bf16"``。
+    model:
+        模型标识（HuggingFace repo id 等）。
+    """
+
+    # -- 类属性：数据契约 --------------------------------------------------
+    name: str = "$node_name_snake"
+    domain: str = "$domain"
+    description: str = "$description"
+    version: str = "0.1.0"
+    input_types: List[str] = $input_types
+    output_types: List[str] = $output_types
+
+    # -- 构造 --------------------------------------------------------------
+    def __init__(
+        self,
+        device: str = "auto",
+        dtype: str = "fp16",
+        model: str = "$model_name",
+        **kwargs: Any,
+    ) -> None:
+        super().__init__(**kwargs)
+        self._device: str = device
+        self._dtype: str = dtype
+        self._model_name: str = model
+        # 运行时模型对象（load 后填充）
+        self._model: Any = None
+
+    # -- 模型加载 / 卸载 ---------------------------------------------------
+    def load(self) -> None:
+        """加载模型到 GPU/内存。
+
+        实现应完成模型权重下载、设备迁移等初始化工作，并将内部
+        ``_loaded`` 标志置为 ``True``。
+        """
+        # TODO: 实现模型加载逻辑，例如：
+        #   from transformers import AutoModel
+        #   self._model = AutoModel.from_pretrained(self._model_name)
+        #   self._model = self._model.to(self._device)
+        self._loaded = True
+
+    def unload(self) -> None:
+        """卸载模型，释放资源。
+
+        实现应释放显存/内存占用，并将内部 ``_loaded`` 标志置为 ``False``。
+        """
+        # TODO: 实现资源释放逻辑，例如：
+        #   del self._model
+        #   import torch; torch.cuda.empty_cache()
+        self._model = None
+        self._loaded = False
+
+    # -- 核心执行 ----------------------------------------------------------
+    def run(self, input_data: MosaicData) -> MosaicData:
+        """执行节点逻辑。
+
+        Parameters
+        ----------
+        input_data:
+            输入数据容器，类型应符合 :attr:`input_types` 声明。
+
+        Returns
+        -------
+        MosaicData
+            输出数据容器，类型应符合 :attr:`output_types` 声明。
+        """
+        # TODO: 实现节点核心逻辑
+        raise NotImplementedError(
+            f"{self.name}.run() 尚未实现，请补充业务逻辑。"
+        )
+
+    # -- 规格说明 ----------------------------------------------------------
+    def describe(self) -> NodeSpec:
+        """返回节点规格说明。"""
+        return NodeSpec(
+            name=self.name,
+            domain=self.domain,
+            description=self.description,
+            version=self.version,
+            input_types=list(self.input_types),
+            output_types=list(self.output_types),
+            model_info={
+                "name": self._model_name,
+                "license": "$license",
+                "author": "$author",
+            },
+        )

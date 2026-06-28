@@ -38,6 +38,9 @@ from mosaic.core import (
     registry,
 )
 
+# 便捷导出：插件系统
+from mosaic.core.plugin import PluginManager, plugin_manager, node
+
 __all__ = [
     "__version__",
     # data types
@@ -54,4 +57,8 @@ __all__ = [
     "Merge",
     "PipelineResult",
     "registry",
+    # plugin system
+    "PluginManager",
+    "plugin_manager",
+    "node",  # @node 装饰器
 ]
