@@ -214,7 +214,7 @@ class SubtitleAligner(BaseSubtitleNode):
         # 构造对齐后的 SubtitleData
         out_subtitle = self._make_subtitle_data(
             segments=aligned_segments,
-            fmt=subtitle.format,
+            fmt=subtitle.subtitle_format,
             method=self._method,
             score=score,
         )

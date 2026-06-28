@@ -439,10 +439,10 @@ class AsyncTask:
 
             # 注册 Context 事件回调（跟踪 current_node）
             def _on_context_event(event: Any) -> None:
-                if event.type == "node_start":
+                if event.event_type == "node_start":
                     with self._lock:
                         self._current_node = event.node_name
-                elif event.type == "pipeline_end":
+                elif event.event_type == "pipeline_end":
                     with self._lock:
                         self._progress = 1.0
                         self._current_node = None

@@ -111,7 +111,7 @@ class TestSubtitleGeneratorFormats:
         result = gen(MosaicData(audio=sample_audio))
 
         subtitle = result.get("subtitle")
-        assert subtitle.format == "srt", "format 应为 'srt'"
+        assert subtitle.subtitle_format == "srt", "format 应为 'srt'"
 
         # 转为 SRT 字符串验证
         srt_str = subtitle.get("srt_text")
@@ -126,7 +126,7 @@ class TestSubtitleGeneratorFormats:
         result = gen(MosaicData(audio=sample_audio))
 
         subtitle = result.get("subtitle")
-        assert subtitle.format == "vtt", "format 应为 'vtt'"
+        assert subtitle.subtitle_format == "vtt", "format 应为 'vtt'"
 
 
 class TestSubtitleGeneratorFeatures:

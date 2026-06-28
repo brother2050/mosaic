@@ -404,7 +404,7 @@ def test_event_triggers_node_start_and_complete(
 
     def forward_to_bus(event):
         """将 Context 的 Event 转发为 EventBus 的 MosaicEvent。"""
-        fresh_bus.emit(event.type, node_name=event.node_name, **event.payload)
+        fresh_bus.emit(event.event_type, node_name=event.node_name, **event.payload)
 
     ctx.on_event(forward_to_bus)
 
@@ -417,8 +417,8 @@ def test_event_triggers_node_start_and_complete(
     assert result.success
 
     # 收集的事件中应包含 node_start 和 node_end
-    start_events = [e for e in events if e.type == EventType.NODE_START]
-    end_events = [e for e in events if e.type == "node_end"]
+    start_events = [e for e in events if e.event_type == EventType.NODE_START]
+    end_events = [e for e in events if e.event_type == "node_end"]
 
     # 每个节点至少触发一次 start 和 end
     assert len(start_events) >= 2, f"Expected >=2 node_start events, got {len(start_events)}"

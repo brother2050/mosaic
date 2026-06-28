@@ -155,9 +155,56 @@ def _inject_mock_soundfile():
         sys.modules["soundfile"] = sf
 
 
+def _inject_mock_edge_tts():
+    """注入 mock edge_tts 模块，使 TTS/VoiceClone 测试无需真实网络。
+
+    edge_tts.Communicate 提供异步 ``stream()`` 生成器，产出占位音频字节，
+    配合 mock soundfile 即可得到 numpy 波形。
+    """
+    if "edge_tts" not in sys.modules:
+        etc = types.ModuleType("edge_tts")
+
+        class _Communicate:
+            """模拟 edge_tts.Communicate，支持 rate/pitch 等关键字参数。"""
+
+            def __init__(self, text, voice, rate="+0%", pitch="+0Hz",
+                         volume="+0%", proxy=None, **kwargs):
+                self.text = text
+                self.voice = voice
+                self.rate = rate
+                self.pitch = pitch
+
+            async def stream(self):
+                # 产出一段占位 mp3 字节，配合 mock soundfile.read 解码
+                yield {"type": "audio", "data": b"\x00" * 64}
+                yield {"type": "WordBoundary", "offset": 0, "duration": 0.1,
+                       "text": self.text}
+
+        etc.Communicate = _Communicate
+        etc.SubMaker = MagicMock()
+        sys.modules["edge_tts"] = etc
+    else:
+        etc = sys.modules["edge_tts"]
+        if not hasattr(etc, "Communicate"):
+
+            class _Communicate:
+                def __init__(self, text, voice, rate="+0%", **kwargs):
+                    self.text = text
+                    self.voice = voice
+                    self.rate = rate
+
+                async def stream(self):
+                    yield {"type": "audio", "data": b"\x00" * 64}
+
+            etc.Communicate = _Communicate
+        if not hasattr(etc, "SubMaker"):
+            etc.SubMaker = MagicMock()
+
+
 _inject_mock_diffusers()
 _inject_mock_transformers()
 _inject_mock_soundfile()
+_inject_mock_edge_tts()
 
 
 # ---------------------------------------------------------------------------

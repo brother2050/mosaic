@@ -25,13 +25,13 @@ class TestSubtitleDataCreation:
         sub = SubtitleData(segments=segments)
         assert sub.segments == segments, "segments 内容应保持一致"
         assert len(sub.segments) == 2, "应有 2 个片段"
-        assert sub.format == "srt", "默认 format 应为 'srt'"
+        assert sub.subtitle_format == "srt", "默认 format 应为 'srt'"
         assert sub.data_type == "subtitle", "data_type 应为 'subtitle'"
 
     def test_create_with_format(self):
         """指定 format 参数。"""
         sub = SubtitleData(segments=[], format="vtt")
-        assert sub.format == "vtt"
+        assert sub.subtitle_format == "vtt"
 
     def test_create_with_metadata(self):
         """创建时可以附带 metadata。"""
@@ -66,7 +66,7 @@ class TestSubtitleDataSerialization:
 
         restored = data_from_dict(d)
         assert isinstance(restored, SubtitleData), "反序列化后应为 SubtitleData"
-        assert restored.format == "srt", "format 应保留"
+        assert restored.subtitle_format == "srt", "format 应保留"
         assert len(restored.segments) == 2, "应有 2 个片段"
         assert restored.segments[0]["start"] == 1.0
         assert restored.segments[0]["end"] == 4.0
@@ -140,7 +140,7 @@ class TestEmptySubtitle:
     def test_empty_subtitle_data(self, empty_subtitle):
         """T_SUBTYPE_05：空字幕的处理。"""
         assert empty_subtitle.segments == [], "空字幕 segments 应为空列表"
-        assert empty_subtitle.format == "srt"
+        assert empty_subtitle.subtitle_format == "srt"
         assert SubtitleData.validate(empty_subtitle), "空字幕应通过校验"
 
     def test_empty_subtitle_serialization(self, empty_subtitle):

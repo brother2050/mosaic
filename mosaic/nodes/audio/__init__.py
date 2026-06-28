@@ -3,11 +3,11 @@
 
 导出该域所有节点类。当前包含 5 个节点：
 
-* :class:`TTS`                  —— 文本转语音（XTTS-v2 / edge-tts）
+* :class:`TTS`                  —— 文本转语音（edge-tts 默认 / transformers）
 * :class:`ASR`                  —— 语音识别（Whisper）
 * :class:`MusicGenerator`       —— 音乐生成（MusicGen）
 * :class:`SoundEffectGenerator` —— 音效生成（AudioLDM2）
-* :class:`VoiceClone`           —— 语音克隆（XTTS-v2）
+* :class:`VoiceClone`           —— 语音风格匹配（edge-tts 预设语音）
 """
 
 from mosaic.nodes.audio._base import BaseAudioNode

@@ -305,7 +305,7 @@ class TestE2EEvents:
 
         events_received = []
         ctx = Context()
-        ctx.on_event(lambda e: events_received.append(e.type))
+        ctx.on_event(lambda e: events_received.append(e.event_type))
 
         pipe = Pipeline("event-test", [gen, translator])
         pipe.execute(MosaicData(
@@ -343,7 +343,7 @@ class TestE2EEvents:
 
         events = []
         ctx = Context()
-        ctx.on_event(lambda e: events.append(e.type))
+        ctx.on_event(lambda e: events.append(e.event_type))
 
         pipe = Pipeline("lifecycle", [gen])
         pipe.execute(MosaicData(prompt="test"), context=ctx)

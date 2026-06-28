@@ -582,7 +582,7 @@ class TestPipelineCallbacks:
         events_received = []
 
         def handler(event):
-            events_received.append(event.type)
+            events_received.append(event.event_type)
 
         n1 = _MockNode(name="a")
         n2 = _MockNode(name="b")
@@ -599,7 +599,7 @@ class TestPipelineCallbacks:
         events_received = []
 
         def handler(event):
-            events_received.append(event.type)
+            events_received.append(event.event_type)
 
         n1 = _MockNode(name="a")
         pipe = Pipeline("cb", [n1])

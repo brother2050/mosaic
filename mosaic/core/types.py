@@ -536,7 +536,7 @@ class SubtitleData(MosaicData):
         return self._data["segments"]
 
     @property
-    def format(self) -> str:
+    def subtitle_format(self) -> str:
         """字幕格式。"""
         return self._data["format"]
 

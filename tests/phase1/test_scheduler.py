@@ -142,7 +142,7 @@ class TestSchedulerEnsureLoaded:
         node = _TestNode(name="n1")
         cpu_scheduler.ensure_loaded(node)
         assert len(events) == 1
-        assert events[0].type == EventType.MODEL_LOAD
+        assert events[0].event_type == EventType.MODEL_LOAD
 
 
 # ===========================================================================
@@ -175,7 +175,7 @@ class TestSchedulerRelease:
         cpu_scheduler.ensure_loaded(node)
         cpu_scheduler.release(node)
         assert len(events) == 1
-        assert events[0].type == EventType.MODEL_UNLOAD
+        assert events[0].event_type == EventType.MODEL_UNLOAD
 
     def test_release_all(self, cpu_scheduler):
         """T_SCHED_03: release_all 释放所有节点。"""
@@ -227,7 +227,7 @@ class TestSchedulerLRU:
         gpu_scheduler.ensure_loaded(n3)  # 应淘汰 n1
 
         # 至少有 1 个 model_unload 事件（淘汰）
-        unload_events = [e for e in events if e.type == EventType.MODEL_UNLOAD]
+        unload_events = [e for e in events if e.event_type == EventType.MODEL_UNLOAD]
         assert len(unload_events) >= 1
 
     def test_memory_error_when_cannot_evict(self, gpu_scheduler):

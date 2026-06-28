@@ -47,9 +47,12 @@ dependencies = [
     # enable_vae_slicing (已兼容处理)，更高版本可能有更多破坏性变更
     "diffusers>=0.27.0,<0.41.0",
     # Pillow: 图像处理基础库
-    "Pillow>=10.0.0,<16.0.0",
-    # NumPy: 1.24+ 支持，<3.0 防止未来大版本破坏
-    "numpy>=1.24.0,<3.0.0",
+    "Pillow>=10.0.0,<14.0.0",
+    # NumPy: 1.24+ 支持。
+    # <2.0 因为 NumPy 2.0 有破坏性 C-API 变更，
+    # 且 torch<2.2 不兼容 numpy 2.0。
+    # 待 torch 下限提升到 2.2+ 后可放宽到 <3.0
+    "numpy>=1.24.0,<2.0.0",
     # Accelerate: device_map="auto" 和 enable_model_cpu_offload 所需
     "accelerate>=0.20.0,<2.0.0",
 ]
@@ -70,7 +73,6 @@ onnx-gpu = [
     "onnxruntime-gpu>=1.16.0,<2.0.0",
 ]
 video = [
-    "opencv-python>=4.8.0,<5.0.0",
     "imageio>=2.31.0,<3.0.0",
     "imageio-ffmpeg>=0.4.9,<1.0.0",
     # 帧插值 (RIFE) 需要 ONNX Runtime，
@@ -79,8 +81,7 @@ video = [
 audio = [
     "soundfile>=0.12.0,<1.0.0",
     "librosa>=0.10.0,<1.0.0",
-    "scipy>=1.11.0,<2.0.0",
-    # TTS 轻量回退方案 (无需 GPU)
+    # edge-tts: 微软 Azure TTS，免费、支持多语言和情感风格，无需 GPU
     "edge-tts>=6.1.0,<8.0.0",
 ]
 export = [
@@ -94,7 +95,6 @@ rag = [
     # ChromaDB 1.0 有重大破坏性变更 (Rust 重写、API 重构)，
     # 项目代码基于 0.x API 编写
     "chromadb>=0.4.0,<1.0.0",
-    "unstructured>=0.11.0,<1.0.0",
     # 文档解析库
     "pdfplumber>=0.10.0,<1.0.0",
     "python-docx>=1.1.0,<2.0.0",

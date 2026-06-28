@@ -28,7 +28,7 @@ class TestEventBusOnAndEmit:
         bus.on(EventType.NODE_START, handler)
         bus.emit(EventType.NODE_START, node_name="test-node")
         assert len(received) == 1
-        assert received[0].type == EventType.NODE_START
+        assert received[0].event_type == EventType.NODE_START
         assert received[0].payload["node_name"] == "test-node"
 
     def test_on_returns_callback(self, fresh_bus):
@@ -43,7 +43,7 @@ class TestEventBusOnAndEmit:
         """T_EVT_01: emit 返回 MosaicEvent 对象。"""
         event = fresh_bus.emit(EventType.PIPELINE_START, pipeline_name="test")
         assert isinstance(event, MosaicEvent)
-        assert event.type == EventType.PIPELINE_START
+        assert event.event_type == EventType.PIPELINE_START
 
     def test_wildcard_subscription(self, fresh_bus):
         """T_EVT_01: 通配符订阅接收所有事件。"""
@@ -162,7 +162,7 @@ class TestEventBusExceptionIsolation:
             raise RuntimeError("callback failure")
 
         def good_handler(event):
-            received.append(event.type)
+            received.append(event.event_type)
 
         fresh_bus.on(EventType.NODE_START, bad_handler)
         fresh_bus.on(EventType.NODE_START, good_handler)

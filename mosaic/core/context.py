@@ -84,7 +84,7 @@ class Event:
 
     Attributes
     ----------
-    type:
+    event_type:
         事件类型，如 ``"pipeline_start"``、``"node_start"``、
         ``"node_end"``、``"error"``、``"pipeline_end"``。
     node_name:
@@ -93,7 +93,7 @@ class Event:
         事件附带的任意数据（如耗时、输出摘要等）。
     """
 
-    type: str
+    event_type: str
     node_name: Optional[str] = None
     payload: Dict[str, Any] = field(default_factory=dict)
 
@@ -192,7 +192,7 @@ class Context:
     def __enter__(self) -> "Context":
         """进入运行：标记为活跃并触发 ``pipeline_start`` 事件。"""
         self._active = True
-        self.emit(Event(type="pipeline_start", payload={"config": self.config.__dict__}))
+        self.emit(Event(event_type="pipeline_start", payload={"config": self.config.__dict__}))
         return self
 
     def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
@@ -200,7 +200,7 @@ class Context:
         if exc_type is not None:
             self.emit(
                 Event(
-                    type="error",
+                    event_type="error",
                     payload={
                         "exception_type": exc_type.__name__ if exc_type else None,
                         "exception": str(exc_val) if exc_val else None,
@@ -210,7 +210,7 @@ class Context:
         else:
             self.emit(
                 Event(
-                    type="pipeline_end",
+                    event_type="pipeline_end",
                     payload={"artifacts": list(self._artifacts.keys())},
                 )
             )
@@ -238,7 +238,7 @@ class Context:
                 continue
 
     # -- 共享数据存储 ------------------------------------------------------
-    def set(self, key: str, value: Any) -> None:
+    def set_value(self, key: str, value: Any) -> None:
         """向共享数据存储写入一个键值对。"""
         self.shared[key] = value
 
@@ -415,7 +415,7 @@ class Context:
         """通知节点即将开始执行。"""
         self.emit(
             Event(
-                type="node_start",
+                event_type="node_start",
                 node_name=node_name,
                 payload={"input_keys": list(input_data.keys())},
             )
@@ -434,7 +434,7 @@ class Context:
             payload["elapsed_seconds"] = elapsed
         self.emit(
             Event(
-                type="node_end",
+                event_type="node_end",
                 node_name=node_name,
                 payload=payload,
             )

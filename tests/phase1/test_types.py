@@ -311,14 +311,14 @@ class TestSubtitleData:
             {"start": 2.5, "end": 5.0, "text": "World"},
         ]
         sdata = SubtitleData(segments=segments, format="srt")
-        assert sdata.format == "srt"
+        assert sdata.subtitle_format == "srt"
         assert len(sdata.segments) == 2
         assert sdata.data_type == "subtitle"
 
     def test_defaults(self):
         """T_TYPES_06: 默认参数。"""
         sdata = SubtitleData()
-        assert sdata.format == "srt"
+        assert sdata.subtitle_format == "srt"
         assert sdata.segments == []
 
     def test_metadata(self):
@@ -336,7 +336,7 @@ class TestSubtitleData:
         d = sdata.to_dict()
         restored = SubtitleData.from_dict(d)
         assert isinstance(restored, SubtitleData)
-        assert restored.format == "vtt"
+        assert restored.subtitle_format == "vtt"
         assert len(restored.segments) == 2
         assert restored.segments[0]["text"] == "Line 1"
 

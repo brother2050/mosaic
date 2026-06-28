@@ -95,7 +95,7 @@ class MosaicEvent:
 
     Attributes
     ----------
-    type:
+    event_type:
         事件类型，取值见 :class:`EventType`。
     timestamp:
         事件创建时间戳（``time.time()``，秒）。
@@ -103,13 +103,13 @@ class MosaicEvent:
         事件附带的任意数据字典。
     """
 
-    type: str
+    event_type: str
     timestamp: float = field(default_factory=lambda: __import__("time").time())
     payload: Dict[str, Any] = field(default_factory=dict)
 
     def __repr__(self) -> str:
         return (
-            f"MosaicEvent(type={self.type!r}, "
+            f"MosaicEvent(event_type={self.event_type!r}, "
             f"timestamp={self.timestamp:.3f}, "
             f"payload_keys={list(self.payload.keys())})"
         )
@@ -260,7 +260,7 @@ class EventBus:
         MosaicEvent
             已发布的事件对象。
         """
-        event = MosaicEvent(type=event_type, payload=payload)
+        event = MosaicEvent(event_type=event_type, payload=payload)
         # 收集匹配回调（持锁快照）
         with self._lock:
             callbacks: List[EventCallback] = []
@@ -282,7 +282,7 @@ class EventBus:
             self._logger.exception(
                 "Event callback %r raised on event %r: %s",
                 getattr(callback, "__name__", callback),
-                event.type,
+                event.event_type,
                 exc,
             )
 
@@ -439,7 +439,7 @@ class LoggingListener:
     def _format_event(event: MosaicEvent) -> str:
         """格式化事件为日志字符串。"""
         payload_str = ", ".join(f"{k}={_truncate(v)!r}" for k, v in event.payload.items())
-        return f"[{event.type}] {payload_str}"
+        return f"[{event.event_type}] {payload_str}"
 
     def __repr__(self) -> str:
         return (

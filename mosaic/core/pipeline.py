@@ -830,7 +830,7 @@ class Pipeline(Node):
 
             ctx.emit(
                 Event(
-                    type="node_start",
+                    event_type="node_start",
                     node_name=dn.node.name,
                     payload={"input_keys": list(node_input.keys())},
                 )
@@ -859,7 +859,7 @@ class Pipeline(Node):
             ctx.store_artifact(nid, out, duration=elapsed)
             ctx.emit(
                 Event(
-                    type="node_end",
+                    event_type="node_end",
                     node_name=dn.node.name,
                     payload={
                         "output_keys": list(out.keys()),
@@ -885,7 +885,7 @@ class Pipeline(Node):
         """
         ctx.emit(
             Event(
-                type="node_start",
+                event_type="node_start",
                 node_name=dn.node.name,
                 payload={"input_keys": list(node_input.keys())},
             )
@@ -898,7 +898,7 @@ class Pipeline(Node):
         ctx.store_artifact(dn.node_id, out, duration=elapsed)
         ctx.emit(
             Event(
-                type="node_end",
+                event_type="node_end",
                 node_name=dn.node.name,
                 payload={
                     "output_keys": list(out.keys()),

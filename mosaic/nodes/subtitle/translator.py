@@ -258,7 +258,7 @@ class SubtitleTranslator(BaseSubtitleNode):
         elapsed = time.perf_counter() - t0
 
         # 确定输出格式
-        out_format = self._output_format or subtitle.format
+        out_format = self._output_format or subtitle.subtitle_format
 
         # 构造输出 SubtitleData
         out_subtitle = self._make_subtitle_data(

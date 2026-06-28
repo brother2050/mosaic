@@ -7,9 +7,9 @@
 
 设计要点
 --------
-* ``transformers`` / ``torch`` / ``soundfile`` / ``librosa`` 均采用惰性
-  导入，使本模块在未安装这些依赖时仍可被注册表发现与导入（仅在实际
-  加载/推理时才报依赖缺失）。
+* ``transformers`` / ``torch`` / ``soundfile`` / ``librosa`` / ``edge-tts``
+  均采用惰性导入，使本模块在未安装这些依赖时仍可被注册表发现与导入
+  （仅在实际加载/推理时才报依赖缺失）。
 * 模型生命周期通过 :class:`~mosaic.core.scheduler.Scheduler` 管理。
 * 关键步骤通过 :class:`~mosaic.core.events.EventBus` 发出事件。
 * 提供统一的音频前后处理工具：加载、保存、重采样、归一化、单声道转换。
@@ -32,13 +32,15 @@ __all__ = ["BaseAudioNode"]
 
 # 常见音频模型的粗略显存估算（GB），用于 describe() 与调度器
 _VRAM_ESTIMATES: Dict[str, float] = {
-    "coqui/XTTS-v2": 4.0,
+    # edge-tts 为云端 TTS，不占用本地 GPU 显存
+    "edge-tts": 0.0,
     "openai/whisper-large-v3": 10.0,
     "openai/whisper-medium": 5.0,
     "openai/whisper-small": 2.0,
     "openai/whisper-base": 1.0,
     "openai/whisper-tiny": 0.5,
     "facebook/mms-tts-eng": 2.0,
+    "microsoft/speecht5_tts": 2.0,
     "facebook/musicgen-small": 3.0,
     "facebook/musicgen-medium": 6.0,
     "facebook/musicgen-large": 12.0,
@@ -49,13 +51,15 @@ _VRAM_ESTIMATES: Dict[str, float] = {
 
 # 许可证信息
 _LICENSE_INFO: Dict[str, str] = {
-    "coqui/XTTS-v2": "Coqui Public Model License (CPML)",
+    # edge-tts 为微软 Azure 神经网络语音的非官方 Python 客户端
+    "edge-tts": "Microsoft Azure Neural TTS (unofficial client, MIT)",
     "openai/whisper-large-v3": "MIT License",
     "openai/whisper-medium": "MIT License",
     "openai/whisper-small": "MIT License",
     "openai/whisper-base": "MIT License",
     "openai/whisper-tiny": "MIT License",
     "facebook/mms-tts-eng": "CC-BY-NC 4.0",
+    "microsoft/speecht5_tts": "MIT License",
     "facebook/musicgen-small": "CC-BY-NC 4.0",
     "facebook/musicgen-medium": "CC-BY-NC 4.0",
     "facebook/musicgen-large": "CC-BY-NC 4.0",
@@ -68,7 +72,7 @@ _LICENSE_INFO: Dict[str, str] = {
 class BaseAudioNode(Node):
     """音频域节点抽象基类。
 
-    封装基于 ``transformers`` / ``TTS`` / ``diffusers`` 的音频模型加载
+    封装基于 ``transformers`` / ``diffusers`` / ``edge-tts`` 的音频模型加载
     与推理流程。子类需实现 :meth:`run` 与 :meth:`_load_model`。
 
     Parameters
@@ -137,7 +141,7 @@ class BaseAudioNode(Node):
         """子类实现：实际加载模型。
 
         子类应在此方法中：
-        1. 惰性导入所需的库（transformers / TTS / diffusers 等）；
+        1. 惰性导入所需的库（transformers / diffusers / edge-tts 等）；
         2. 加载模型与 processor/processor；
         3. 迁移到目标设备；
         4. 将模型赋值给 ``self._model``。
