@@ -75,15 +75,23 @@ class MusicGenerator(BaseAudioNode):
 
         device = self._resolve_device()
         try:
-            torch_dtype = torch.float16 if "cuda" in device else torch.float32
+            resolved_dtype = torch.float16 if "cuda" in device else torch.float32
         except (AttributeError, RuntimeError):
-            torch_dtype = torch.float32
+            resolved_dtype = torch.float32
 
         self._processor = AutoProcessor.from_pretrained(self._model_name)
-        self._model = MusicgenForConditionalGeneration.from_pretrained(
-            self._model_name,
-            torch_dtype=torch_dtype,
-        )
+
+        # 优先使用 dtype=（新版 transformers），回退 torch_dtype=（旧版兼容）
+        try:
+            self._model = MusicgenForConditionalGeneration.from_pretrained(
+                self._model_name,
+                dtype=resolved_dtype,
+            )
+        except TypeError:
+            self._model = MusicgenForConditionalGeneration.from_pretrained(
+                self._model_name,
+                torch_dtype=resolved_dtype,
+            )
         self._model.to(device)
 
         self._logger.info(

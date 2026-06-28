@@ -58,6 +58,7 @@ class BaseTextNode(Node):
         传递给 ``from_pretrained`` 的 ``device_map``，默认 ``"auto"``。
     torch_dtype:
         权重精度，可选 ``"fp32"``/``"fp16"``/``"bf16"``，默认 ``"fp16"``。
+        传递给 ``from_pretrained`` 的 ``dtype`` 参数。
     trust_remote_code:
         是否信任远程代码，默认 ``True``（Qwen 等模型需要）。
     scheduler:
@@ -136,15 +137,27 @@ class BaseTextNode(Node):
             "fp16": torch.float16,
             "bf16": torch.bfloat16,
         }
-        torch_dtype = dtype_map.get(self._torch_dtype, torch.float16)
+        resolved_dtype = dtype_map.get(self._torch_dtype, torch.float16)
 
-        # 加载模型
-        self._model = AutoModelForCausalLM.from_pretrained(
-            self._model_name,
-            torch_dtype=torch_dtype,
-            device_map=self._device_map,
-            trust_remote_code=self._trust_remote_code,
-        )
+        # 加载模型（transformers 4.17+ 推荐 dtype= 替代 torch_dtype=）
+        load_kwargs: dict = {
+            "device_map": self._device_map,
+            "trust_remote_code": self._trust_remote_code,
+        }
+        # 优先使用 dtype 参数（新版 transformers），回退 torch_dtype（旧版兼容）
+        try:
+            self._model = AutoModelForCausalLM.from_pretrained(
+                self._model_name,
+                dtype=resolved_dtype,
+                **load_kwargs,
+            )
+        except TypeError:
+            # 旧版 transformers 不支持 dtype 参数
+            self._model = AutoModelForCausalLM.from_pretrained(
+                self._model_name,
+                torch_dtype=resolved_dtype,
+                **load_kwargs,
+            )
         self._model.eval()
 
         self._logger.info(
@@ -204,13 +217,13 @@ class BaseTextNode(Node):
         """
         import torch  # type: ignore
 
-        # 构造输入：优先使用 chat template
+        # 构造输入：优先使用 chat template（返回 PyTorch tensor）
         input_ids = self._apply_chat_template(messages)
 
         # 确保 2D: (batch=1, seq_len)
-        if hasattr(input_ids, "dim") and callable(input_ids.dim):
+        if hasattr(input_ids, "dim") and callable(getattr(input_ids, "dim", None)):
             try:
-                if input_ids.dim() == 1 and hasattr(input_ids, "unsqueeze"):
+                if input_ids.dim() == 1:
                     input_ids = input_ids.unsqueeze(0)
             except (TypeError, RuntimeError):
                 pass
@@ -252,6 +265,10 @@ class BaseTextNode(Node):
     def _apply_chat_template(self, messages: List[Dict[str, str]]) -> Any:
         """应用 tokenizer 的 chat template 构造输入张量。
 
+        使用业界推荐的两步模式（transformers 4.40+ 最佳实践）：
+        1. ``apply_chat_template(tokenize=False)`` 获取格式化字符串
+        2. ``tokenizer(formatted, return_tensors="pt")`` 独立 tokenize
+
         若 tokenizer 不支持 ``apply_chat_template``，回退为直接编码纯文本。
 
         Returns
@@ -259,52 +276,21 @@ class BaseTextNode(Node):
         Any
             ``torch.Tensor`` 形状的 token id 张量 ``(batch, seq_len)``。
         """
-        import torch  # type: ignore
-
         if hasattr(self._tokenizer, "apply_chat_template"):
-            result = self._tokenizer.apply_chat_template(
+            # Step 1: 格式化为字符串（不 tokenize，便于调试与兼容）
+            formatted = self._tokenizer.apply_chat_template(
                 messages,
+                tokenize=False,
                 add_generation_prompt=True,
-                tokenize=True,
-                return_tensors="pt",
             )
-            return self._coerce_to_tensor(result)
+            # Step 2: 独立 tokenize 为 PyTorch 张量
+            model_inputs = self._tokenizer(formatted, return_tensors="pt")
+            return model_inputs["input_ids"]
 
         # 回退：拼接所有 content
         flat = "\n".join(m.get("content", "") for m in messages)
         encoded = self._tokenizer(flat, return_tensors="pt")
-        return self._coerce_to_tensor(encoded)
-
-    def _coerce_to_tensor(self, result: Any) -> Any:
-        """将 tokenizer 返回值统一为 ``torch.Tensor``。
-
-        ``apply_chat_template`` / ``__call__`` 在不同 transformers 版本下
-        可能返回 ``Tensor``、``BatchEncoding``（dict-like）、``list`` 或
-        ``str``。本方法提取其中的 ``input_ids`` 张量。
-        """
-        # duck-typing：看起来像 tensor（有 .to/.dim/.shape）直接返回
-        if hasattr(result, "to") and hasattr(result, "dim") and hasattr(result, "shape"):
-            return result
-        # BatchEncoding / dict：提取 input_ids
-        if isinstance(result, dict) and "input_ids" in result:
-            ids = result["input_ids"]
-            if hasattr(ids, "to") and hasattr(ids, "dim"):
-                return ids
-            # input_ids 可能是 list
-            import torch  # type: ignore
-            return torch.tensor([ids], dtype=torch.long)
-        # 列表/元组：tokenize=True 时通常不会走到这里
-        if isinstance(result, (list, tuple)):
-            import torch  # type: ignore
-            return torch.tensor([result], dtype=torch.long)
-        # 字符串：未 tokenize 的回退
-        if isinstance(result, str):
-            encoded = self._tokenizer(result, return_tensors="pt")
-            if isinstance(encoded, dict):
-                return encoded["input_ids"]
-            return encoded
-        # 最后回退：直接返回（可能是 MagicMock 等测试 mock）
-        return result
+        return encoded["input_ids"] if isinstance(encoded, dict) else encoded
 
     def _infer_device(self) -> str:
         """推断模型所在设备。"""

@@ -88,16 +88,25 @@ class ASR(BaseAudioNode):
 
         device = self._resolve_device()
         try:
-            torch_dtype = torch.float16 if "cuda" in device else torch.float32
+            resolved_dtype = torch.float16 if "cuda" in device else torch.float32
         except (AttributeError, RuntimeError):
-            torch_dtype = torch.float32
+            resolved_dtype = torch.float32
 
         self._processor = AutoProcessor.from_pretrained(self._model_name)
-        self._model = AutoModelForSpeechSeq2Seq.from_pretrained(
-            self._model_name,
-            torch_dtype=torch_dtype,
-            low_cpu_mem_usage=True,
-        )
+
+        # 优先使用 dtype=（新版 transformers），回退 torch_dtype=（旧版兼容）
+        try:
+            self._model = AutoModelForSpeechSeq2Seq.from_pretrained(
+                self._model_name,
+                dtype=resolved_dtype,
+                low_cpu_mem_usage=True,
+            )
+        except TypeError:
+            self._model = AutoModelForSpeechSeq2Seq.from_pretrained(
+                self._model_name,
+                torch_dtype=resolved_dtype,
+                low_cpu_mem_usage=True,
+            )
         self._model.to(device)
 
         # 构造 pipeline，支持长音频分片
@@ -107,7 +116,7 @@ class ASR(BaseAudioNode):
             tokenizer=self._processor.tokenizer,
             feature_extractor=self._processor.feature_extractor,
             device=device,
-            torch_dtype=torch_dtype,
+            torch_dtype=resolved_dtype,
         )
 
         self._logger.info(
