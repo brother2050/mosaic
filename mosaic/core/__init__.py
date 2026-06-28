@@ -3,13 +3,16 @@
 
 本包定义了框架的基础抽象、编排引擎与运行时基础设施：
 
-* :mod:`mosaic.core.types`     — 节点间传递的统一数据类型
-* :mod:`mosaic.core.node`      — 节点抽象基类与规格说明
-* :mod:`mosaic.core.registry`  — 全局节点注册表
-* :mod:`mosaic.core.context`   — 管道运行上下文
-* :mod:`mosaic.core.pipeline`  — 管道编排引擎（Pipeline / Branch / Merge）
-* :mod:`mosaic.core.events`    — 事件总线（EventBus / LoggingListener）
-* :mod:`mosaic.core.scheduler` — 显存调度器（Scheduler，LRU + 无GPU降级）
+* :mod:`mosaic.core.types`        — 节点间传递的统一数据类型
+* :mod:`mosaic.core.node`         — 节点抽象基类与规格说明
+* :mod:`mosaic.core.registry`     — 全局节点注册表
+* :mod:`mosaic.core.context`      — 管道运行上下文
+* :mod:`mosaic.core.pipeline`     — 管道编排引擎（Pipeline / Branch / Merge）
+* :mod:`mosaic.core.events`       — 事件总线（EventBus / LoggingListener）
+* :mod:`mosaic.core.scheduler`    — 显存调度器（Scheduler，LRU + 无GPU降级）
+* :mod:`mosaic.core.task`         — 异步任务封装（AsyncTask）
+* :mod:`mosaic.core.async_pipeline` — 异步管道执行桥接
+* :mod:`mosaic.core.task_manager`  — 任务管理器（TaskManager）
 """
 
 from mosaic.core.context import (
@@ -36,6 +39,8 @@ from mosaic.core.pipeline import (
 from mosaic.core.registry import NodeRegistry, get_default_registry, registry
 from mosaic.core.result import NodeError, PipelineResult
 from mosaic.core.scheduler import Scheduler, get_scheduler, set_scheduler
+from mosaic.core.task import AsyncTask, TaskCancelledError, TaskStatus
+from mosaic.core.task_manager import TaskManager
 from mosaic.core.types import (
     AudioData,
     DATA_TYPE_REGISTRY,
@@ -94,4 +99,9 @@ __all__ = [
     "Scheduler",
     "get_scheduler",
     "set_scheduler",
+    # async task
+    "AsyncTask",
+    "TaskCancelledError",
+    "TaskStatus",
+    "TaskManager",
 ]

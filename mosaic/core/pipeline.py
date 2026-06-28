@@ -1029,6 +1029,49 @@ class Pipeline(Node):
                 continue
         return specs
 
+    def run_async(
+        self,
+        input_data: MosaicData,
+        **kwargs: Any,
+    ) -> "AsyncTask":
+        """异步执行管道，返回 :class:`~mosaic.core.task.AsyncTask`。
+
+        在新线程中调用 :meth:`execute_result`，不阻塞调用线程。
+        适用于视频生成等长时间运行的任务。
+
+        Parameters
+        ----------
+        input_data:
+            管道输入数据。
+        **kwargs:
+            透传给 :meth:`execute_result` 的额外参数
+            （如 ``config``、``fail_fast``、``max_workers``）。
+
+        Returns
+        -------
+        AsyncTask
+            异步任务实例，可用于查询状态、等待结果、注册回调或取消。
+
+        Examples
+        --------
+        >>> task = pipe.run_async(input_data)
+        >>> task.status      # "pending" / "running" / "completed" / "failed"
+        >>> task.progress    # 0.0 - 1.0
+        >>> result = task.wait(timeout=300)
+
+        使用回调：
+        >>> task = pipe.run_async(input_data)
+        >>> task.on_complete(lambda r: print(f"Done: {r}"))
+        >>> task.on_error(lambda e: print(f"Error: {e}"))
+        """
+        from mosaic.core.async_pipeline import create_async_task
+
+        return create_async_task(
+            pipeline=self,
+            input_data=input_data,
+            **kwargs,
+        )
+
     def __repr__(self) -> str:
         status = "loaded" if self._loaded else "unloaded"
         count = len(self._elements)
