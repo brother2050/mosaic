@@ -63,13 +63,16 @@ class ImageToImage(BaseImageNode):
     def _load_pipeline(self) -> None:
         """加载 StableDiffusionXLImg2ImgPipeline。"""
         from diffusers import StableDiffusionXLImg2ImgPipeline  # type: ignore
+        from mosaic.nodes._pipeline_utils import safe_load_pipeline
 
         torch_dtype = self._resolve_dtype()
 
-        self._pipeline = StableDiffusionXLImg2ImgPipeline.from_pretrained(
+        self._pipeline = safe_load_pipeline(
+            StableDiffusionXLImg2ImgPipeline,
             self._model_name,
+            variant_fp16=self._dtype_str in ("float16", "fp16"),
+            dtype_str=self._dtype_str,
             torch_dtype=torch_dtype,
-            variant="fp16" if self._dtype_str in ("float16", "fp16") else None,
         )
 
         if self._enable_model_cpu_offload:

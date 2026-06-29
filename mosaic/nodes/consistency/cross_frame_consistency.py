@@ -229,11 +229,24 @@ class CrossFrameConsistency(BaseConsistencyNode):
         torch_dtype = self._resolve_dtype()
         variant = "fp16" if self._dtype_str in ("float16", "fp16") else None
 
-        self._pipeline = StableDiffusionXLPipeline.from_pretrained(
-            self._effective_model_name,
-            torch_dtype=torch_dtype,
-            variant=variant,
-        )
+        from mosaic.nodes._pipeline_utils import _build_error_message
+
+        try:
+            self._pipeline = StableDiffusionXLPipeline.from_pretrained(
+                self._effective_model_name,
+                torch_dtype=torch_dtype,
+                variant=variant,
+            )
+        except (
+            ImportError,
+            AttributeError,
+            ValueError,
+            OSError,
+            EnvironmentError,
+        ) as exc:
+            raise RuntimeError(
+                _build_error_message(self._effective_model_name, exc)
+            ) from exc
         self._pipeline = self._pipeline.to(self._resolve_target_device())
         self._apply_optimizations()
         self._enable_attention_sharing(target="cross")
@@ -249,11 +262,24 @@ class CrossFrameConsistency(BaseConsistencyNode):
         torch_dtype = self._resolve_dtype()
         variant = "fp16" if self._dtype_str in ("float16", "fp16") else None
 
-        self._pipeline = StableDiffusionPipeline.from_pretrained(
-            self._effective_model_name,
-            torch_dtype=torch_dtype,
-            variant=variant,
-        )
+        from mosaic.nodes._pipeline_utils import _build_error_message
+
+        try:
+            self._pipeline = StableDiffusionPipeline.from_pretrained(
+                self._effective_model_name,
+                torch_dtype=torch_dtype,
+                variant=variant,
+            )
+        except (
+            ImportError,
+            AttributeError,
+            ValueError,
+            OSError,
+            EnvironmentError,
+        ) as exc:
+            raise RuntimeError(
+                _build_error_message(self._effective_model_name, exc)
+            ) from exc
         self._pipeline = self._pipeline.to(self._resolve_target_device())
         self._apply_optimizations()
         self._enable_attention_sharing(target="self")
@@ -269,11 +295,24 @@ class CrossFrameConsistency(BaseConsistencyNode):
         torch_dtype = self._resolve_dtype()
         variant = "fp16" if self._dtype_str in ("float16", "fp16") else None
 
-        self._pipeline = StableDiffusionXLPipeline.from_pretrained(
-            self._effective_model_name,
-            torch_dtype=torch_dtype,
-            variant=variant,
-        )
+        from mosaic.nodes._pipeline_utils import _build_error_message
+
+        try:
+            self._pipeline = StableDiffusionXLPipeline.from_pretrained(
+                self._effective_model_name,
+                torch_dtype=torch_dtype,
+                variant=variant,
+            )
+        except (
+            ImportError,
+            AttributeError,
+            ValueError,
+            OSError,
+            EnvironmentError,
+        ) as exc:
+            raise RuntimeError(
+                _build_error_message(self._effective_model_name, exc)
+            ) from exc
         self._pipeline = self._pipeline.to(self._resolve_target_device())
         self._apply_optimizations()
         self._load_ip_adapter()

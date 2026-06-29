@@ -342,11 +342,22 @@ class StyleKeeper(BaseConsistencyNode):
 
         torch_dtype, variant = self._resolve_dtype_and_variant()
 
-        self._pipeline = StableDiffusionXLPipeline.from_pretrained(
-            self._base_model,
-            torch_dtype=torch_dtype,
-            variant=variant,
-        )
+        from mosaic.nodes._pipeline_utils import _build_error_message
+
+        try:
+            self._pipeline = StableDiffusionXLPipeline.from_pretrained(
+                self._base_model,
+                torch_dtype=torch_dtype,
+                variant=variant,
+            )
+        except (
+            ImportError,
+            AttributeError,
+            ValueError,
+            OSError,
+            EnvironmentError,
+        ) as exc:
+            raise RuntimeError(_build_error_message(self._base_model, exc)) from exc
         self._move_pipeline_to_device()
 
         try:
@@ -374,11 +385,22 @@ class StyleKeeper(BaseConsistencyNode):
 
         torch_dtype, variant = self._resolve_dtype_and_variant()
 
-        self._pipeline = StableDiffusionXLPipeline.from_pretrained(
-            self._base_model,
-            torch_dtype=torch_dtype,
-            variant=variant,
-        )
+        from mosaic.nodes._pipeline_utils import _build_error_message
+
+        try:
+            self._pipeline = StableDiffusionXLPipeline.from_pretrained(
+                self._base_model,
+                torch_dtype=torch_dtype,
+                variant=variant,
+            )
+        except (
+            ImportError,
+            AttributeError,
+            ValueError,
+            OSError,
+            EnvironmentError,
+        ) as exc:
+            raise RuntimeError(_build_error_message(self._base_model, exc)) from exc
         self._move_pipeline_to_device()
         self._logger.info(
             "SDXL pipeline loaded for StyleAligned (dtype=%s, device=%s).",
@@ -392,11 +414,22 @@ class StyleKeeper(BaseConsistencyNode):
 
         torch_dtype, variant = self._resolve_dtype_and_variant()
 
-        self._pipeline = StableDiffusionPipeline.from_pretrained(
-            self._base_model,
-            torch_dtype=torch_dtype,
-            variant=variant,
-        )
+        from mosaic.nodes._pipeline_utils import _build_error_message
+
+        try:
+            self._pipeline = StableDiffusionPipeline.from_pretrained(
+                self._base_model,
+                torch_dtype=torch_dtype,
+                variant=variant,
+            )
+        except (
+            ImportError,
+            AttributeError,
+            ValueError,
+            OSError,
+            EnvironmentError,
+        ) as exc:
+            raise RuntimeError(_build_error_message(self._base_model, exc)) from exc
         self._move_pipeline_to_device()
         self._logger.info(
             "SD1.5 pipeline loaded for Reference-Only "

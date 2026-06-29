@@ -209,7 +209,7 @@ class IdentityKeeper(BaseConsistencyNode):
                 variant=variant,
             )
             self._native_instantid = True
-        except (ImportError, AttributeError, ValueError):
+        except (ImportError, AttributeError, ValueError, OSError):
             self._logger.warning(
                 "StableDiffusionXLInstantIDPipeline not available "
                 "(diffusers too old or model incompatible). "
@@ -248,11 +248,24 @@ class IdentityKeeper(BaseConsistencyNode):
 
         torch_dtype, variant = self._resolve_dtype_and_variant()
 
-        self._pipeline = StableDiffusionXLPipeline.from_pretrained(
-            self._model_name,
-            torch_dtype=torch_dtype,
-            variant=variant,
-        )
+        from mosaic.nodes._pipeline_utils import _build_error_message
+
+        try:
+            self._pipeline = StableDiffusionXLPipeline.from_pretrained(
+                self._model_name,
+                torch_dtype=torch_dtype,
+                variant=variant,
+            )
+        except (
+            ImportError,
+            AttributeError,
+            ValueError,
+            OSError,
+            EnvironmentError,
+        ) as exc:
+            raise RuntimeError(
+                _build_error_message(self._model_name, exc)
+            ) from exc
         self._move_pipeline_to_device()
 
         # 加载 IP-Adapter Face 权重
@@ -279,11 +292,24 @@ class IdentityKeeper(BaseConsistencyNode):
 
         torch_dtype, variant = self._resolve_dtype_and_variant()
 
-        self._pipeline = PhotoMakerPipeline.from_pretrained(
-            self._model_name,
-            torch_dtype=torch_dtype,
-            variant=variant,
-        )
+        from mosaic.nodes._pipeline_utils import _build_error_message
+
+        try:
+            self._pipeline = PhotoMakerPipeline.from_pretrained(
+                self._model_name,
+                torch_dtype=torch_dtype,
+                variant=variant,
+            )
+        except (
+            ImportError,
+            AttributeError,
+            ValueError,
+            OSError,
+            EnvironmentError,
+        ) as exc:
+            raise RuntimeError(
+                _build_error_message(self._model_name, exc)
+            ) from exc
         self._move_pipeline_to_device()
         self._logger.info(
             "PhotoMaker pipeline loaded (dtype=%s, device=%s).",

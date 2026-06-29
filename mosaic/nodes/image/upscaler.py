@@ -64,11 +64,14 @@ class Upscaler(BaseImageNode):
     def _load_pipeline(self) -> None:
         """加载 StableDiffusionUpscalePipeline。"""
         from diffusers import StableDiffusionUpscalePipeline  # type: ignore
+        from mosaic.nodes._pipeline_utils import safe_load_pipeline
 
         torch_dtype = self._resolve_dtype()
 
-        self._pipeline = StableDiffusionUpscalePipeline.from_pretrained(
+        self._pipeline = safe_load_pipeline(
+            StableDiffusionUpscalePipeline,
             self._model_name,
+            dtype_str=self._dtype_str,
             torch_dtype=torch_dtype,
         )
 

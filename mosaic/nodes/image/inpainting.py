@@ -65,13 +65,16 @@ class Inpainting(BaseImageNode):
     def _load_pipeline(self) -> None:
         """加载 StableDiffusionXLInpaintPipeline。"""
         from diffusers import StableDiffusionXLInpaintPipeline  # type: ignore
+        from mosaic.nodes._pipeline_utils import safe_load_pipeline
 
         torch_dtype = self._resolve_dtype()
 
-        self._pipeline = StableDiffusionXLInpaintPipeline.from_pretrained(
+        self._pipeline = safe_load_pipeline(
+            StableDiffusionXLInpaintPipeline,
             self._model_name,
+            variant_fp16=self._dtype_str in ("float16", "fp16"),
+            dtype_str=self._dtype_str,
             torch_dtype=torch_dtype,
-            variant="fp16" if self._dtype_str in ("float16", "fp16") else None,
         )
 
         if self._enable_model_cpu_offload:

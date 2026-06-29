@@ -72,6 +72,10 @@ class MusicGenerator(BaseAudioNode):
             AutoProcessor,
             MusicgenForConditionalGeneration,
         )
+        from mosaic.nodes._pipeline_utils import (
+            safe_load_processor,
+            safe_load_model,
+        )
 
         device = self._resolve_device()
         try:
@@ -79,19 +83,12 @@ class MusicGenerator(BaseAudioNode):
         except (AttributeError, RuntimeError):
             resolved_dtype = torch.float32
 
-        self._processor = AutoProcessor.from_pretrained(self._model_name)
-
-        # 优先使用 dtype=（新版 transformers），回退 torch_dtype=（旧版兼容）
-        try:
-            self._model = MusicgenForConditionalGeneration.from_pretrained(
-                self._model_name,
-                dtype=resolved_dtype,
-            )
-        except TypeError:
-            self._model = MusicgenForConditionalGeneration.from_pretrained(
-                self._model_name,
-                torch_dtype=resolved_dtype,
-            )
+        self._processor = safe_load_processor(AutoProcessor, self._model_name)
+        self._model = safe_load_model(
+            MusicgenForConditionalGeneration,
+            self._model_name,
+            dtype=resolved_dtype,
+        )
         self._model.to(device)
 
         self._logger.info(

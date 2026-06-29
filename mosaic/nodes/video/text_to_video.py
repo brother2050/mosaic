@@ -103,12 +103,16 @@ class TextToVideo(BaseVideoNode):
         """加载 CogVideoX Pipeline。"""
         import torch  # type: ignore
         from diffusers import CogVideoXPipeline  # type: ignore
+        from mosaic.nodes._pipeline_utils import safe_load_pipeline
 
         device = self._resolve_device()
         torch_dtype = self._resolve_dtype()
 
-        self._pipeline = CogVideoXPipeline.from_pretrained(
+        # CogVideoX 内部使用 T5 文本编码器，needs_t5=True 预导入 T5 组件
+        self._pipeline = safe_load_pipeline(
+            CogVideoXPipeline,
             self._model_name,
+            needs_t5=True,
             torch_dtype=torch_dtype,
         )
 

@@ -78,6 +78,7 @@ class SoundEffectGenerator(BaseAudioNode):
         """加载 AudioLDM2 模型。"""
         import torch  # type: ignore
         from diffusers import AudioLDMPipeline  # type: ignore
+        from mosaic.nodes._pipeline_utils import safe_load_pipeline
 
         device = self._resolve_device()
         try:
@@ -85,8 +86,11 @@ class SoundEffectGenerator(BaseAudioNode):
         except (AttributeError, RuntimeError):
             torch_dtype = torch.float32
 
-        self._pipeline = AudioLDMPipeline.from_pretrained(
+        # AudioLDM2 使用 T5 文本编码器，needs_t5=True 预导入 T5 组件
+        self._pipeline = safe_load_pipeline(
+            AudioLDMPipeline,
             self._model_name,
+            needs_t5=True,
             torch_dtype=torch_dtype,
         )
         self._pipeline = self._pipeline.to(device)
