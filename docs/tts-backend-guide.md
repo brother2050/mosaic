@@ -109,12 +109,14 @@ backend = tts_backend_registry.auto_select({"batch": True})
 
 CosyVoice 的核心优势是 ODE 步数可调，在质量和速度之间灵活权衡：
 
-| num_ode_steps | 延迟 | 质量 | 适用场景 |
-|---|---|---|---|
-| 5 | ~50ms | 中等 | 实时对话、低延迟场景 |
-| 10 | ~100ms | 好 | 推荐默认值，质量/速度均衡 |
-| 20 | ~200ms | 最高 | 离线合成、高质量要求 |
-| 50 | ~500ms | 极高 | 研究对比、极限质量 |
+| num_ode_steps | ODE 求解延迟 | 总首批延迟 | 质量 | 适用场景 |
+|---|---|---|---|---|
+| 5 | ~50ms | ~250ms | 中等 | 实时对话、低延迟场景 |
+| 10 | ~100ms | ~300ms | 好 | 推荐默认值，质量/速度均衡 |
+| 20 | ~200ms | ~400ms | 最高 | 离线合成、高质量要求 |
+| 50 | ~500ms | ~700ms | 极高 | 研究对比、极限质量 |
+
+> **注**：总首批延迟包括 ODE 求解 + 首 chunk（150 帧）缓冲 + 声码器推理。
 
 ```python
 backend = CosyVoiceBackend(model_path="/data/cosyvoice", num_ode_steps=10)
@@ -145,7 +147,7 @@ from mosaic.nodes.audio.tts_backends.implementations.chattts_backend import Chat
 
 backend = ChatTTSBackend(model_path="/data/chattts")
 backend.load(device="cuda", dtype="float16")
-audio = backend.synthesize("你好，世界", speaker="seed_42", language="zh")
+audio = backend.synthesize("你好，世界", speaker="seed_222", language="zh")
 # sample_rate = 24000
 ```
 
@@ -191,7 +193,7 @@ from mosaic.nodes.audio.tts_backends.implementations.fish_backend import FishSpe
 backend = FishSpeechBackend(model_path="/data/fish_speech")
 backend.load(device="cuda", dtype="float16")
 audio = backend.synthesize("Hello, 世界", language="en")
-# sample_rate = 24000
+# sample_rate = 22050
 ```
 
 ### 通过 TTS 节点统一调用

@@ -123,13 +123,13 @@ from mosaic.nodes.export import MultiFormatExporter
 
 # 构建流水线
 pipeline = Pipeline()
-pipeline.add(Chat(model="Qwen2.5-7B"))
+pipeline.add(Chat(model="Qwen/Qwen2.5-7B-Instruct"))
 pipeline.add(TextToImage(model="stabilityai/stable-diffusion-xl-base-1.0"))
-pipeline.add(MultiFormatExporter(output_dir="./outputs"))
+pipeline.add(MultiFormatExporter())
 
 # 运行
 result = pipeline.run(prompt="画一只在月球上骑自行车的熊猫")
-print(f"图片已保存到: {result.image_path}")
+print(f"输出: {result}")
 ```
 
 ### 示例 2：文本 → 语音（ChatTTS 流式）
@@ -138,11 +138,11 @@ print(f"图片已保存到: {result.image_path}")
 import asyncio
 from mosaic.nodes.audio import TTS
 
-tts = TTS(backend="chattts", streaming=True)
+tts = TTS(backend="chattts")
 
 # 阻塞合成
-audio = tts.run(text="你好，欢迎使用 Mosaic！", language="zh")
-audio.save("output.wav")
+result = tts.run({"text": "你好，欢迎使用 Mosaic！", "language": "zh"})
+audio = result.get("audio")  # AudioData 对象
 
 # 流式合成（首批延迟 ~50ms）
 async def stream_demo():
@@ -163,12 +163,12 @@ wan = WanVideo(
     enable_vae_tiling=True,
 )
 
-result = wan.run(
-    prompt="一只猫在海滩上散步，夕阳西下",
-    num_frames=81,
-    fps=16,
-)
-result.video.save("output.mp4")
+result = wan.run({
+    "prompt": "一只猫在海滩上散步，夕阳西下",
+    "num_frames": 81,
+    "fps": 16,
+})
+video = result.get("video")  # VideoData 对象
 ```
 
 更多示例见 [`examples/`](examples/) 目录。

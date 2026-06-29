@@ -169,7 +169,7 @@ pipeline.add(TTS(
     language="zh",
 ))
 
-result = pipeline.run(text="你好，欢迎使用 Mosaic 框架！")
+result = pipeline.run({"text": "你好，欢迎使用 Mosaic 框架！"})
 audio = result.get("audio")
 audio.save("hello.wav")
 print(f"已生成音频: {audio.duration:.2f} 秒, {audio.sample_rate} Hz")
@@ -211,14 +211,14 @@ wan = WanVideo(
     enable_vae_tiling=True,
 )
 
-result = wan.run(
-    prompt="a cat walking on the beach, sunset",
-    num_frames=81,   # 约 5 秒 @ 16fps
-    fps=16,
-)
+result = wan.run({
+    "prompt": "a cat walking on the beach, sunset",
+    "num_frames": 81,   # 约 5 秒 @ 16fps
+    "fps": 16,
+})
 
-result.video.save("cat_walk.mp4")
-print(f"已生成视频: {result.num_frames} 帧, {result.duration:.2f} 秒")
+video = result.get("video")  # VideoData 对象
+print(f"已生成视频: {result.get('num_frames')} 帧, {result.get('duration'):.2f} 秒")
 ```
 
 **预期输出**
@@ -314,7 +314,8 @@ TTS 节点本身是一个**路由器**，真正执行合成的是后端实例。
 from mosaic.nodes.audio import TTS
 
 tts = TTS(backend="chattts")   # 后端：chattts / fish / sovits / cosyvoice / edge_tts
-audio = tts.run(text="你好", language="zh")
+result = tts.run({"text": "你好", "language": "zh"})
+audio = result.get("audio")  # AudioData 对象
 ```
 
 详见 [TTS 完整指南](tts-guide.md)。

@@ -122,16 +122,16 @@ wan = WanVideo(
     enable_vae_tiling=True,
 )
 
-result = wan.run(
-    prompt="一只猫在海滩上散步，夕阳西下，海浪轻拍",
-    num_frames=81,         # 约 5 秒 @ 16fps
-    fps=16,
-    num_inference_steps=30,
-    guidance_scale=5.0,
-)
+result = wan.run({
+    "prompt": "一只猫在海滩上散步，夕阳西下，海浪轻拍",
+    "num_frames": 81,         # 约 5 秒 @ 16fps
+    "fps": 16,
+    "num_inference_steps": 30,
+    "guidance_scale": 5.0,
+})
 
-result.video.save("cat_walk.mp4")
-print(f"已生成 {result.num_frames} 帧视频，时长 {result.duration:.2f}s")
+result.get("video").save("cat_walk.mp4")
+print(f"已生成 {result.get('num_frames')} 帧视频，时长 {result.get('duration'):.2f}s")
 ```
 
 **轻量版（8GB 显存）**：
@@ -152,14 +152,14 @@ hv = HunyuanVideo(
     enable_chunking=True,       # HunyuanVideo 专属 VAE 分块
 )
 
-result = hv.run(
-    prompt="A dancing robot in the neon city",
-    num_frames=129,    # 约 5 秒 @ 24fps
-    fps=24,
-    num_inference_steps=30,
-    guidance_scale=7.5,
-)
-result.video.save("robot_dance.mp4")
+result = hv.run({
+    "prompt": "A dancing robot in the neon city",
+    "num_frames": 129,    # 约 5 秒 @ 24fps
+    "fps": 24,
+    "num_inference_steps": 30,
+    "guidance_scale": 7.5,
+})
+result.get("video").save("robot_dance.mp4")
 ```
 
 ### 3. LTX-Video（轻量快速）
@@ -173,14 +173,14 @@ ltx = LTXVideo(
     enable_vae_tiling=True,
 )
 
-result = ltx.run(
-    prompt="A car driving on a mountain road at sunset",
-    num_frames=97,     # 约 3 秒 @ 30fps
-    fps=30,
-    num_inference_steps=20,
-    guidance_scale=3.0,
-)
-result.video.save("car_drive.mp4")
+result = ltx.run({
+    "prompt": "A car driving on a mountain road at sunset",
+    "num_frames": 97,     # 约 3 秒 @ 30fps
+    "fps": 30,
+    "num_inference_steps": 20,
+    "guidance_scale": 3.0,
+})
+result.get("video").save("car_drive.mp4")
 ```
 
 ### 4. CogVideoX（中等显存）
@@ -194,12 +194,12 @@ t2v = TextToVideo(
 )
 
 # CogVideoX 必须 num_frames=49 或 85
-result = t2v.run(
-    prompt="阳光下的向日葵花田",
-    num_frames=49,     # 自动调整
-    fps=8,
-)
-result.video.save("sunflower.mp4")
+result = t2v.run({
+    "prompt": "阳光下的向日葵花田",
+    "num_frames": 49,     # 自动调整
+    "fps": 8,
+})
+result.get("video").save("sunflower.mp4")
 ```
 
 ### 5. SVD 图生视频
@@ -211,13 +211,13 @@ from PIL import Image
 i2v = ImageToVideo(model="stabilityai/stable-video-diffusion-img2vid-xt")
 input_image = Image.open("input.jpg")
 
-result = i2v.run(
-    image=input_image,
-    num_frames=25,         # SVD 支持 14-25 帧
-    fps=7,
-    motion_bucket_id=127,  # 0-255，值越大运动越剧烈
-)
-result.video.save("animated.mp4")
+result = i2v.run({
+    "image": input_image,
+    "num_frames": 25,         # SVD 支持 14-25 帧
+    "fps": 7,
+    "motion_bucket_id": 127,  # 0-255，值越大运动越剧烈
+})
+result.get("video").save("animated.mp4")
 ```
 
 ---
@@ -344,7 +344,7 @@ WanVideo(enable_sequential_cpu_offload=True)
 
 # 策略 4: 减少 num_frames
 WanVideo()
-# run(num_frames=49)  # 49 帧比 81 帧省 40% 显存
+# run({"num_frames": 49})  # 49 帧比 81 帧省 40% 显存
 ```
 
 ### 6. 长视频生成
@@ -355,17 +355,17 @@ WanVideo()
 # 方法 1: 多段拼接
 chunks = []
 for i in range(4):
-    result = wan.run(
-        prompt=f"一段连续动作的第 {i+1} 段",
-        num_frames=81,
-        seed=42 + i,  # 不同 seed 但保持风格
-    )
-    chunks.append(result.video)
+    result = wan.run({
+        "prompt": f"一段连续动作的第 {i+1} 段",
+        "num_frames": 81,
+        "seed": 42 + i,  # 不同 seed 但保持风格
+    })
+    chunks.append(result.get("video"))
 
 # 方法 2: 视频续写
 from mosaic.nodes.video import VideoContinuation
 vc = VideoContinuation(model="THUDM/CogVideoX-5b")
-extended = vc.run(video=chunks[0], num_frames=49)
+extended = vc.run({"video": chunks[0], "num_frames": 49})
 ```
 
 ### 7. 与其他节点组合
@@ -424,10 +424,10 @@ WanVideo(enable_cpu_offload=True, enable_vae_tiling=True)
 WanVideo(model="Wan-AI/Wan2.1-T2V-1.3B-Diffusers")  # 8GB vs 30GB
 
 # 3. 减少帧数
-result = wan.run(prompt="...", num_frames=49)  # 81 → 49 省 40%
+result = wan.run({"prompt": "...", "num_frames": 49})  # 81 → 49 省 40%
 
 # 4. 减少分辨率
-result = wan.run(prompt="...", width=832, height=480)  # 1280x720 → 832x480
+result = wan.run({"prompt": "...", "width": 832, "height": 480})  # 1280x720 → 832x480
 
 # 5. 启用顺序 CPU offload（最慢但最省）
 WanVideo(enable_sequential_cpu_offload=True)
@@ -437,10 +437,10 @@ WanVideo(enable_sequential_cpu_offload=True)
 
 ```python
 # 1. 增加步数
-result = wan.run(prompt="...", num_inference_steps=50)
+result = wan.run({"prompt": "...", "num_inference_steps": 50})
 
 # 2. 调整 guidance_scale
-result = wan.run(prompt="...", guidance_scale=7.5)  # 适当提高
+result = wan.run({"prompt": "...", "guidance_scale": 7.5})  # 适当提高
 
 # 3. 使用更详细的 prompt
 prompt = """
@@ -448,7 +448,7 @@ A young woman with long black hair, walking through
 a field of sunflowers, golden hour lighting, 
 photorealistic, 8K, cinematic depth of field
 """
-result = wan.run(prompt=prompt)
+result = wan.run({"prompt": prompt})
 ```
 
 ### Q5: T5 tokenizer 错误
@@ -488,10 +488,10 @@ HunyuanVideo 模型较大（13B），首次加载需要：
 
 ```python
 # 减少步数（质量略降）
-result = wan.run(prompt="...", num_inference_steps=15)  # 减半时间
+result = wan.run({"prompt": "...", "num_inference_steps": 15})  # 减半时间
 
 # 减少帧数
-result = wan.run(prompt="...", num_frames=49)  # 省 40% 时间
+result = wan.run({"prompt": "...", "num_frames": 49})  # 省 40% 时间
 ```
 
 ---

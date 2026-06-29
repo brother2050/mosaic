@@ -36,7 +36,7 @@ pipeline = Pipeline([
 ])
 
 # 运行
-result = pipeline.run(prompt="画一只在月球上骑车的熊猫")
+result = pipeline.run({"prompt": "画一只在月球上骑车的熊猫"})
 print(result.get("image"))  # ImageData
 ```
 
@@ -114,7 +114,7 @@ pipeline.add(Branch([
 # 三路输出合并为一个 MosaicData
 pipeline.add(Merge())
 
-result = pipeline.run(text="一段文本")
+result = pipeline.run({"text": "一段文本"})
 print(result.get("image"))    # ImageData
 print(result.get("audio"))    # AudioData
 print(result.get("subtitle")) # SubtitleData
@@ -157,7 +157,7 @@ pipeline.add(Branch([
 pipeline.add(Merge())
 
 # 根据 input.mode 选择不同路径
-result = pipeline.run(text="hello", mode="image")
+result = pipeline.run({"text": "hello", "mode": "image"})
 # 仅执行 TextToImage
 ```
 
@@ -198,7 +198,7 @@ pipeline = Pipeline([
 ])
 
 pipeline.on(EventType.INTERMEDIATE, log_intermediate)
-result = pipeline.run(prompt="...")
+result = pipeline.run({"prompt": "..."})
 ```
 
 ### 方式 3：dry_run 验证
@@ -281,7 +281,7 @@ task.cancel()
 `Pipeline.run()` 返回 `PipelineResult`：
 
 ```python
-result = pipeline.run(prompt="...")
+result = pipeline.run({"prompt": "..."})
 
 # 节点输出（按节点名）
 result.get("text")           # MosaicData
@@ -301,7 +301,7 @@ text_data: MosaicData = result.get("text", default=MosaicData())
 ### 错误处理
 
 ```python
-result = pipeline.run(prompt="...")
+result = pipeline.run({"prompt": "..."})
 
 if not result.ok:
     for err in result.errors:
@@ -338,7 +338,7 @@ pipe = (
     | VideoEncoder(output_path="output.mp4", fps=8)
 )
 
-result = pipe.run(prompt="A panda riding a bicycle on the moon")
+result = pipe.run({"prompt": "A panda riding a bicycle on the moon"})
 print(f"视频已保存: output.mp4")
 ```
 
@@ -356,10 +356,10 @@ pipe = (
     | LipSyncer()               # 口型同步
 )
 
-result = pipe.run(
-    prompt="a friendly digital assistant",
-    text="你好，我是数字人助手。",
-)
+result = pipe.run({
+    "prompt": "a friendly digital assistant",
+    "text": "你好，我是数字人助手。",
+})
 ```
 
 ### 示例 3：文档 → RAG → 回答
@@ -376,11 +376,11 @@ pipe = (
     | CitationGenerator()
 )
 
-result = pipe.run(
-    file_path="manual.pdf",
-    query="如何使用 Mosaic 的 Pipeline？",
-    index_path="./index",
-)
+result = pipe.run({
+    "file_path": "manual.pdf",
+    "query": "如何使用 Mosaic 的 Pipeline？",
+    "index_path": "./index",
+})
 print(result.get("answer"))  # 带引用的答案
 ```
 
@@ -400,10 +400,10 @@ pipe = (
     | VideoEncoder(output_path="video.mp4", fps=24)
 )
 
-result = pipe.run(
-    prompt="A scenic mountain view",
-    text="远处的山峰在云雾中若隐若现",
-)
+result = pipe.run({
+    "prompt": "A scenic mountain view",
+    "text": "远处的山峰在云雾中若隐若现",
+})
 ```
 
 ### 示例 5：并行处理图像和音频
@@ -423,7 +423,7 @@ pipe = Pipeline([
     Merge(strategy="concat"),
 ])
 
-result = pipe.run(text="A poetic description of autumn")
+result = pipe.run({"text": "A poetic description of autumn"})
 # 同时得到 image, audio, subtitle
 ```
 
@@ -513,7 +513,7 @@ text_node.load()  # 立即加载
 
 # 后续管道运行更快
 pipe = Pipeline([text_node, TextToImage()])
-result = pipe.run(prompt="...")
+result = pipe.run({"prompt": "..."})
 ```
 
 ### 4. 缓存与持久化
@@ -538,7 +538,7 @@ def tts_with_cache(text):
     cache_path = f"./tts_cache/{key}.wav"
     if os.path.exists(cache_path):
         return AudioData.load(cache_path)
-    audio = TTS(backend="chattts").run(text=text).get("audio")
+    audio = TTS(backend="chattts").run({"text": text}).get("audio")
     audio.save(cache_path)
     return audio
 ```
@@ -550,7 +550,7 @@ import asyncio
 
 async def stream_video_pipeline():
     pipe = Pipeline([
-        TTS(backend="chattts", streaming=True),
+        TTS(backend="chattts"),
         SubtitleGenerator(),
     ])
 

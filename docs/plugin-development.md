@@ -756,7 +756,7 @@ TTS.register_backend("espeak", EspeakBackend)
 from mosaic.nodes.audio import TTS
 
 tts = TTS(backend="espeak", voice="zh")
-audio = tts.run(text="你好世界", language="zh")
+audio = tts.run({"text": "你好世界", "language": "zh"}).get("audio")
 audio.save("hello.wav")
 ```
 
