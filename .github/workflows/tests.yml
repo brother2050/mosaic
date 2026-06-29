@@ -1,0 +1,63 @@
+# .github/workflows/tests.yml — Mosaic CI 测试
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Cache pip dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ matrix.python-version }}-${{ hashFiles('setup.cfg', 'pyproject.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-${{ matrix.python-version }}-
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Phase 1 — 框架核心 + 文本域
+        run: pytest tests/phase1/ -v --tb=short
+
+      - name: Phase 2 — 图像域
+        run: pytest tests/phase2/ -v --tb=short
+
+      - name: Phase 3 — 音频域 + 字幕域
+        run: pytest tests/phase3/ -v --tb=short
+
+      - name: Phase 4 — 视频域 + 导出域
+        run: pytest tests/phase4/ -v --tb=short
+
+      - name: Phase 5 — RAG 域
+        run: pytest tests/phase5/ -v --tb=short
+
+      - name: Phase 6 — 一致性域
+        run: pytest tests/phase6/ -v --tb=short
+
+      - name: Phase 7 — 数字人域
+        run: pytest tests/phase7/ -v --tb=short
+
+      - name: TTS 扩展
+        run: pytest tests/tts/ -v --tb=short
+
+      - name: Final — 最终验收
+        run: pytest tests/final/ -v --tb=short

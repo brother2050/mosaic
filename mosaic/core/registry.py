@@ -244,8 +244,13 @@ class NodeRegistry:
                 module, inspect.isclass
             ):
                 # 仅注册在本模块中定义的、Node 的具体子类
+                try:
+                    is_node_subclass = issubclass(attr_value, Node)
+                except TypeError:
+                    # attr_value 不是合法的类（例如 typing 特殊类型）
+                    continue
                 if (
-                    issubclass(attr_value, Node)
+                    is_node_subclass
                     and not inspect.isabstract(attr_value)
                     and attr_value.__module__ == mod_name
                 ):

@@ -1,30 +1,49 @@
+# .gitignore — Mosaic 项目
 # Python
 __pycache__/
 *.py[cod]
+*.so
+*.egg
 *.egg-info/
 dist/
 build/
-*.egg
+.eggs/
 
-# Virtual environments
-.venv/
+# 测试
+.pytest_cache/
+.tox/
+.coverage
+htmlcov/
+
+# 虚拟环境
 venv/
+.venv/
 env/
 
-# IDE
-.idea/
-.vscode/
-*.swp
-*.swo
-
-# OS
-.DS_Store
-Thumbs.db
-
-# Mosaic
+# 模型权重（不入版本控制）
 *.safetensors
 *.bin
 *.pt
 *.pth
 *.ckpt
-models/
+models/cache/
+checkpoints/
+
+# 环境变量
+.env
+.env.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# 系统文件
+.DS_Store
+Thumbs.db
+
+# 临时文件
+*.log
+tmp/
+temp/
