@@ -274,6 +274,15 @@ def _register_builtin_backends() -> None:
     except Exception:
         pass  # 依赖不可用时静默跳过
 
+    try:
+        from mosaic.nodes.audio.tts_backends.implementations.fish_backend import (
+            FishSpeechBackend,
+        )
+
+        tts_backend_registry.register("fish", FishSpeechBackend)
+    except Exception:
+        pass  # 依赖不可用时静默跳过
+
 
 # 不在模块加载时注册，而是在首次使用时延迟注册
 _backends_registered = False
