@@ -42,6 +42,19 @@ _VRAM_ESTIMATES: dict[str, float] = {
     "stabilityai/stable-video-diffusion-img2vid": 10.0,
     "stabilityai/stable-video-diffusion-img2vid-xt": 12.0,
     "ali-vilab/i2vgen-xl": 16.0,
+    # Wan2.1 系列
+    "Wan-AI/Wan2.1-T2V-14B-Diffusers": 30.0,
+    "Wan-AI/Wan2.1-T2V-1.3B-Diffusers": 8.0,
+    "Wan-AI/Wan2.1-T2V-14B": 30.0,
+    "Wan-AI/Wan2.1-T2V-1.3B": 8.0,
+    # Wan2.2 系列
+    "Wan-AI/Wan2.2-T2V-A14B-Diffusers": 30.0,
+    "Wan-AI/Wan2.2-T2V-A14B": 30.0,
+    # HunyuanVideo
+    "tencent/HunyuanVideo": 60.0,
+    # LTX-Video
+    "Lightricks/LTX-Video": 12.0,
+    "Lightricks/LTX-Video-13B": 30.0,
 }
 
 # 许可证信息
@@ -51,6 +64,18 @@ _LICENSE_INFO: dict[str, str] = {
     "stabilityai/stable-video-diffusion-img2vid": "Stability AI Community License",
     "stabilityai/stable-video-diffusion-img2vid-xt": "Stability AI Community License",
     "ali-vilab/i2vgen-xl": "Tongyi Lab License",
+    # Wan2.1 / Wan2.2 系列：Apache 2.0
+    "Wan-AI/Wan2.1-T2V-14B-Diffusers": "Apache 2.0",
+    "Wan-AI/Wan2.1-T2V-1.3B-Diffusers": "Apache 2.0",
+    "Wan-AI/Wan2.1-T2V-14B": "Apache 2.0",
+    "Wan-AI/Wan2.1-T2V-1.3B": "Apache 2.0",
+    "Wan-AI/Wan2.2-T2V-A14B-Diffusers": "Apache 2.0",
+    "Wan-AI/Wan2.2-T2V-A14B": "Apache 2.0",
+    # HunyuanVideo：Tencent License
+    "tencent/HunyuanVideo": "Tencent Hunyuan Video License",
+    # LTX-Video：OpenRAIL-M
+    "Lightricks/LTX-Video": "OpenRAIL-M License",
+    "Lightricks/LTX-Video-13B": "OpenRAIL-M License",
 }
 
 

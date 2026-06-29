@@ -107,6 +107,12 @@ def _inject_mock_diffusers():
         dm.CogVideoXPipeline.from_pretrained = MagicMock()
         dm.StableVideoDiffusionPipeline = MagicMock()
         dm.StableVideoDiffusionPipeline.from_pretrained = MagicMock()
+        dm.WanPipeline = MagicMock()
+        dm.WanPipeline.from_pretrained = MagicMock()
+        dm.HunyuanVideoPipeline = MagicMock()
+        dm.HunyuanVideoPipeline.from_pretrained = MagicMock()
+        dm.LTXPipeline = MagicMock()
+        dm.LTXPipeline.from_pretrained = MagicMock()
         sys.modules["diffusers"] = dm
     else:
         dm = sys.modules["diffusers"]
@@ -116,6 +122,15 @@ def _inject_mock_diffusers():
         if not hasattr(dm, "StableVideoDiffusionPipeline"):
             dm.StableVideoDiffusionPipeline = MagicMock()
             dm.StableVideoDiffusionPipeline.from_pretrained = MagicMock()
+        if not hasattr(dm, "WanPipeline"):
+            dm.WanPipeline = MagicMock()
+            dm.WanPipeline.from_pretrained = MagicMock()
+        if not hasattr(dm, "HunyuanVideoPipeline"):
+            dm.HunyuanVideoPipeline = MagicMock()
+            dm.HunyuanVideoPipeline.from_pretrained = MagicMock()
+        if not hasattr(dm, "LTXPipeline"):
+            dm.LTXPipeline = MagicMock()
+            dm.LTXPipeline.from_pretrained = MagicMock()
 
 
 def _inject_mock_imageio_ffmpeg():
