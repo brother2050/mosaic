@@ -1,0 +1,1070 @@
+# mosaic/nodes/audio/tts_backends/implementations/sovits_backend.py
+"""GPT-SoVITS 后端实现。
+
+将 GPT-SoVITS 的三层组件组装为统一的 :class:`TTSBackend`，提供阻塞合成与
+流式合成能力。GPT-SoVITS 采用「音素级 G2P → GPT-2 自回归声学模型 →
+SoVITS 解码器（SemanticEncoder + Normalizing Flow + 条件 HiFi-GAN）」的管线，
+输出 32kHz 单声道波形。
+
+三层组装
+--------
+* Layer 1 — :class:`SoVITSTokenizer`：音素级文本前端（中文拼音 G2P、英文
+  ARPAbet、语言标记插入、停顿标记）。
+* Layer 2 — :class:`GPT2ARModel`：基于 GPT-2 的自回归声学模型，文本音素
+  token → 语义 token（SSL 码本 index）。双路径 Embedding（text + semantic）。
+* Layer 3 — :class:`SoVITSDecoder`：SoVITS 解码器（SemanticEncoder +
+  PriorEncoder + Normalizing Flow + ConditionalHiFiGANDecoder），
+  语义 token → 波形。
+* Layer 4 — :class:`StreamAdapter`：流式缓冲与 chunk 切分。
+
+与 ChatTTS / Fish 后端的差异
+-----------------------------
+* **采样率**：GPT-SoVITS 使用 32000Hz（ChatTTS 24000Hz，Fish 22050Hz）。
+* **声学模型**：GPT-2 架构（ChatTTS / Fish 使用 LLaMA 架构）。
+* **声码器**：SoVITS 解码器含 Normalizing Flow（ChatTTS 使用 DVAE+Vocos，
+  Fish 使用 VQDecoder+HiFi-GAN）。
+* **语音克隆**：通过参考音频的 SSL 语义 token 实现（ChatTTS 通过种子生成
+  嵌入，Fish 通过 codec tokens 拼接）。
+* **语言支持**：中、英、日、韩、粤语（支持粤语）。
+* **许可证**：MIT（ChatTTS 为 CC BY-NC 4.0，Fish 为 Apache-2.0）。
+
+目录结构约定
+------------
+::
+
+    model_path/
+    ├── gpt/
+    │   ├── config.json          # GPT-2 配置
+    │   ├── model.safetensors    # GPT 权重
+    │   └── vocab.json           # 音素词表
+    ├── sovits/
+    │   ├── config.json          # SoVITS 配置
+    │   ├── model.safetensors    # SoVITS 权重
+    │   └── ssl/                 # SSL 模型（可选）
+    └── speaker/
+        ├── embeddings.json      # 预计算的说话人嵌入
+        └── reference/           # 参考音频目录
+
+设计要点
+--------
+* ``torch`` / ``transformers`` / ``safetensors`` 等重依赖采用惰性导入。
+* 三层组件均在 :meth:`_build_pipeline` 内部延迟导入。
+* 参考音频的 SSL 编码是最耗时的预处理步骤，结果缓存在 ``_speaker_cache``。
+* GPT 生成的语义 token 需经过 SoVITS 解码，两个阶段的延迟不同。
+* 流式时建议 chunk 至少 16 个语义 token（SoVITS Flow 逆变换需要足够长度）。
+"""
+
+from __future__ import annotations
+
+import json
+import os
+from collections.abc import Iterator
+from typing import Any
+
+from mosaic.core.types import AudioData
+from mosaic.nodes.audio.tts_backends.base import TTSBackend, TTSBackendSpec
+
+__all__ = ["GPTSoVITSBackend"]
+
+
+class GPTSoVITSBackend(TTSBackend):
+    """GPT-SoVITS TTS 后端。
+
+    将 GPT-SoVITS 的文本前端（:class:`SoVITSTokenizer`）、声学模型
+    （:class:`GPT2ARModel`）、SoVITS 解码器（:class:`SoVITSDecoder`）与
+    流式适配器（:class:`StreamAdapter`）组装为统一的 :class:`TTSBackend`，
+    支持中英日韩粤语阻塞合成与流式合成，并通过参考音频实现零样本语音克隆。
+
+    生命周期
+    --------
+    1. 构造后端实例（``is_loaded=False``）。
+    2. 调用 :meth:`load` 加载三层管线（``is_loaded=True``）。
+    3. 调用 :meth:`synthesize` / :meth:`synthesize_stream` 合成语音。
+    4. 调用 :meth:`unload` 释放资源。
+
+    Examples
+    --------
+    >>> backend = GPTSoVITSBackend(model_path="/data/gpt_sovits")
+    >>> backend.load(device="cuda", dtype="float16")
+    >>> audio = backend.synthesize("你好，世界", speaker=None, language="zh")
+
+    Notes
+    -----
+    GPT-SoVITS 模型遵循 **MIT** 许可。输出采样率为 32000Hz。
+    """
+
+    name: str = "sovits"
+    spec: TTSBackendSpec = TTSBackendSpec(
+        name="sovits",
+        supported_languages=["zh", "en", "ja", "ko", "yue"],
+        supports_streaming=True,
+        supports_voice_clone=True,
+        vocoder_type="sovits_decoder",
+        acoustic_type="ar",
+        min_gpu_memory_gb=4.0,
+        model_license="MIT",
+        sample_rate=32000,
+        default_params={
+            "temperature": 0.6,
+            "top_p": 0.8,
+            "top_k": 30,
+            "repetition_penalty": 1.35,
+            "max_new_tokens": 1024,
+            "speed": 1.0,
+        },
+    )
+
+    def __init__(
+        self,
+        model_path: str,
+        gpt_path: str | None = None,
+        sovits_path: str | None = None,
+        ssl_model: str = "chinese-hubert-base",
+        speaker_encoder_model: str = "default",
+        language: str = "zh",
+        streaming_enabled: bool = True,
+        scheduler: Any = None,
+    ) -> None:
+        """初始化 GPT-SoVITS 后端。
+
+        Parameters
+        ----------
+        model_path : str
+            GPT-SoVITS 模型根路径（包含 ``gpt/`` 和 ``sovits/`` 子目录）。
+        gpt_path : str | None
+            GPT 模型单独路径；``None`` 时使用 ``model_path/gpt/``。
+        sovits_path : str | None
+            SoVITS 模型单独路径；``None`` 时使用 ``model_path/sovits/``。
+        ssl_model : str
+            SSL 模型名称或路径，默认 ``"chinese-hubert-base"``。
+        speaker_encoder_model : str
+            说话人编码器名称，默认 ``"default"``。
+        language : str
+            默认语言代码。
+        streaming_enabled : bool
+            是否启用流式合成。
+        scheduler : Any
+            显存调度器实例。
+        """
+        super().__init__(scheduler=scheduler)
+
+        self._model_path: str = model_path
+        self._gpt_path: str = gpt_path or os.path.join(model_path, "gpt")
+        self._sovits_path: str = sovits_path or os.path.join(
+            model_path, "sovits"
+        )
+        self._ssl_model_name: str = ssl_model
+        self._speaker_encoder_model: str = speaker_encoder_model
+        self._language: str = language
+        self._streaming_enabled: bool = streaming_enabled
+
+        # SSL 模型实例（参考音频编码用）
+        self._ssl_encoder: Any = None
+        # 说话人特征缓存 {name: {"ref_semantic_tokens": ..., "speaker_embedding": ...}}
+        self._speaker_cache: dict[str, dict[str, Any]] = {}
+        # 预计算的说话人嵌入文件路径
+        self._speaker_dir: str = os.path.join(model_path, "speaker")
+
+    # ==================================================================
+    # 生命周期：组装 / 销毁管线
+    # ==================================================================
+    def _build_pipeline(self) -> None:
+        """组装三层管线。
+
+        依次构建并加载：
+
+        1. Layer 1 — :class:`SoVITSTokenizer`（文本前端）
+        2. Layer 2 — :class:`GPT2ARModel`（声学模型）
+        3. Layer 3 — :class:`SoVITSDecoder`（SoVITS 解码器）
+        4. （可选）SSL 模型（参考音频编码用）
+        5. Layer 4 — :class:`StreamAdapter`（流式适配，按需构建）
+        6. 加载预计算的说话人嵌入（如果有）
+
+        所有组件均在此方法内部延迟导入，避免模块加载阶段的硬依赖。
+        """
+        from mosaic.nodes.audio.tts_backends.acoustic_models.gpt2_ar import (
+            GPT2ARModel,
+        )
+        from mosaic.nodes.audio.tts_backends.streaming.base import StreamAdapter
+        from mosaic.nodes.audio.tts_backends.text_frontends.sovits_tokenizer import (
+            SoVITSTokenizer,
+        )
+        from mosaic.nodes.audio.tts_backends.vocoders.sovits_decoder import (
+            SoVITSDecoder,
+        )
+
+        # ------------------------------------------------------------------
+        # Layer 1: 文本前端 —— SoVITSTokenizer
+        # ------------------------------------------------------------------
+        vocab_path = os.path.join(self._gpt_path, "vocab.json")
+        if not os.path.exists(vocab_path):
+            vocab_path = ""
+        self._text_frontend = SoVITSTokenizer(
+            vocab_path=vocab_path,
+            language=self._language,
+        )
+
+        # ------------------------------------------------------------------
+        # Layer 2: 声学模型 —— GPT2ARModel
+        # ------------------------------------------------------------------
+        self._acoustic_model = GPT2ARModel(
+            model_path=self._gpt_path,
+            vocab_size=self._text_frontend.vocab_size,
+            semantic_vocab_size=768,  # SSL 码本大小
+        )
+        self._acoustic_model.load_weights(
+            weights_path=self._gpt_path,
+            device=self._device,
+            dtype=self._dtype,
+        )
+
+        # ------------------------------------------------------------------
+        # Layer 3: SoVITS 解码器 —— 语义 token → 波形
+        # ------------------------------------------------------------------
+        self._vocoder = SoVITSDecoder(
+            model_path=self._sovits_path,
+            ssl_vocab_size=768,
+            hidden_size=192,
+            sample_rate=self.spec.sample_rate,
+        )
+        self._vocoder.load_weights(
+            weights_path=self._sovits_path,
+            device=self._device,
+            dtype=self._dtype,
+        )
+
+        # ------------------------------------------------------------------
+        # （可选）SSL 模型 —— 参考音频编码
+        # ------------------------------------------------------------------
+        self._load_ssl_model()
+
+        # ------------------------------------------------------------------
+        # Layer 4: 流式适配器 —— 按需构建
+        # ------------------------------------------------------------------
+        if self._streaming_enabled:
+            self._stream_adapter = StreamAdapter(
+                chunk_size=4096,
+                overlap=256,
+                sample_rate=self.spec.sample_rate,
+            )
+
+        # ------------------------------------------------------------------
+        # 加载预计算的说话人嵌入
+        # ------------------------------------------------------------------
+        self._load_speaker_cache()
+
+    def _destroy_pipeline(self) -> None:
+        """销毁三层管线并释放资源。"""
+        super()._destroy_pipeline()
+
+        # 释放 SSL 模型
+        if self._ssl_encoder is not None:
+            unload = getattr(self._ssl_encoder, "unload_weights", None)
+            if callable(unload):
+                try:
+                    unload()
+                except Exception as exc:  # noqa: BLE001
+                    self._logger.debug(
+                        "Error unloading SSL encoder: %s", exc
+                    )
+        self._ssl_encoder = None
+        self._speaker_cache.clear()
+
+    def _load_ssl_model(self) -> None:
+        """加载 SSL 模型用于参考音频编码。
+
+        尝试通过 transformers 加载 HuBERT/Wav2Vec2 模型。如果加载失败，
+        语音克隆功能将不可用（但普通合成不受影响）。
+        """
+        ssl_dir = os.path.join(self._sovits_path, "ssl")
+        ssl_path = ssl_dir if os.path.isdir(ssl_dir) else self._ssl_model_name
+
+        try:
+            import torch  # type: ignore  # noqa: F401
+            from transformers import (  # type: ignore
+                AutoModel,
+                AutoFeatureExtractor,
+            )
+
+            self._ssl_encoder = {
+                "model": AutoModel.from_pretrained(ssl_path),
+                "extractor": AutoFeatureExtractor.from_pretrained(ssl_path),
+            }
+            self._logger.info(
+                "SSL model loaded from %s for reference audio encoding.",
+                ssl_path,
+            )
+        except Exception as exc:  # noqa: BLE001
+            self._logger.warning(
+                "Failed to load SSL model from %s: %s. "
+                "Voice clone will be unavailable.",
+                ssl_path,
+                exc,
+            )
+            self._ssl_encoder = None
+
+    def _load_speaker_cache(self) -> None:
+        """加载预计算的说话人嵌入。"""
+        embeddings_path = os.path.join(self._speaker_dir, "embeddings.json")
+        if not os.path.isfile(embeddings_path):
+            return
+        try:
+            with open(embeddings_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            if isinstance(data, dict):
+                self._speaker_cache = data
+                self._logger.info(
+                    "Loaded %d pre-computed speaker embeddings.",
+                    len(self._speaker_cache),
+                )
+        except Exception as exc:  # noqa: BLE001
+            self._logger.debug("Failed to load speaker cache: %s", exc)
+
+    # ==================================================================
+    # 核心合成
+    # ==================================================================
+    def synthesize(
+        self,
+        text: str,
+        speaker: str | None = None,
+        language: str = "zh",
+        speed: float = 1.0,
+        **kwargs: Any,
+    ) -> AudioData:
+        """阻塞式合成完整语音。
+
+        完整流程：
+
+        1. 检查 ``is_loaded``。
+        2. 文本校验。
+        3. 参考音频处理（如果有 speaker）：
+           a. 加载参考音频
+           b. SSL_Encoder(ref_audio) → ref_semantic_tokens
+           c. SpeakerEncoder(ref_audio) → speaker_embedding
+        4. SoVITSTokenizer.preprocess(text)
+        5. phoneme_ids = SoVITSTokenizer.tokenize(text, language)
+        6. 构造 speaker_info = {"ref_semantic_tokens": ..., "speaker_embedding": ...}
+        7. semantic_tokens = GPT2ARModel.generate(phoneme_ids, speaker_info, ...)
+        8. SoVITSDecoder.set_reference(ref_features, speaker_embedding)
+        9. waveform = SoVITSDecoder.decode(semantic_tokens)
+        10. 如果 speed != 1.0，做时间拉伸处理
+        11. 返回 AudioData(waveform, sample_rate=32000)
+
+        Parameters
+        ----------
+        text : str
+            待合成文本。
+        speaker : str | None
+            说话人名称或参考音频路径；``None`` 使用默认音色。
+        language : str
+            语言代码（``"zh"`` / ``"en"`` / ``"ja"`` / ``"ko"`` / ``"yue"``）。
+        speed : float
+            语速倍率，``1.0`` 为正常语速。
+        **kwargs : Any
+            额外参数，透传给声学模型（``temperature`` / ``top_p`` /
+            ``top_k`` / ``max_new_tokens`` 等）。
+
+        Returns
+        -------
+        AudioData
+            合成结果，``metadata`` 含 ``backend``/``text``/``speaker``
+            /``language``/``speed``/``duration``/``sample_rate``/``streaming``。
+
+        Raises
+        ------
+        RuntimeError
+            后端未加载。
+        ValueError
+            文本为空。
+        """
+        self._ensure_loaded()
+        if not isinstance(text, str) or not text.strip():
+            raise ValueError("synthesize requires a non-empty 'text' string.")
+
+        self._logger.info(
+            "synthesize: backend=%s language=%s speaker=%s speed=%.2f text_len=%d",
+            self.name,
+            language,
+            speaker,
+            speed,
+            len(text),
+        )
+
+        # 3. 参考音频处理
+        speaker_info = self._get_speaker_info(speaker)
+
+        # 4-5. 文本前端处理
+        processed = self._text_frontend.preprocess(text)
+        token_ids = self._text_frontend.tokenize(processed, language=language)
+
+        # 6. 合并推理参数
+        params: dict[str, Any] = dict(self.spec.default_params)
+        params.update(kwargs)
+
+        # 7. 声学模型生成 —— semantic_tokens
+        semantic_tokens = self._acoustic_model.generate(
+            token_ids,
+            speaker_embedding=speaker_info,
+            **params,
+        )
+
+        # 8. 设置参考特征到 SoVITS 解码器
+        if speaker_info and speaker_info.get("ref_semantic_tokens") is not None:
+            self._vocoder.set_reference(
+                speaker_info["ref_semantic_tokens"],
+                speaker_info.get("speaker_embedding"),
+            )
+
+        # 9. 解码 —— semantic_tokens → waveform
+        waveform, sample_rate = self._decode_full(semantic_tokens)
+
+        # 10. 语速调整
+        if speed != 1.0 and speed > 0:
+            waveform = self._adjust_speed(waveform, speed)
+
+        # 11. 构造 AudioData
+        duration = self._compute_duration(waveform, sample_rate)
+        metadata: dict[str, Any] = {
+            "backend": self.name,
+            "text": text,
+            "speaker": speaker,
+            "language": language,
+            "speed": speed,
+            "duration": duration,
+            "sample_rate": sample_rate,
+            "streaming": False,
+        }
+        return AudioData(
+            waveform=waveform,
+            sample_rate=sample_rate,
+            metadata=metadata,
+        )
+
+    def synthesize_stream(
+        self,
+        text: str,
+        speaker: str | None = None,
+        language: str = "zh",
+        speed: float = 1.0,
+        chunk_size: int = 4096,
+        **kwargs: Any,
+    ) -> Iterator[AudioData]:
+        """流式合成语音，逐块 yield :class:`AudioData`。
+
+        流程：
+
+        1. 参考音频处理同 :meth:`synthesize`。
+        2. 文本前端处理同 :meth:`synthesize`。
+        3. 创建 StreamSession。
+        4. GPT2ARModel.generate_stream(phoneme_ids, speaker_info, stream_batch=16)
+           - 每 16 个语义 token yield 一次。
+        5. SoVITSDecoder.decode_chunk(semantic_chunk) → waveform chunk。
+        6. StreamSession.push(waveform_chunk)。
+        7. yield AudioData chunks。
+
+        Parameters
+        ----------
+        text : str
+            待合成文本。
+        speaker : str | None
+            说话人标识。
+        language : str
+            语言代码。
+        speed : float
+            语速倍率。
+        chunk_size : int
+            每个音频块的目标采样数。
+        **kwargs : Any
+            额外参数。
+
+        Yields
+        ------
+        AudioData
+            逐块音频数据，``metadata`` 中 ``streaming=True``。
+        """
+        self._ensure_loaded()
+        if not isinstance(text, str) or not text.strip():
+            raise ValueError(
+                "synthesize_stream requires a non-empty 'text' string."
+            )
+
+        if not self.spec.supports_streaming or self._stream_adapter is None:
+            self._logger.info(
+                "Backend %r streaming disabled; "
+                "falling back to blocking synthesize.",
+                self.name,
+            )
+            yield self.synthesize(
+                text,
+                speaker=speaker,
+                language=language,
+                speed=speed,
+                **kwargs,
+            )
+            return
+
+        self._logger.info(
+            "synthesize_stream: backend=%s language=%s speaker=%s "
+            "speed=%.2f chunk_size=%d text_len=%d",
+            self.name,
+            language,
+            speaker,
+            speed,
+            chunk_size,
+            len(text),
+        )
+
+        # 参考音频处理
+        speaker_info = self._get_speaker_info(speaker)
+
+        # 文本前端处理
+        processed = self._text_frontend.preprocess(text)
+        token_ids = self._text_frontend.tokenize(processed, language=language)
+
+        # 合并推理参数
+        params: dict[str, Any] = dict(self.spec.default_params)
+        params.update(kwargs)
+        params["stream_batch"] = 16  # GPT-SoVITS 建议至少 16 个语义 token
+
+        # 设置参考特征
+        if speaker_info and speaker_info.get("ref_semantic_tokens") is not None:
+            self._vocoder.set_reference(
+                speaker_info["ref_semantic_tokens"],
+                speaker_info.get("speaker_embedding"),
+            )
+
+        # 重置流式解码器状态
+        self._vocoder.reset_stream()
+
+        # 创建流式会话
+        session = self._get_stream_session(chunk_size)
+
+        # 流式生成 → 逐块解码 → 缓冲输出
+        for semantic_chunk in self._acoustic_model.generate_stream(
+            token_ids,
+            speaker_embedding=speaker_info,
+            **params,
+        ):
+            waveform_chunk, _sr = self._decode_chunk(semantic_chunk)
+            self._stream_push(session, waveform_chunk)
+            yield from self._stream_drain(
+                session, text, speaker, language, speed
+            )
+
+        yield from self._stream_finish(
+            session, text, speaker, language, speed
+        )
+
+    # ==================================================================
+    # 语音克隆
+    # ==================================================================
+    def clone_voice(
+        self,
+        audio: AudioData | str,
+        text: str,
+        language: str = "zh",
+        **kwargs: Any,
+    ) -> AudioData:
+        """语音克隆的便捷方法。
+
+        输入参考音频 + 目标文本，合成与参考音频音色相同、内容为目标文本
+        的语音。
+
+        Parameters
+        ----------
+        audio : AudioData | str
+            参考音频。可以是 :class:`AudioData` 实例或音频文件路径。
+        text : str
+            目标文本。
+        language : str
+            语言代码。
+        **kwargs : Any
+            额外参数。
+
+        Returns
+        -------
+        AudioData
+            克隆语音结果。
+        """
+        self._ensure_loaded()
+
+        # 提取参考音频特征
+        speaker_info = self.extract_speaker(audio)
+
+        # 使用提取的特征进行合成
+        return self._synthesize_with_speaker_info(
+            text, speaker_info, language, **kwargs
+        )
+
+    def clone_voice_stream(
+        self,
+        audio: AudioData | str,
+        text: str,
+        language: str = "zh",
+        **kwargs: Any,
+    ) -> Iterator[AudioData]:
+        """流式语音克隆。
+
+        Parameters
+        ----------
+        audio : AudioData | str
+            参考音频。
+        text : str
+            目标文本。
+        language : str
+            语言代码。
+        **kwargs : Any
+            额外参数。
+
+        Yields
+        ------
+        AudioData
+            逐块音频数据。
+        """
+        self._ensure_loaded()
+
+        # 提取参考音频特征
+        speaker_info = self.extract_speaker(audio)
+
+        # 流式合成
+        yield from self._synthesize_stream_with_speaker_info(
+            text, speaker_info, language, **kwargs
+        )
+
+    # ==================================================================
+    # 说话人管理
+    # ==================================================================
+    def list_speakers(self) -> list[str]:
+        """返回预计算的说话人列表。
+
+        GPT-SoVITS 的优势是极少样本克隆，内置音色可能不多。
+
+        Returns
+        -------
+        list[str]
+            已保存的说话人名称列表。
+        """
+        return list(self._speaker_cache.keys())
+
+    def extract_speaker(
+        self, audio: AudioData | str
+    ) -> dict[str, Any]:
+        """从音频中提取说话人特征。
+
+        提取 ``ref_semantic_tokens``（SSL 编码的语义 token）和
+        ``speaker_embedding``（说话人嵌入向量）。可以预计算并缓存，
+        避免每次合成重复计算。
+
+        Parameters
+        ----------
+        audio : AudioData | str
+            参考音频。可以是 :class:`AudioData` 实例或音频文件路径。
+
+        Returns
+        -------
+        dict[str, Any]
+            包含 ``ref_semantic_tokens`` 和 ``speaker_embedding`` 的字典。
+
+        Raises
+        ------
+        RuntimeError
+            SSL 模型未加载。
+        """
+        self._ensure_loaded()
+
+        # 获取波形
+        waveform = self._get_waveform(audio)
+        if waveform is None:
+            return {"ref_semantic_tokens": None, "speaker_embedding": None}
+
+        # SSL 编码 → 语义 token
+        ref_semantic_tokens = self._encode_with_ssl(waveform)
+
+        # 说话人嵌入（简化：使用语义 token 的统计量作为嵌入）
+        speaker_embedding = self._compute_speaker_embedding(ref_semantic_tokens)
+
+        return {
+            "ref_semantic_tokens": ref_semantic_tokens,
+            "speaker_embedding": speaker_embedding,
+        }
+
+    def save_speaker(
+        self, name: str, audio: AudioData | str
+    ) -> None:
+        """提取并保存说话人特征到本地。
+
+        Parameters
+        ----------
+        name : str
+            说话人名称。
+        audio : AudioData | str
+            参考音频。
+        """
+        self._ensure_loaded()
+
+        speaker_info = self.extract_speaker(audio)
+        self._speaker_cache[name] = speaker_info
+
+        # 持久化到文件
+        os.makedirs(self._speaker_dir, exist_ok=True)
+        embeddings_path = os.path.join(self._speaker_dir, "embeddings.json")
+
+        # 将 tensor 转为 list 以便 JSON 序列化
+        serializable: dict[str, Any] = {}
+        for spk_name, info in self._speaker_cache.items():
+            entry: dict[str, Any] = {}
+            for k, v in info.items():
+                if hasattr(v, "tolist"):
+                    entry[k] = v.tolist()
+                elif isinstance(v, list):
+                    entry[k] = v
+                else:
+                    entry[k] = v
+            serializable[spk_name] = entry
+
+        try:
+            with open(embeddings_path, "w", encoding="utf-8") as f:
+                json.dump(serializable, f, ensure_ascii=False, indent=2)
+            self._logger.info(
+                "Saved speaker %r to %s.", name, embeddings_path
+            )
+        except Exception as exc:  # noqa: BLE001
+            self._logger.warning("Failed to save speaker: %s", exc)
+
+    def load_speaker(self, name: str) -> dict[str, Any]:
+        """加载已保存的说话人特征。
+
+        Parameters
+        ----------
+        name : str
+            说话人名称。
+
+        Returns
+        -------
+        dict[str, Any]
+            包含 ``ref_semantic_tokens`` 和 ``speaker_embedding`` 的字典。
+
+        Raises
+        ------
+        KeyError
+            说话人名称不存在。
+        """
+        if name not in self._speaker_cache:
+            raise KeyError(f"Speaker {name!r} not found in cache.")
+        return self._speaker_cache[name]
+
+    # ==================================================================
+    # 依赖检查
+    # ==================================================================
+    @classmethod
+    def check_dependencies(cls) -> bool:
+        """检查运行时依赖是否可用。
+
+        Returns
+        -------
+        bool
+            依赖齐全返回 ``True``，否则 ``False``。
+        """
+        try:
+            import torch  # noqa: F401
+            import transformers  # noqa: F401
+
+            return True
+        except ImportError:
+            return False
+
+    # ==================================================================
+    # 内部辅助
+    # ==================================================================
+    def _get_speaker_info(
+        self, speaker: str | None
+    ) -> dict[str, Any] | None:
+        """获取说话人信息。
+
+        优先从缓存查找；如果是音频路径则实时提取。
+
+        Parameters
+        ----------
+        speaker : str | None
+            说话人名称或参考音频路径。
+
+        Returns
+        -------
+        dict[str, Any] | None
+            包含 ``ref_semantic_tokens`` 和 ``speaker_embedding`` 的字典。
+        """
+        if speaker is None:
+            return None
+
+        # 1. 从缓存查找
+        if speaker in self._speaker_cache:
+            return self._speaker_cache[speaker]
+
+        # 2. 如果是文件路径，实时提取
+        if isinstance(speaker, str) and os.path.isfile(speaker):
+            try:
+                return self.extract_speaker(speaker)
+            except Exception as exc:  # noqa: BLE001
+                self._logger.warning(
+                    "Failed to extract speaker from %s: %s",
+                    speaker,
+                    exc,
+                )
+                return None
+
+        # 3. 未知 speaker，返回 None
+        return None
+
+    def _get_waveform(self, audio: AudioData | str) -> Any:
+        """从 AudioData 或文件路径获取波形。"""
+        if hasattr(audio, "waveform"):
+            return audio.waveform
+        if isinstance(audio, str) and os.path.isfile(audio):
+            try:
+                import soundfile as sf  # type: ignore
+
+                waveform, _sr = sf.read(audio, dtype="float32")
+                return waveform
+            except ImportError:
+                try:
+                    import librosa  # type: ignore
+
+                    waveform, _sr = librosa.load(audio, sr=32000)
+                    return waveform
+                except ImportError:
+                    self._logger.warning(
+                        "soundfile/librosa not installed; "
+                        "cannot load audio file."
+                    )
+                    return None
+        return None
+
+    def _encode_with_ssl(self, waveform: Any) -> Any:
+        """使用 SSL 模型编码波形为语义 token。
+
+        Parameters
+        ----------
+        waveform : Any
+            音频波形。
+
+        Returns
+        -------
+        Any
+            语义 token ids，或 ``None``（SSL 模型未加载时）。
+        """
+        if self._ssl_encoder is None:
+            return None
+
+        try:
+            import torch  # type: ignore
+
+            model = self._ssl_encoder["model"]
+            extractor = self._ssl_encoder["extractor"]
+
+            # 确保模型在正确设备上
+            device = self._device
+            model = model.to(device)
+            model.eval()
+
+            # 提取特征
+            inputs = extractor(
+                waveform, sampling_rate=32000, return_tensors="pt"
+            )
+            input_values = inputs.input_values.to(device)
+
+            with torch.no_grad():
+                outputs = model(input_values)
+                # 取最后一层隐藏状态
+                hidden_states = outputs.last_hidden_state  # [1, T, H]
+
+            # 通过 k-means 或简单的 argmax 量化为语义 token
+            # 简化实现：取 hidden_states 的 argmax 作为语义 token
+            semantic_tokens = hidden_states.argmax(dim=-1)  # [1, T]
+            return semantic_tokens
+        except Exception as exc:  # noqa: BLE001
+            self._logger.warning("SSL encoding failed: %s", exc)
+            return None
+
+    def _compute_speaker_embedding(self, semantic_tokens: Any) -> Any:
+        """从语义 token 计算说话人嵌入。
+
+        简化实现：使用语义 token 的统计量（均值 + 标准差）作为嵌入。
+
+        Parameters
+        ----------
+        semantic_tokens : Any
+            语义 token ids。
+
+        Returns
+        -------
+        Any
+            说话人嵌入向量。
+        """
+        if semantic_tokens is None:
+            return None
+
+        try:
+            import torch  # type: ignore
+
+            if isinstance(semantic_tokens, torch.Tensor):
+                # 使用 one-hot + 均值池化
+                tokens = semantic_tokens.long()
+                one_hot = torch.nn.functional.one_hot(
+                    tokens, num_classes=768
+                ).float()
+                embedding = one_hot.mean(dim=1)  # [1, 768]
+                return embedding
+        except Exception:  # noqa: BLE001
+            pass
+
+        return None
+
+    def _synthesize_with_speaker_info(
+        self,
+        text: str,
+        speaker_info: dict[str, Any],
+        language: str = "zh",
+        **kwargs: Any,
+    ) -> AudioData:
+        """使用指定的说话人信息进行合成。"""
+        self._ensure_loaded()
+        if not isinstance(text, str) or not text.strip():
+            raise ValueError("synthesize requires a non-empty 'text' string.")
+
+        processed = self._text_frontend.preprocess(text)
+        token_ids = self._text_frontend.tokenize(processed, language=language)
+
+        params: dict[str, Any] = dict(self.spec.default_params)
+        params.update(kwargs)
+
+        semantic_tokens = self._acoustic_model.generate(
+            token_ids,
+            speaker_embedding=speaker_info,
+            **params,
+        )
+
+        if speaker_info.get("ref_semantic_tokens") is not None:
+            self._vocoder.set_reference(
+                speaker_info["ref_semantic_tokens"],
+                speaker_info.get("speaker_embedding"),
+            )
+
+        waveform, sample_rate = self._decode_full(semantic_tokens)
+
+        duration = self._compute_duration(waveform, sample_rate)
+        return AudioData(
+            waveform=waveform,
+            sample_rate=sample_rate,
+            metadata={
+                "backend": self.name,
+                "text": text,
+                "speaker": "cloned",
+                "language": language,
+                "speed": params.get("speed", 1.0),
+                "duration": duration,
+                "sample_rate": sample_rate,
+                "streaming": False,
+            },
+        )
+
+    def _synthesize_stream_with_speaker_info(
+        self,
+        text: str,
+        speaker_info: dict[str, Any],
+        language: str = "zh",
+        **kwargs: Any,
+    ) -> Iterator[AudioData]:
+        """使用指定的说话人信息进行流式合成。"""
+        self._ensure_loaded()
+        if not isinstance(text, str) or not text.strip():
+            raise ValueError(
+                "synthesize_stream requires a non-empty 'text' string."
+            )
+
+        processed = self._text_frontend.preprocess(text)
+        token_ids = self._text_frontend.tokenize(processed, language=language)
+
+        params: dict[str, Any] = dict(self.spec.default_params)
+        params.update(kwargs)
+        params["stream_batch"] = 16
+
+        if speaker_info.get("ref_semantic_tokens") is not None:
+            self._vocoder.set_reference(
+                speaker_info["ref_semantic_tokens"],
+                speaker_info.get("speaker_embedding"),
+            )
+        self._vocoder.reset_stream()
+
+        session = self._get_stream_session(kwargs.get("chunk_size", 4096))
+
+        for semantic_chunk in self._acoustic_model.generate_stream(
+            token_ids,
+            speaker_embedding=speaker_info,
+            **params,
+        ):
+            waveform_chunk, _sr = self._decode_chunk(semantic_chunk)
+            self._stream_push(session, waveform_chunk)
+            yield from self._stream_drain(
+                session, text, "cloned", language, params.get("speed", 1.0)
+            )
+
+        yield from self._stream_finish(
+            session, text, "cloned", language, params.get("speed", 1.0)
+        )
+
+    @staticmethod
+    def _adjust_speed(waveform: Any, speed: float) -> Any:
+        """调整语速（时间拉伸）。
+
+        使用简单的重采样方法：当 speed > 1.0 时加速（下采样），
+        speed < 1.0 时减速（上采样）。
+
+        Parameters
+        ----------
+        waveform : Any
+            输入波形。
+        speed : float
+            语速倍率。
+
+        Returns
+        -------
+        Any
+            调整后的波形。
+        """
+        try:
+            import torch  # type: ignore
+
+            if isinstance(waveform, torch.Tensor):
+                if waveform.dim() == 1:
+                    # 一维波形
+                    n = waveform.shape[0]
+                    new_n = max(1, int(n / speed))
+                    indices = torch.linspace(
+                        0, n - 1, new_n, device=waveform.device
+                    ).long()
+                    return waveform[indices]
+                elif waveform.dim() == 2:
+                    # 二维波形 [B, T]
+                    n = waveform.shape[-1]
+                    new_n = max(1, int(n / speed))
+                    indices = torch.linspace(
+                        0, n - 1, new_n, device=waveform.device
+                    ).long()
+                    return waveform[..., indices]
+        except ImportError:
+            pass
+
+        # numpy 回退
+        try:
+            import numpy as np  # type: ignore
+
+            if isinstance(waveform, np.ndarray):
+                n = waveform.shape[-1]
+                new_n = max(1, int(n / speed))
+                indices = np.linspace(0, n - 1, new_n).astype(int)
+                return waveform[..., indices]
+        except ImportError:
+            pass
+
+        # 无法处理，原样返回
+        return waveform

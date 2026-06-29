@@ -162,3 +162,295 @@ def sample_ref_audio_codec_tokens() -> Any:
     import torch
 
     return torch.randint(0, 2000, (1, 30), dtype=torch.long)
+
+
+# ----------------------------------------------------------------------
+# GPT-SoVITS 相关 fixtures
+# ----------------------------------------------------------------------
+@pytest.fixture
+def mock_sovits_tokenizer() -> Any:
+    """返回一个 SoVITSTokenizer mock。"""
+    frontend = MagicMock()
+    frontend.vocab_size = 256
+    frontend.model_type = "ar"
+    frontend.special_tokens = {
+        "<pad>": 0, "<eos>": 1, "<bos>": 2, "<unk>": 3,
+        "[SPK]": 4, "[SPLIT]": 5, "[ZH]": 6, "[EN]": 7,
+        "[JA]": 8, "[KO]": 9, "[YUE]": 10, "_": 11,
+    }
+    frontend.tokenize.return_value = [2, 6, 12, 13, 14, 1]
+    frontend.detokenize.return_value = "mock 音素"
+    frontend.encode_speaker.return_value = None
+    frontend.preprocess.side_effect = lambda text: text
+    frontend.insert_prosody_tokens.side_effect = lambda text, prosody: text
+    frontend._g2p_chinese.return_value = ["n3", "i3", "h3", "ao3"]
+    frontend._g2p_english.return_value = ["HH", "AH0", "L", "OW1"]
+    frontend._split_pinyin.side_effect = lambda p: [p] if len(p) <= 2 else [p[:1] + p[-1], p[1:-1] + p[-1]]
+    frontend.unload_weights = MagicMock()
+    return frontend
+
+
+@pytest.fixture
+def mock_gpt2_model() -> Any:
+    """返回一个 GPT2ARModel mock。"""
+    model = MagicMock()
+    model.model_type = "ar"
+    model.vocab_size = 256
+    model.hidden_size = 768
+    model._semantic_vocab_size = 768
+    model._num_layers = 12
+    model._num_heads = 12
+    model._max_position_embeddings = 2048
+    model.generate.return_value = [[10, 20, 30, 40, 50, 60, 70, 80]]
+    model.generate_stream.return_value = iter([
+        [[10, 20, 30, 40]],
+        [[50, 60, 70, 80]],
+    ])
+    model.get_input_embeddings.return_value = MagicMock()
+    model.get_output_head.return_value = MagicMock()
+    model.unload_weights = MagicMock()
+    return model
+
+
+@pytest.fixture
+def mock_sovits_decoder() -> Any:
+    """返回一个 SoVITSDecoder mock。"""
+    decoder = MagicMock()
+    decoder.vocoder_type = "sovits_decoder"
+    decoder.input_type = "vq_tokens"
+    decoder.sample_rate = 32000
+    decoder.ssl_vocab_size = 768
+    decoder.hidden_size = 192
+    decoder.decode.return_value = ([0.0] * 200, 32000)
+    decoder.decode_chunk.return_value = ([0.0] * 200, 32000)
+    decoder.set_reference = MagicMock()
+    decoder.reset_stream = MagicMock()
+    decoder.forward.return_value = {
+        "waveform": [[0.0] * 200],
+        "mu": [[0.0] * 192 for _ in range(10)],
+        "log_var": [[0.0] * 192 for _ in range(10)],
+        "z": [[0.0] * 192 for _ in range(10)],
+        "z_p": [[0.0] * 192 for _ in range(10)],
+        "log_det": [0.0],
+    }
+    decoder.unload_weights = MagicMock()
+    decoder._is_loaded = True
+    decoder._impl = MagicMock()
+    decoder._impl.hop_length = 256
+    return decoder
+
+
+@pytest.fixture
+def sample_phoneme_ids() -> Any:
+    """返回模拟的音素 token ids [1, 16]。"""
+    import importlib.util
+
+    if importlib.util.find_spec("torch") is None:
+        pytest.skip("torch 未安装")
+    import torch
+
+    return torch.randint(4, 256, (1, 16), dtype=torch.long)
+
+
+@pytest.fixture
+def sample_semantic_tokens() -> Any:
+    """返回模拟的语义 token ids [1, 32]（SSL 码本 index）。"""
+    import importlib.util
+
+    if importlib.util.find_spec("torch") is None:
+        pytest.skip("torch 未安装")
+    import torch
+
+    return torch.randint(0, 768, (1, 32), dtype=torch.long)
+
+
+@pytest.fixture
+def sample_speaker_info() -> Any:
+    """返回包含 ref_semantic_tokens 和 speaker_embedding 的 dict。"""
+    import importlib.util
+
+    if importlib.util.find_spec("torch") is None:
+        pytest.skip("torch 未安装")
+    import torch
+
+    return {
+        "ref_semantic_tokens": torch.randint(0, 768, (1, 20), dtype=torch.long),
+        "speaker_embedding": torch.randn(1, 768),
+    }
+
+
+@pytest.fixture
+def sample_ref_features() -> Any:
+    """返回模拟的参考音频 SSL 特征 [1, 50, 768]。"""
+    import importlib.util
+
+    if importlib.util.find_spec("torch") is None:
+        pytest.skip("torch 未安装")
+    import torch
+
+    return torch.randn(1, 50, 768)
+
+
+# ----------------------------------------------------------------------
+# CosyVoice 相关 fixtures
+# ----------------------------------------------------------------------
+@pytest.fixture
+def mock_cosyvoice_tokenizer() -> Any:
+    """返回一个 CosyVoiceTokenizer mock。
+
+    模拟基于 LLM tokenizer 的文本前端行为，包括特殊标记添加
+    （[sos]、[flow_token]、[eos]）和文本预处理。
+    """
+    frontend = MagicMock()
+    frontend.vocab_size = 151936  # Qwen2.5 词表大小
+    frontend.model_type = "flow_matching"
+    frontend.llm_vocab_size = 151936
+    frontend.speech_token_size = 6561  # 81*81
+    frontend.special_tokens = {
+        "[sos]": 151936 + 6561,
+        "[eos]": 151936 + 6561 + 1,
+        "[flow_token]": 151936 + 6561 + 2,
+    }
+    # tokenize 返回 token id 列表（模拟 [sos] + text_tokens + [flow_token]）
+    frontend.tokenize.return_value = [
+        151936 + 6561,        # [sos]
+        100, 200, 300, 400,   # text tokens
+        151936 + 6561 + 2,    # [flow_token]
+    ]
+    frontend.detokenize.return_value = "mock CosyVoice 文本"
+    frontend.encode_speaker.return_value = None
+    frontend.preprocess.side_effect = lambda text: text.strip()
+    frontend.unload_weights = MagicMock()
+    return frontend
+
+
+@pytest.fixture
+def mock_flow_matching_model() -> Any:
+    """返回一个 FlowMatchingModel mock。
+
+    模拟 Flow Matching 声学模型行为：generate 返回 mel spectrogram，
+    generate_stream 返回 mel chunk 迭代器。
+    """
+    model = MagicMock()
+    model.model_type = "flow_matching"
+    model.acoustic_type = "flow_matching"
+    model.mel_bins = 80
+    model.hidden_size = 512
+    model.cond_dim = 512
+    model.num_ode_steps = 10
+    model.ode_solver = "euler"
+    # generate 返回 mel spectrogram [1, 80, 100]
+    model.generate.return_value = MagicMock(
+        shape=torch.Size([1, 80, 100]) if (torch := _try_import_torch()) else None
+    )
+    if _try_import_torch():
+        import torch
+        model.generate.return_value = torch.randn(1, 80, 100)
+        # generate_stream 返回 mel chunk 迭代器
+        model.generate_stream.return_value = iter([
+            torch.randn(1, 80, 30),
+            torch.randn(1, 80, 30),
+            torch.randn(1, 80, 30),
+        ])
+    else:
+        model.generate_stream.return_value = iter([None, None, None])
+    model.set_ode_params = MagicMock()
+    model.unload_weights = MagicMock()
+    return model
+
+
+@pytest.fixture
+def mock_speech_tokenizer() -> Any:
+    """返回一个 SpeechTokenizer mock。
+
+    模拟 2 层 RVQ 语音 Tokenizer：encode 返回 token ids [1, ref_len]。
+    """
+    tokenizer = MagicMock()
+    tokenizer.codebook_size = 6561  # 81*81
+    tokenizer.num_quantizers = 2
+    tokenizer.sample_rate = 22050
+    if _try_import_torch():
+        import torch
+        tokenizer.encode.return_value = torch.randint(
+            0, 6561, (1, 30), dtype=torch.long
+        )
+        tokenizer.decode.return_value = torch.randn(1, 80, 50)
+    else:
+        tokenizer.encode.return_value = [100, 200, 300]
+        tokenizer.decode.return_value = None
+    tokenizer.unload_weights = MagicMock()
+    return tokenizer
+
+
+@pytest.fixture
+def mock_speaker_encoder() -> Any:
+    """返回一个 SpeakerEncoder mock。
+
+    模拟 ECAPA-TDNN 说话人编码器：encode 返回嵌入向量 [1, embedding_dim]。
+    """
+    encoder = MagicMock()
+    encoder.embedding_dim = 512
+    encoder.sample_rate = 16000
+    if _try_import_torch():
+        import torch
+        encoder.encode.return_value = torch.randn(1, 512)
+    else:
+        encoder.encode.return_value = [0.0] * 512
+    encoder.unload_weights = MagicMock()
+    return encoder
+
+
+@pytest.fixture
+def sample_text_features() -> Any:
+    """返回模拟的 LLM 输出文本特征 [1, text_len, feat_dim]。
+
+    模拟经过 LLM 编码和 text_projection 后的特征，用于 Flow Matching 的条件输入。
+    """
+    import importlib.util
+
+    if importlib.util.find_spec("torch") is None:
+        pytest.skip("torch 未安装")
+    import torch
+
+    return torch.randn(1, 20, 512)
+
+
+@pytest.fixture
+def sample_condition() -> Any:
+    """返回模拟的融合条件特征 [1, cond_len, cond_dim]。
+
+    模拟 text_feats + ref_speech_feats + speaker_embedding 融合后的条件，
+    用于 FlowEstimator 的交叉注意力输入。
+    """
+    import importlib.util
+
+    if importlib.util.find_spec("torch") is None:
+        pytest.skip("torch 未安装")
+    import torch
+
+    return torch.randn(1, 30, 512)
+
+
+@pytest.fixture
+def sample_mel_from_flow() -> Any:
+    """返回模拟的 Flow Matching 输出 mel spectrogram [1, 80, 100]。
+
+    模拟 ODE 求解完成后输出的 mel，用于 HiFi-GAN 声码器解码。
+    """
+    import importlib.util
+
+    if importlib.util.find_spec("torch") is None:
+        pytest.skip("torch 未安装")
+    import torch
+
+    return torch.randn(1, 80, 100)
+
+
+def _try_import_torch() -> Any:
+    """安全地尝试导入 torch，失败返回 None。"""
+    import importlib.util
+
+    if importlib.util.find_spec("torch") is None:
+        return None
+    import torch
+    return torch

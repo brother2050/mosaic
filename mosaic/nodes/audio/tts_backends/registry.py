@@ -198,8 +198,55 @@ class TTSBackendRegistry:
             )
             return "edge_tts"
 
-        # 排序：优先显存需求小（资源占用少），其次按名称稳定排序
-        candidates.sort(key=lambda item: (item[1].min_gpu_memory_gb, item[0]))
+        # 优先级评分：根据需求场景为每个后端打分
+        quality = bool(requirements.get("quality", False))
+        low_latency = bool(requirements.get("low_latency", False))
+        batch = bool(requirements.get("batch", False))
+        open_license = bool(requirements.get("open_license", False))
+
+        def _score(name: str, spec: TTSBackendSpec) -> float:
+            """根据需求场景为后端打分，分数越高越优先。"""
+            s = 0.0
+            # 多语言支持加分
+            if language and len(spec.supported_languages) >= 5:
+                s += 1.0
+            # 低延迟需求：AR 后端（ChatTTS）优先
+            if low_latency:
+                if name == "chattts":
+                    s += 5.0
+                elif spec.acoustic_type == "ar":
+                    s += 2.0
+            # 高质量需求：CosyVoice（Flow Matching）优先
+            if quality:
+                if name == "cosyvoice":
+                    s += 5.0
+                elif spec.acoustic_type == "ar":
+                    s += 1.0
+            # 批量合成需求：CosyVoice（非自回归，可并行）优先
+            if batch:
+                if name == "cosyvoice":
+                    s += 4.0
+                else:
+                    s += 1.0
+            # 开源许可证需求：Fish / CosyVoice / SoVITS 优先
+            if open_license:
+                if spec.model_license in ("Apache-2.0", "MIT"):
+                    s += 3.0
+                elif spec.model_license == "Apache":
+                    s += 2.5
+            # 语音克隆需求：已有过滤，但进一步细化优先级
+            if voice_clone:
+                if name == "sovits":
+                    s += 3.0  # 极少样本克隆
+                elif name in ("fish", "cosyvoice"):
+                    s += 2.0
+            # 默认：显存需求小者优先（资源友好）
+            s += (8.0 - spec.min_gpu_memory_gb) * 0.1
+            return s
+
+        candidates.sort(
+            key=lambda item: (-_score(item[0], item[1]), item[0])
+        )
         best = candidates[0][0]
         logger.info(
             "Auto-selected TTS backend %r for requirements %r.",
@@ -280,6 +327,24 @@ def _register_builtin_backends() -> None:
         )
 
         tts_backend_registry.register("fish", FishSpeechBackend)
+    except Exception:
+        pass  # 依赖不可用时静默跳过
+
+    try:
+        from mosaic.nodes.audio.tts_backends.implementations.sovits_backend import (
+            GPTSoVITSBackend,
+        )
+
+        tts_backend_registry.register("sovits", GPTSoVITSBackend)
+    except Exception:
+        pass  # 依赖不可用时静默跳过
+
+    try:
+        from mosaic.nodes.audio.tts_backends.implementations.cosyvoice_backend import (
+            CosyVoiceBackend,
+        )
+
+        tts_backend_registry.register("cosyvoice", CosyVoiceBackend)
     except Exception:
         pass  # 依赖不可用时静默跳过
 
