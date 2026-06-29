@@ -19,31 +19,67 @@ from typing import Any
 def _preimport_t5_components() -> None:
     """预导入 T5 相关组件，避免 transformers 懒加载导致 diffusers 无法识别。
 
-    背景：transformers 较新版本使用 ``_LazyModule`` 延迟加载子模块。当 diffusers
-    通过 ``importlib`` 动态加载 Pipeline 组件时，T5Tokenizer 可能仍是一个
-    ``Placeholder`` 对象（无 ``from_pretrained`` 方法），导致 ValueError。
+    背景：transformers 使用 ``_LazyModule`` 延迟加载子模块。当 T5Tokenizer
+    所需的后端库（如 ``sentencepiece``）未安装时，transformers 不会直接抛出
+    ``ImportError``，而是返回一个 ``Placeholder``/``DummyObject`` 类。该类没有
+    ``from_pretrained`` 方法，导致 diffusers 抛出
+    ``ValueError: cannot be loaded as it does not seem to have any loading methods``。
 
-    解决方案：在调用 ``Pipeline.from_pretrained`` 之前，显式导入 T5 tokenizer
-    和模型类，使它们从 Placeholder 变为真实类对象。
+    解决方案：在调用 ``Pipeline.from_pretrained`` 之前，显式访问 T5Tokenizer
+    类。如果检测到 Placeholder（缺少 ``from_pretrained``），则收集缺失依赖信息
+    并抛出明确的 ``ImportError``，指导用户安装缺失的库。
     """
     try:
-        # 显式触发 T5 tokenizer 的真实加载
-        from transformers.models.t5 import tokenization_t5  # noqa: F401
-        from transformers import T5Tokenizer  # noqa: F401
-
-        # 某些 diffusers 版本还需要 T5TokenizerFast
-        try:
-            from transformers import T5TokenizerFast  # noqa: F401
-        except ImportError:
-            pass
-
-        # 显式触发 T5 model 的真实加载
-        try:
-            from transformers import T5EncoderModel  # noqa: F401
-        except ImportError:
-            pass
+        import transformers
     except ImportError:
-        pass  # transformers 不可用时静默跳过
+        return  # transformers 不可用，后续 from_pretrained 会自然报错
+
+    _missing_deps: list[str] = []
+
+    # --- T5Tokenizer ---
+    t5_tok = getattr(transformers, "T5Tokenizer", None)
+    if t5_tok is not None:
+        # 检查是否为 Placeholder/DummyObject（缺少后端库时 transformers
+        # 返回的占位类）。hasattr 可能触发 __getattribute__ 抛出
+        # ImportError，需要捕获。
+        try:
+            is_placeholder = not hasattr(t5_tok, "from_pretrained")
+        except (ImportError, AttributeError):
+            is_placeholder = True
+        if is_placeholder:
+            _missing_deps.append("sentencepiece")
+    else:
+        # T5Tokenizer 不在顶层模块，尝试显式导入
+        try:
+            from transformers import T5Tokenizer as _  # noqa: F401
+        except ImportError:
+            # 在 mock 环境中 T5Tokenizer 可能不存在，这是正常的
+            # 只有当 transformers 是真实安装时才报错
+            if hasattr(transformers, "__version__"):
+                _missing_deps.append("sentencepiece")
+
+    # --- T5TokenizerFast ---
+    try:
+        from transformers import T5TokenizerFast  # noqa: F401
+    except ImportError:
+        # tokenizer（fast 版本）需要 tokenizers 库，通常已随 transformers 安装
+        pass
+
+    # --- T5EncoderModel ---
+    try:
+        from transformers import T5EncoderModel  # noqa: F401
+    except ImportError:
+        pass  # 模型加载失败不阻塞 tokenizer
+
+    if _missing_deps:
+        deps_str = " ".join(_missing_deps)
+        raise ImportError(
+            f"T5 tokenizer components could not be loaded because the following "
+            f"dependencies are missing: {', '.join(_missing_deps)}.\n"
+            f"This causes diffusers to see a Placeholder class instead of the "
+            f"real T5Tokenizer, resulting in a 'cannot be loaded' error.\n"
+            f"Fix: pip install {deps_str}"
+        )
 
 
 def _get_version_info() -> dict[str, str]:
@@ -72,11 +108,26 @@ def _build_error_message(model_name: str, exc: Exception) -> str:
     error_str = str(exc).lower()
 
     if "placeholder" in error_str or "cannot be loaded" in error_str:
-        hints.append(
-            "This is likely a diffusers/transformers version mismatch "
-            "(T5 tokenizer lazy-loading issue). "
-            "Try: pip install 'transformers>=4.44.0' 'diffusers>=0.30.0'"
-        )
+        # Placeholder 问题通常由缺失 sentencepiece 引起
+        try:
+            import sentencepiece  # noqa: F401
+            sp_ok = True
+        except ImportError:
+            sp_ok = False
+
+        if not sp_ok:
+            hints.append(
+                "T5Tokenizer requires the 'sentencepiece' library which is not "
+                "installed. This causes transformers to return a Placeholder "
+                "class that diffusers cannot load.\n"
+                "  Fix: pip install sentencepiece"
+            )
+        else:
+            hints.append(
+                "This is likely a diffusers/transformers version mismatch "
+                "(T5 tokenizer lazy-loading issue). "
+                "Try: pip install 'transformers>=4.44.0' 'diffusers>=0.30.0'"
+            )
 
     if "variant" in error_str or "fp16" in error_str:
         hints.append(

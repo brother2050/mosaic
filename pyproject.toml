@@ -46,6 +46,10 @@ dependencies = [
     # Diffusers: 0.27+ 引入所需 Pipeline；<0.41 因为 0.40 废弃了
     # enable_vae_slicing (已兼容处理)，更高版本可能有更多破坏性变更
     "diffusers>=0.27.0,<0.41.0",
+    # SentencePiece: T5 tokenizer 的必需后端（CogVideoX、AudioLDM2 等
+    # 使用 T5 的 Pipeline 缺少此库时，transformers 返回 Placeholder 类
+    # 而非抛 ImportError，导致 diffusers 报 "cannot be loaded" 错误）
+    "sentencepiece>=0.1.99",
     # Pillow: 图像处理基础库
     "Pillow>=10.0.0,<14.0.0",
     # NumPy: 1.24+ 支持。
