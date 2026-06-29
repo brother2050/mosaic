@@ -60,6 +60,12 @@ class TextToVideo(BaseVideoNode):
         是否启用 attention slicing 以节省显存，默认 ``True``。
     enable_vae_slicing:
         是否启用 VAE slicing 以节省显存，默认 ``True``。
+    enable_vae_tiling:
+        是否启用 VAE tiling 以进一步降低 VAE 解码显存峰值，默认 ``True``。
+        对 22GB 显卡（如 A10）尤其重要，可将 VAE 解码显存从 ~5GB 降至 ~2GB。
+    enable_sequential_cpu_offload:
+        是否启用顺序 CPU offload（逐层 GPU↔CPU 搬运），默认 ``False``。
+        显存不足时开启可避免 OOM，但会增加推理时间约 2-3 倍。
     **kwargs:
         透传给 :class:`BaseVideoNode` 的参数。
 
@@ -93,19 +99,31 @@ class TextToVideo(BaseVideoNode):
         dtype: str = "float16",
         enable_attention_slicing: bool = True,
         enable_vae_slicing: bool = True,
+        enable_vae_tiling: bool = True,
+        enable_sequential_cpu_offload: bool = False,
         **kwargs: Any,
     ) -> None:
         super().__init__(model=model, device=device, dtype=dtype, **kwargs)
         self._enable_attention_slicing: bool = enable_attention_slicing
         self._enable_vae_slicing: bool = enable_vae_slicing
+        self._enable_vae_tiling: bool = enable_vae_tiling
+        self._enable_sequential_cpu_offload: bool = enable_sequential_cpu_offload
 
     def _load_model(self) -> None:
         """加载 CogVideoX Pipeline。"""
+        import os
         import torch  # type: ignore
         from diffusers import CogVideoXPipeline  # type: ignore
         from mosaic.nodes._pipeline_utils import safe_load_pipeline
 
-        device = self._resolve_device()
+        # 减少 CUDA 内存碎片：设置 expandable_segments
+        # 这对 VAE decode 阶段的大张量分配特别重要
+        _device = self._resolve_device()
+        if _device.startswith("cuda"):
+            if "PYTORCH_CUDA_ALLOC_CONF" not in os.environ:
+                os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
+
+        device = _device
         torch_dtype = self._resolve_dtype()
 
         # CogVideoX 内部使用 T5 文本编码器，needs_t5=True 预导入 T5 组件
@@ -139,13 +157,41 @@ class TextToVideo(BaseVideoNode):
                 except Exception:  # noqa: BLE001
                     pass
 
-        self._pipeline = self._pipeline.to(device)
+        # VAE tiling：将 VAE 解码分解为小块处理，显著降低显存峰值
+        if self._enable_vae_tiling:
+            vae = getattr(self._pipeline, "vae", None)
+            if vae is not None and hasattr(vae, "enable_tiling"):
+                try:
+                    vae.enable_tiling()
+                    self._logger.debug("Enabled VAE tiling.")
+                except Exception:  # noqa: BLE001
+                    pass
+
+        # 顺序 CPU offload：将模型各层按需从 CPU 移到 GPU
+        # 适用于显存不足（如 A10 22GB），但会增加推理时间
+        if self._enable_sequential_cpu_offload:
+            try:
+                self._pipeline.enable_sequential_cpu_offload()
+                self._logger.info("Enabled sequential CPU offload (slower but less VRAM).")
+                # 启用 offload 后不需要手动 .to(device)
+            except Exception as exc:  # noqa: BLE001
+                self._logger.warning(
+                    "Failed to enable sequential CPU offload: %s. "
+                    "Falling back to direct device placement.", exc
+                )
+                self._pipeline = self._pipeline.to(device)
+        else:
+            self._pipeline = self._pipeline.to(device)
 
         self._logger.info(
-            "CogVideoX pipeline loaded (model=%s, device=%s, dtype=%s).",
+            "CogVideoX pipeline loaded (model=%s, device=%s, dtype=%s, "
+            "vae_slicing=%s, vae_tiling=%s, cpu_offload=%s).",
             self._model_name,
             device,
             self._dtype_str,
+            self._enable_vae_slicing,
+            self._enable_vae_tiling,
+            self._enable_sequential_cpu_offload,
         )
 
     def _adjust_num_frames(self, num_frames: int) -> int:
@@ -345,12 +391,17 @@ class TextToVideo(BaseVideoNode):
                     output = self._pipeline(**pipe_kwargs)
             except RuntimeError as exc:
                 if "out of memory" in str(exc).lower():
+                    is_2b = "2b" in self._model_name.lower()
+                    min_vram = 9 if is_2b else 18
                     raise RuntimeError(
                         f"CUDA out of memory while running {self._model_name}. "
-                        f"This model requires ~{_VALID_NUM_FRAMES and 18 or 9}GB VRAM. "
+                        f"This model requires ~{min_vram}GB VRAM. "
                         f"Try: (1) reduce num_frames to 49, "
                         f"(2) use 'THUDM/CogVideoX-2b' (lighter model), "
-                        f"(3) reduce width/height."
+                        f"(3) reduce width/height, "
+                        f"(4) set enable_sequential_cpu_offload=True, "
+                        f"(5) set enable_vae_tiling=True (default), "
+                        f"(6) set env PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True."
                     ) from exc
                 raise
 

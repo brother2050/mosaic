@@ -482,13 +482,28 @@ class VideoEncoder(Node):
                 elif arr.shape[2] == 4:
                     arr = arr[:, :, :3]
 
-                proc.stdin.write(arr.tobytes())
+                try:
+                    proc.stdin.write(arr.tobytes())
+                except (BrokenPipeError, OSError) as write_exc:
+                    # FFmpeg 可能已提前退出（参数错误/内存不足等）
+                    # 读取 stderr 获取真实错误信息
+                    stdout, stderr = proc.communicate(timeout=10)
+                    err_msg = stderr.decode("utf-8", errors="replace")[-500:]
+                    raise RuntimeError(
+                        f"FFmpeg exited prematurely while writing frame {i}. "
+                        f"Exit code: {proc.returncode}. "
+                        f"Error: {err_msg}"
+                    ) from write_exc
 
                 # 发送进度事件
                 if (i + 1) % 10 == 0 or i == len(frames) - 1:
                     self._emit_progress(i + 1, len(frames), "encoding")
 
-            proc.stdin.close()
+            # 通知 FFmpeg 数据写入完毕并等待完成
+            # 注意：不能在 communicate() 之前手动 close stdin，
+            # 因为 communicate() 内部会调用 stdin.flush()，
+            # 对已关闭的文件 flush 会抛 "flush of closed file"。
+            # communicate(input=None) 会自动关闭 stdin。
             stdout, stderr = proc.communicate(timeout=300)
 
             if proc.returncode != 0:
@@ -503,8 +518,12 @@ class VideoEncoder(Node):
             proc.wait()
             raise
         finally:
-            if proc.stdin:
-                proc.stdin.close()
+            # 安全关闭 stdin：communicate() 已关闭则跳过
+            if proc.stdin is not None and not proc.stdin.closed:
+                try:
+                    proc.stdin.close()
+                except (BrokenPipeError, OSError, ValueError):
+                    pass
 
     def _merge_av_subtitle(
         self,
