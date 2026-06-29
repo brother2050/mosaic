@@ -84,23 +84,23 @@ mosaic doctor
 预期输出（节选）：
 
 ```
-mosaic doctor
-================
-Python:        3.10.12  [OK]
-PyTorch:       2.1.0+cu121  [OK]
-CUDA:          available  [OK]
-GPU:           NVIDIA A100 80GB  [OK]
-diffusers:     0.32.0  [OK]
-transformers:  4.45.0  [OK]
-sentencepiece: 0.2.0  [OK]
+Mosaic 环境诊断
+==================================================
 
-[OK] mosaic 0.1.0 installed
-[OK] All required dependencies present
-[WARN] optional 'rag' extras not installed (faiss, chromadb, sentence-transformers)
-[WARN] optional 'audio' extras not installed (soundfile, librosa, edge-tts)
+  ✓  Python 3.10.12
+  ✓  torch 已安装 (v2.12.1)
+  ✓  transformers 已安装 (v5.12.1)
+  ✓  diffusers 已安装 (v0.32.0)
+  ✓  GPU 可用: NVIDIA A100 80GB (80.0 GB 显存)
+  ⚠  soundfile 未安装（可选依赖）
+  ⚠  faiss-cpu 未安装（可选依赖）
+  ✓  已注册 42 个节点
+  ✓  已加载 0 个插件
+
+诊断完成: 2 个警告, 0 个错误
 ```
 
-任何 `[FAIL]` 项都会给出修复命令；`[WARN]` 项只是可选依赖缺失，不影响核心功能。
+任何 `✗` 项表示必需依赖缺失；`⚠` 项只是可选依赖缺失，不影响核心功能。
 
 ---
 
@@ -381,7 +381,7 @@ WanVideo 节点会自动给不带后缀的名称补全 `-Diffusers`。
 ```python
 TTS(backend="chattts")   # 24kHz, AR 流式, 延迟最低
 TTS(backend="fish")      # 22kHz, 多语言
-TTS(backend="cosyvoice") # 22kHz, 高质量
+TTS(backend="cosyvoice") # 24kHz, 高质量
 TTS(backend="sovits")    # 32kHz, 极少样本克隆
 TTS(backend="edge_tts")  # 云端 Azure, 无需 GPU
 ```
@@ -466,20 +466,23 @@ class MyNode(Node):
 
 ### 11. 如何将管道保存为 YAML/JSON 并从 CLI 运行？
 
-目前 Pipeline 不直接序列化，但你可以用 Python 描述文件：
+`mosaic run` 命令支持从 YAML 或 JSON 文件加载管道定义：
 
-```python
-# pipeline.py
-from mosaic import Pipeline
-from mosaic.nodes.image import TextToImage
-pipe = Pipeline()
-pipe.add(TextToImage(model="SDXL"))
-result = pipe.run(prompt="...")
+```yaml
+# pipeline.yaml
+nodes:
+  - type: TextToImage
+    params:
+      model: stabilityai/stable-diffusion-xl-base-1.0
+input:
+  prompt: "a cup of coffee"
 ```
 
 ```bash
-mosaic run pipeline.py
+mosaic run pipeline.yaml
 ```
+
+详见 [CLI 参考手册](cli-reference.md)。
 
 ### 12. 在没有 GPU 的环境能跑吗？
 

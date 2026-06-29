@@ -26,9 +26,10 @@ mosaic create-node --domain text --name sentiment-analyzer
 输出：
 
 ```
-✅ Created template: mosaic/nodes/text/sentiment_analyzer.py
-✅ Created test: tests/phase1/test_sentiment_analyzer.py
+节点模板已生成: ['/path/to/my_nodes/sentiment_analyzer.py', '/path/to/my_nodes/__init__.py', '/path/to/my_nodes/test_sentiment_analyzer.py', '/path/to/my_nodes/README.md']
 ```
+
+生成的文件位于 `--output` 指定的目录（默认 `./my_nodes/`），包含节点代码、包初始化文件、测试骨架和说明文档。
 
 模板文件内容：
 
