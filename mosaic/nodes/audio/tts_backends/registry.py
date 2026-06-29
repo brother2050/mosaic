@@ -57,6 +57,17 @@ class TTSBackendRegistry:
             self._backends: dict[str, type[TTSBackend]] = {}
             self._specs: dict[str, TTSBackendSpec] = {}
 
+    def _ensure_builtin_registered(self) -> None:
+        """确保内置后端已注册（延迟注册）。
+
+        在首次访问注册表（查询/选择/可用性检查）时触发内置后端的注册，
+        避免在模块加载阶段产生对可选依赖（如 ``torch``）的硬依赖。
+        """
+        global _backends_registered
+        if not _backends_registered:
+            _register_builtin_backends()
+            _backends_registered = True
+
     # ------------------------------------------------------------------
     # 注册与查询
     # ------------------------------------------------------------------
@@ -99,6 +110,7 @@ class TTSBackendRegistry:
         type[TTSBackend] | None
             后端类；未注册时返回 ``None``。
         """
+        self._ensure_builtin_registered()
         return self._backends.get(name)
 
     def list_backends(self) -> list[TTSBackendSpec]:
@@ -109,6 +121,7 @@ class TTSBackendRegistry:
         list[TTSBackendSpec]
             已注册后端的规格列表。
         """
+        self._ensure_builtin_registered()
         result: list[TTSBackendSpec] = []
         for name, backend_class in self._backends.items():
             spec = self._specs.get(name)
@@ -140,6 +153,7 @@ class TTSBackendRegistry:
         str
             最优后端名称；无可用后端时返回 ``"edge_tts"``（回退）。
         """
+        self._ensure_builtin_registered()
         language = requirements.get("language")
         streaming = bool(requirements.get("streaming", False))
         voice_clone = bool(requirements.get("voice_clone", False))
@@ -212,6 +226,7 @@ class TTSBackendRegistry:
         若后端类提供 ``check_dependencies`` 类方法（返回 bool），则委托其
         做运行时依赖校验；否则仅以注册状态为准。
         """
+        self._ensure_builtin_registered()
         backend_class = self._backends.get(name)
         if backend_class is None:
             return False
@@ -241,3 +256,32 @@ class TTSBackendRegistry:
 
 # 全局单例
 tts_backend_registry = TTSBackendRegistry()
+
+
+# 注册内置后端
+def _register_builtin_backends() -> None:
+    """注册内置 TTS 后端。
+
+    延迟注册：仅在实际需要时才导入后端实现，避免硬依赖。当可选依赖
+    （如 ``torch``）或后端实现模块不可用时，静默跳过。
+    """
+    try:
+        from mosaic.nodes.audio.tts_backends.implementations.chattts_backend import (
+            ChatTTSBackend,
+        )
+
+        tts_backend_registry.register("chattts", ChatTTSBackend)
+    except Exception:
+        pass  # 依赖不可用时静默跳过
+
+
+# 不在模块加载时注册，而是在首次使用时延迟注册
+_backends_registered = False
+
+
+def _ensure_backends_registered() -> None:
+    """确保内置后端已注册（延迟注册）。"""
+    global _backends_registered
+    if not _backends_registered:
+        _register_builtin_backends()
+        _backends_registered = True
