@@ -30,12 +30,13 @@ from mosaic.nodes.rag._base import BaseRagNode
 __all__ = ["CitationGenerator"]
 
 
-# 常见 LLM 的粗略显存估算
+# 常见 LLM 的粗略显存估算（FP16 权重大小，不含 KV cache）
+# 与 text/_base.py 的 _VRAM_ESTIMATES 保持一致
 _LLM_VRAM: dict[str, float] = {
-    "Qwen/Qwen2.5-7B-Instruct": 16.0,
-    "Qwen/Qwen2.5-14B-Instruct": 30.0,
-    "Qwen/Qwen2.5-72B-Instruct": 150.0,
-    "meta-llama/Llama-3.1-8B-Instruct": 18.0,
+    "Qwen/Qwen2.5-7B-Instruct": 15.0,
+    "Qwen/Qwen2.5-14B-Instruct": 28.0,
+    "Qwen/Qwen2.5-72B-Instruct": 145.0,
+    "meta-llama/Llama-3.1-8B-Instruct": 16.0,
 }
 
 
@@ -242,7 +243,7 @@ class CitationGenerator(BaseRagNode):
 
     def describe(self) -> NodeSpec:
         """返回节点规格说明。"""
-        vram = _LLM_VRAM.get(self._model_name, 16.0)
+        vram = _LLM_VRAM.get(self._model_name, 15.0)
         return NodeSpec(
             name=self.name,
             domain=self.domain,

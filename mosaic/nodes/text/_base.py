@@ -352,7 +352,7 @@ class BaseTextNode(Node):
 
     def _build_model_info(self) -> dict[str, Any]:
         """构造模型信息字典。"""
-        vram = _VRAM_ESTIMATES.get(self._model_name, 16.0)
+        vram = _VRAM_ESTIMATES.get(self._model_name, 15.0)
         return {
             "name": self._model_name,
             "source": "HuggingFace",
