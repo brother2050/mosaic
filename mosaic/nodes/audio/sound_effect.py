@@ -174,14 +174,16 @@ class SoundEffectGenerator(BaseAudioNode):
                 import numpy as np  # type: ignore
 
                 waveform = audios[0]
+                # 显式转 float32，避免 float16 透传到导出环节
                 if isinstance(waveform, np.ndarray):
+                    waveform = waveform.astype(np.float32)
                     # 确保是 1D
                     if waveform.ndim > 1:
                         waveform = self._to_mono(waveform)
             else:
                 import numpy as np  # type: ignore
 
-                waveform = np.array([])
+                waveform = np.array([], dtype=np.float32)
 
             actual_duration = self._get_duration(waveform, sample_rate)
         except Exception as exc:

@@ -282,6 +282,9 @@ class BaseAudioNode(Node):
 
         # soundfile 期望 (samples, channels)
         if isinstance(waveform, np.ndarray):
+            # 防御性 dtype 转换：soundfile 只支持 float32/float64/int16/int32
+            if waveform.dtype not in (np.float32, np.float64, np.int16, np.int32):
+                waveform = waveform.astype(np.float32)
             if waveform.ndim == 2:
                 # (channels, samples) -> (samples, channels)
                 waveform = waveform.T

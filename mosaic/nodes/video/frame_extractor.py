@@ -591,7 +591,14 @@ class FrameExtractor(BaseVideoNode):
                 if isinstance(f, Image.Image):
                     out.append(np.array(f.convert("RGB")))
                 else:
-                    out.append(np.asarray(f))
+                    arr = np.asarray(f)
+                    # 防御性 dtype 转换：确保 uint8
+                    if arr.dtype != np.uint8:
+                        arr = np.clip(
+                            arr * 255 if arr.max() <= 1.0 else arr,
+                            0, 255,
+                        ).astype(np.uint8)
+                    out.append(arr)
             return out
 
         if output_format == "path":
@@ -605,7 +612,14 @@ class FrameExtractor(BaseVideoNode):
                 if isinstance(f, Image.Image):
                     f.convert("RGB").save(fname, format="PNG")
                 else:
-                    Image.fromarray(np.asarray(f)).save(fname, format="PNG")
+                    arr = np.asarray(f)
+                    # 防御性 dtype 转换：PIL 需要 uint8
+                    if arr.dtype != np.uint8:
+                        arr = np.clip(
+                            arr * 255 if arr.max() <= 1.0 else arr,
+                            0, 255,
+                        ).astype(np.uint8)
+                    Image.fromarray(arr).save(fname, format="PNG")
                 paths.append(fname)
             return paths
 

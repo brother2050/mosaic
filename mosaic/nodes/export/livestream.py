@@ -356,6 +356,12 @@ class Livestreamer(Node):
                     arr = np.array(img)
                 elif isinstance(frame, np.ndarray):
                     arr = frame
+                    # 防御性 dtype 转换：FFmpeg rawvideo 期望 uint8
+                    if arr.dtype != np.uint8:
+                        arr = np.clip(
+                            arr * 255 if arr.max() <= 1.0 else arr,
+                            0, 255,
+                        ).astype(np.uint8)
                     if arr.shape[:2] != (height, width):
                         img = Image.fromarray(frame).convert("RGB")
                         img = img.resize((width, height), Image.Resampling.LANCZOS)

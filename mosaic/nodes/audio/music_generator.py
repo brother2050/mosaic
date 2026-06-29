@@ -174,8 +174,13 @@ class MusicGenerator(BaseAudioNode):
                     do_sample=True,
                 )
 
-            # 提取波形
+            # 提取波形（转 float32 避免 float16 输出）
             waveform = audio_values[0, 0].cpu().numpy()
+            # 显式转 float32，避免 float16 透传到导出环节
+            import numpy as np
+
+            if isinstance(waveform, np.ndarray) and waveform.dtype == np.float16:
+                waveform = waveform.astype(np.float32)
             actual_duration = self._get_duration(waveform, sample_rate)
         except Exception as exc:
             self._emit_error(exc)

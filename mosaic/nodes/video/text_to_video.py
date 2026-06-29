@@ -225,6 +225,10 @@ class TextToVideo(BaseVideoNode):
             else:
                 arr = np.asarray(raw)
 
+            # 显式转 float32 避免 float16 精度损失（仅对真实 ndarray）
+            if isinstance(arr, np.ndarray) and arr.dtype == np.float16:
+                arr = arr.astype(np.float32)
+
             # 形状 (batch, num_frames, H, W, C) -> 取第一个 batch
             if arr.ndim == 5:
                 arr = arr[0]

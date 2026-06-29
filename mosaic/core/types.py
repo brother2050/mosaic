@@ -410,6 +410,25 @@ class AudioData(MosaicData):
         metadata: dict[str, Any] | None = None,
         **kwargs: Any,
     ) -> None:
+        # 归一化 waveform dtype 为 float32
+        # 模型在 float16 精度下推理时，输出波形可能为 float16，
+        # 而 soundfile / librosa 等库只支持 float32/float64/int16/int32。
+        # 在此处统一转换，从源头消除 dtype 问题。
+        if waveform is not None:
+            try:
+                import numpy as np
+
+                if isinstance(waveform, np.ndarray):
+                    if waveform.dtype not in (
+                        np.float32,
+                        np.float64,
+                        np.int16,
+                        np.int32,
+                    ):
+                        waveform = waveform.astype(np.float32)
+            except ImportError:
+                pass
+
         super().__init__(
             waveform=waveform,
             sample_rate=sample_rate,

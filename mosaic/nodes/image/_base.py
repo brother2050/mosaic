@@ -333,6 +333,12 @@ class BaseImageNode(Node):
         if isinstance(image, Image.Image):
             return image
         if isinstance(image, np.ndarray):
+            # 防御性 dtype 转换：PIL 需要 uint8
+            if image.dtype != np.uint8:
+                image = np.clip(
+                    image * 255 if image.max() <= 1.0 else image,
+                    0, 255,
+                ).astype(np.uint8)
             return Image.fromarray(image)
         raise TypeError(
             f"Expected PIL.Image.Image or numpy.ndarray, got {type(image).__name__}."

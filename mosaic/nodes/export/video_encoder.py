@@ -457,6 +457,12 @@ class VideoEncoder(Node):
                     arr = np.array(img)
                 elif isinstance(frame, np.ndarray):
                     arr = frame
+                    # 防御性 dtype 转换：FFmpeg rawvideo 期望 uint8
+                    if arr.dtype != np.uint8:
+                        arr = np.clip(
+                            arr * 255 if arr.max() <= 1.0 else arr,
+                            0, 255,
+                        ).astype(np.uint8)
                     if arr.shape[:2] != (height, width):
                         # resize needed
                         from PIL import Image as PILImage  # type: ignore
@@ -631,6 +637,9 @@ class VideoEncoder(Node):
 
                 # soundfile 期望 (samples, channels)
                 if isinstance(waveform, np.ndarray):
+                    # 防御性 dtype 转换
+                    if waveform.dtype not in (np.float32, np.float64, np.int16, np.int32):
+                        waveform = waveform.astype(np.float32)
                     if waveform.ndim == 2:
                         waveform = waveform.T  # (channels, samples) -> (samples, channels)
                 sf.write(tmp_path, waveform, sr)

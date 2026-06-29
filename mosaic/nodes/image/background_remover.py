@@ -215,7 +215,8 @@ class BackgroundRemover(BaseImageNode):
         input_tensor = preprocess(image.convert("RGB")).unsqueeze(0).to(self._device)
 
         with torch.inference_mode():
-            preds = self._pipeline(input_tensor)[-1].sigmoid().cpu()
+            # 显式转 float32，避免 float16 tensor 传入 ToPILImage
+            preds = self._pipeline(input_tensor)[-1].sigmoid().float().cpu()
 
         # 后处理：将预测结果 resize 回原图尺寸
         pred = preds[0].squeeze()

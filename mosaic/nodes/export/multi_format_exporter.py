@@ -382,6 +382,12 @@ class MultiFormatExporter(Node):
                 import numpy as np  # type: ignore
 
                 if isinstance(frame, np.ndarray):
+                    # 确保是 uint8，PIL Image.fromarray 对 float 会产生异常
+                    if frame.dtype != np.uint8:
+                        frame = np.clip(
+                            frame * 255 if frame.max() <= 1.0 else frame,
+                            0, 255,
+                        ).astype(np.uint8)
                     pil_frames.append(Image.fromarray(frame).convert("P"))
                 else:
                     raise TypeError(
@@ -570,6 +576,9 @@ class MultiFormatExporter(Node):
                 # soundfile 期望 (samples, channels)
                 wf = waveform
                 if isinstance(wf, np.ndarray):
+                    # 防御性 dtype 转换：soundfile 只支持 float32/float64/int16/int32
+                    if wf.dtype not in (np.float32, np.float64, np.int16, np.int32):
+                        wf = wf.astype(np.float32)
                     if wf.ndim == 2:
                         wf = wf.T  # (channels, samples) -> (samples, channels)
 
