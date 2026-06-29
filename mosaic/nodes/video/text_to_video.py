@@ -27,7 +27,7 @@ from __future__ import annotations
 
 import random
 import time
-from typing import Any, Optional
+from typing import Any
 
 from mosaic.core.registry import registry
 from mosaic.core.types import MosaicData, VideoData
@@ -173,7 +173,7 @@ class TextToVideo(BaseVideoNode):
         )
         return closest
 
-    def _prepare_seed(self, seed: Optional[int]) -> tuple:
+    def _prepare_seed(self, seed: int | None) -> tuple:
         """准备随机种子与 generator。"""
         import torch  # type: ignore
 
@@ -205,7 +205,7 @@ class TextToVideo(BaseVideoNode):
 
         Returns
         -------
-        List[PIL.Image]
+        list[PIL.Image]
             帧列表。
         """
         from PIL import Image  # type: ignore

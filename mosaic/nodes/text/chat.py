@@ -8,7 +8,7 @@
 from __future__ import annotations
 
 import time
-from typing import Any, Dict, List
+from typing import Any
 
 from mosaic.core.node import NodeSpec
 from mosaic.core.registry import registry
@@ -103,7 +103,7 @@ class Chat(BaseTextNode):
             do_sample = bool(input_data.get("do_sample", True))
 
             # 构造完整消息列表：可选系统提示词 + 对话历史
-            full_messages: List[Dict[str, str]] = []
+            full_messages: list[dict[str, str]] = []
             if isinstance(system_prompt, str) and system_prompt.strip():
                 full_messages.append({"role": "system", "content": system_prompt})
             full_messages.extend(messages)

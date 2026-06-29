@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Any, Tuple
+from typing import Any
 
 from mosaic.core.registry import registry
 from mosaic.core.types import MosaicData
@@ -132,7 +132,7 @@ class Upscaler(BaseImageNode):
 
             seed, generator = self._prepare_seed(input_data.get("seed"))
 
-            original_size: Tuple[int, int] = image.size
+            original_size: tuple[int, int] = image.size
 
             # 检查输入图片尺寸是否过小
             if min(original_size) < 64:

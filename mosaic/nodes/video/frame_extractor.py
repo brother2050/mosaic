@@ -40,7 +40,8 @@ from __future__ import annotations
 import os
 import tempfile
 import time
-from typing import Any, Dict, Iterator, List, Optional, Tuple
+from collections.abc import Iterator
+from typing import Any
 
 from mosaic.core.registry import registry
 from mosaic.core.types import MosaicData, VideoData
@@ -51,7 +52,7 @@ __all__ = ["FrameExtractor"]
 
 
 # 支持的拆帧模式
-_VALID_MODES: Tuple[str, ...] = ("all", "interval", "keyframe", "timestamps")
+_VALID_MODES: tuple[str, ...] = ("all", "interval", "keyframe", "timestamps")
 
 # keyframe 模式默认像素差异阈值（0-255 尺度，平均绝对差异）
 _DEFAULT_KEYFRAME_THRESHOLD: float = 10.0
@@ -136,7 +137,7 @@ class FrameExtractor(BaseVideoNode):
         self._logger.debug("FrameExtractor requires no model; skipping load.")
         return
 
-    def _build_model_info(self) -> Dict[str, Any]:
+    def _build_model_info(self) -> dict[str, Any]:
         """构造模型信息字典。
 
         拆帧节点无模型，显存占用记为 0，避免调度器误判并淘汰其他节点。
@@ -228,7 +229,7 @@ class FrameExtractor(BaseVideoNode):
             reader.close()
 
     @staticmethod
-    def _read_video_meta(path: str) -> Tuple[int, int]:
+    def _read_video_meta(path: str) -> tuple[int, int]:
         """读取视频文件的帧数与帧率（不载入帧数据）。
 
         优先取 ``imageio`` 元数据中的 ``nframes``；缺失时尝试
@@ -241,7 +242,7 @@ class FrameExtractor(BaseVideoNode):
 
         Returns
         -------
-        Tuple[int, int]
+        tuple[int, int]
             ``(frame_count, fps)``。
         """
         import imageio.v2 as imageio  # type: ignore
@@ -273,7 +274,7 @@ class FrameExtractor(BaseVideoNode):
         self,
         video_data: VideoData,
         total: int,
-    ) -> Tuple[List[Any], List[float]]:
+    ) -> tuple[list[Any], list[float]]:
         """提取全部帧。
 
         Parameters
@@ -285,7 +286,7 @@ class FrameExtractor(BaseVideoNode):
 
         Returns
         -------
-        Tuple[List[Any], List[float]]
+        tuple[list[Any], list[float]]
             ``(frames, timestamps)``，时间戳为 ``i / fps``。
         """
         frames = list(video_data.frames)
@@ -300,7 +301,7 @@ class FrameExtractor(BaseVideoNode):
         video_data: VideoData,
         interval: int,
         total: int,
-    ) -> Tuple[List[Any], List[float]]:
+    ) -> tuple[list[Any], list[float]]:
         """按间隔提取帧（每隔 ``interval`` 帧取一帧）。
 
         Parameters
@@ -314,7 +315,7 @@ class FrameExtractor(BaseVideoNode):
 
         Returns
         -------
-        Tuple[List[Any], List[float]]
+        tuple[list[Any], list[float]]
             ``(frames, timestamps)``。
         """
         step = max(1, int(interval))
@@ -334,9 +335,9 @@ class FrameExtractor(BaseVideoNode):
     def _extract_timestamps(
         self,
         video_data: VideoData,
-        timestamps_in: List[float],
+        timestamps_in: list[float],
         total: int,
-    ) -> Tuple[List[Any], List[float]]:
+    ) -> tuple[list[Any], list[float]]:
         """按时间戳列表提取对应帧。
 
         每个时间戳 ``t`` 映射到帧索引 ``int(t * fps)``，越界时钳制到
@@ -353,14 +354,14 @@ class FrameExtractor(BaseVideoNode):
 
         Returns
         -------
-        Tuple[List[Any], List[float]]
+        tuple[list[Any], list[float]]
             ``(frames, timestamps)``。
         """
         frames = video_data.frames
         fps = video_data.fps
         n = len(frames)
-        out_frames: List[Any] = []
-        out_ts: List[float] = []
+        out_frames: list[Any] = []
+        out_ts: list[float] = []
         for t in timestamps_in:
             if fps > 0:
                 idx = int(float(t) * fps)
@@ -385,7 +386,7 @@ class FrameExtractor(BaseVideoNode):
         threshold: float,
         fps: int,
         total: int,
-    ) -> Tuple[List[Any], List[float], int]:
+    ) -> tuple[list[Any], list[float], int]:
         """流式提取关键帧（路径输入，逐帧读取，内存友好）。
 
         逐帧读取视频，将每帧转为灰度数组，计算与上一帧的平均绝对像素
@@ -405,15 +406,15 @@ class FrameExtractor(BaseVideoNode):
 
         Returns
         -------
-        Tuple[List[Any], List[float], int]
+        tuple[list[Any], list[float], int]
             ``(keyframes, timestamps, total_scanned)``，其中
             ``total_scanned`` 为源视频总帧数。
         """
         import numpy as np  # type: ignore
 
-        keyframes: List[Any] = []
-        timestamps: List[float] = []
-        prev_gray: Optional[Any] = None
+        keyframes: list[Any] = []
+        timestamps: list[float] = []
+        prev_gray: Any | None = None
         idx = 0
 
         for frame in self._iter_frames_from_path(path):
@@ -459,7 +460,7 @@ class FrameExtractor(BaseVideoNode):
         video_data: VideoData,
         threshold: float,
         total: int,
-    ) -> Tuple[List[Any], List[float]]:
+    ) -> tuple[list[Any], list[float]]:
         """在已载入的 :class:`VideoData` 上提取关键帧。
 
         与 :meth:`_extract_keyframe_streaming` 算法一致，但作用于内存中
@@ -476,7 +477,7 @@ class FrameExtractor(BaseVideoNode):
 
         Returns
         -------
-        Tuple[List[Any], List[float]]
+        tuple[list[Any], list[float]]
             ``(keyframes, timestamps)``。
         """
         import numpy as np  # type: ignore
@@ -485,9 +486,9 @@ class FrameExtractor(BaseVideoNode):
         fps = video_data.fps
         n = len(frames)
 
-        keyframes: List[Any] = []
-        timestamps: List[float] = []
-        prev_gray: Optional[Any] = None
+        keyframes: list[Any] = []
+        timestamps: list[float] = []
+        prev_gray: Any | None = None
 
         for i, frame in enumerate(frames):
             cur_gray = self._to_gray_array(frame)
@@ -556,9 +557,9 @@ class FrameExtractor(BaseVideoNode):
     # ------------------------------------------------------------------
     @staticmethod
     def _convert_output_format(
-        frames: List[Any],
+        frames: list[Any],
         output_format: str,
-    ) -> List[Any]:
+    ) -> list[Any]:
         """按 ``output_format`` 转换帧列表的返回形态。
 
         Parameters
@@ -570,7 +571,7 @@ class FrameExtractor(BaseVideoNode):
 
         Returns
         -------
-        List[Any]
+        list[Any]
             转换后的列表：``PIL.Image`` / ``numpy.ndarray`` / 路径字符串。
 
         Raises
@@ -585,7 +586,7 @@ class FrameExtractor(BaseVideoNode):
             import numpy as np  # type: ignore
             from PIL import Image  # type: ignore
 
-            out: List[Any] = []
+            out: list[Any] = []
             for f in frames:
                 if isinstance(f, Image.Image):
                     out.append(np.array(f.convert("RGB")))
@@ -598,7 +599,7 @@ class FrameExtractor(BaseVideoNode):
             from PIL import Image  # type: ignore
 
             tmp_dir = tempfile.mkdtemp(prefix="mosaic_frames_")
-            paths: List[Any] = []
+            paths: list[Any] = []
             for i, f in enumerate(frames):
                 fname = os.path.join(tmp_dir, f"frame_{i:06d}.png")
                 if isinstance(f, Image.Image):
@@ -673,8 +674,8 @@ class FrameExtractor(BaseVideoNode):
             video_input = input_data.get("video")
 
             # 输出默认值
-            frames: List[Any] = []
-            timestamps: List[float] = []
+            frames: list[Any] = []
+            timestamps: list[float] = []
             fps: int = 30
             duration: float = 0.0
 

@@ -22,7 +22,8 @@ from __future__ import annotations
 import json
 import time
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional
+from collections.abc import Callable
+from typing import Any
 
 from mosaic.core.types import MosaicData, data_from_dict
 
@@ -59,8 +60,8 @@ class RunConfig:
     device: str = "cpu"
     precision: str = "fp32"
     batch_size: int = 1
-    seed: Optional[int] = None
-    extra: Dict[str, Any] = field(default_factory=dict)
+    seed: int | None = None
+    extra: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         """校验配置合法性。"""
@@ -94,8 +95,8 @@ class Event:
     """
 
     event_type: str
-    node_name: Optional[str] = None
-    payload: Dict[str, Any] = field(default_factory=dict)
+    node_name: str | None = None
+    payload: dict[str, Any] = field(default_factory=dict)
 
 
 #: 事件回调函数签名：接收一个 :class:`Event`，无返回值。
@@ -121,9 +122,9 @@ class NodeOutput:
 
     data: MosaicData
     timestamp: float = field(default_factory=time.time)
-    duration: Optional[float] = None
+    duration: float | None = None
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """序列化为字典。"""
         return {
             "data": self.data.to_dict() if isinstance(self.data, MosaicData) else self.data,
@@ -132,7 +133,7 @@ class NodeOutput:
         }
 
     @classmethod
-    def from_dict(cls, d: Dict[str, Any]) -> "NodeOutput":
+    def from_dict(cls, d: dict[str, Any]) -> "NodeOutput":
         """从字典反序列化。"""
         raw_data = d.get("data", {})
         data = data_from_dict(raw_data) if isinstance(raw_data, dict) else MosaicData()
@@ -170,21 +171,21 @@ class Context:
 
     def __init__(
         self,
-        config: Optional[RunConfig] = None,
-        initial_data: Optional[MosaicData] = None,
-        max_intermediate: Optional[int] = None,
+        config: RunConfig | None = None,
+        initial_data: MosaicData | None = None,
+        max_intermediate: int | None = None,
     ) -> None:
         self.config: RunConfig = config or RunConfig()
         # 共享数据存储：跨节点的全局键值区
         self.shared: MosaicData = initial_data if initial_data is not None else MosaicData()
         # 中间产物存储：node_name -> NodeOutput（含 data/timestamp/duration）
-        self._artifacts: Dict[str, NodeOutput] = {}
+        self._artifacts: dict[str, NodeOutput] = {}
         # 中间产物插入顺序（用于 FIFO 淘汰）
-        self._artifact_order: List[str] = []
+        self._artifact_order: list[str] = []
         # 最大中间产物数量
-        self._max_intermediate: Optional[int] = max_intermediate
+        self._max_intermediate: int | None = max_intermediate
         # 事件回调列表
-        self._handlers: List[EventHandler] = []
+        self._handlers: list[EventHandler] = []
         # 运行状态
         self._active: bool = False
 
@@ -251,7 +252,7 @@ class Context:
         self,
         node_name: str,
         data: MosaicData,
-        duration: Optional[float] = None,
+        duration: float | None = None,
     ) -> None:
         """保存某个节点的输出作为中间产物。
 
@@ -312,12 +313,12 @@ class Context:
         """判断某个节点是否已有产物记录。"""
         return node_name in self._artifacts
 
-    def list_artifacts(self) -> List[str]:
+    def list_artifacts(self) -> list[str]:
         """列出所有已记录产物的节点名。"""
         return list(self._artifacts.keys())
 
     @property
-    def artifacts(self) -> Dict[str, MosaicData]:
+    def artifacts(self) -> dict[str, MosaicData]:
         """中间产物的便捷视图：``{node_name: MosaicData}``（只读快照）。"""
         return {name: rec.data for name, rec in self._artifacts.items()}
 
@@ -334,31 +335,31 @@ class Context:
         """
         return self.get_artifact(node_name)
 
-    def list_intermediate(self) -> List[str]:
+    def list_intermediate(self) -> list[str]:
         """列出所有已存储的中间产物节点名。"""
         return self.list_artifacts()
 
-    def get_all_intermediate(self) -> Dict[str, MosaicData]:
+    def get_all_intermediate(self) -> dict[str, MosaicData]:
         """获取全部中间产物字典 ``{node_name: MosaicData}``。"""
         return dict(self.artifacts)
 
-    def get_node_durations(self) -> Dict[str, Optional[float]]:
+    def get_node_durations(self) -> dict[str, float | None]:
         """获取各节点的执行耗时字典。
 
         Returns
         -------
-        Dict[str, Optional[float]]
+        dict[str, float | None]
             ``{node_name: duration_seconds}``，未记录耗时的为 ``None``。
         """
         return {name: rec.duration for name, rec in self._artifacts.items()}
 
     # -- 快照导出/导入（新增） ----------------------------------------------
-    def snapshot(self) -> Dict[str, Any]:
+    def snapshot(self) -> dict[str, Any]:
         """导出所有中间产物为可序列化字典。
 
         Returns
         -------
-        Dict[str, Any]
+        dict[str, Any]
             包含 ``config``、``artifacts``（每个含 data/timestamp/duration）
             的字典，可 ``json.dumps`` 序列化。
         """
@@ -425,11 +426,11 @@ class Context:
         self,
         node_name: str,
         output_data: MosaicData,
-        elapsed: Optional[float] = None,
+        elapsed: float | None = None,
     ) -> None:
         """通知节点执行结束，并自动存储产物。"""
         self.store_artifact(node_name, output_data, duration=elapsed)
-        payload: Dict[str, Any] = {"output_keys": list(output_data.keys())}
+        payload: dict[str, Any] = {"output_keys": list(output_data.keys())}
         if elapsed is not None:
             payload["elapsed_seconds"] = elapsed
         self.emit(

@@ -16,7 +16,7 @@ import os
 import sys
 import tempfile
 import types
-from typing import Any, Dict, List
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -162,7 +162,7 @@ class _MockFaissIndex:
 
     def __init__(self, dim):
         self.dim = dim
-        self._vectors: List[np.ndarray] = []
+        self._vectors: list[np.ndarray] = []
         self.ntotal = 0
 
     def add(self, vectors):
@@ -229,10 +229,10 @@ class _MockChromaCollection:
 
     def __init__(self, name):
         self.name = name
-        self._ids: List[str] = []
-        self._documents: List[str] = []
-        self._embeddings: List[Any] = []
-        self._metadatas: List[Dict] = []
+        self._ids: list[str] = []
+        self._documents: list[str] = []
+        self._embeddings: list[Any] = []
+        self._metadatas: list[Dict] = []
 
     def add(self, ids, documents=None, embeddings=None, metadatas=None, **kwargs):
         self._ids.extend(ids)
@@ -257,7 +257,7 @@ class _MockChromaCollection:
 
 class _MockChromaClient:
     def __init__(self, **kwargs):
-        self._collections: Dict[str, _MockChromaCollection] = {}
+        self._collections: dict[str, _MockChromaCollection] = {}
 
     def get_or_create_collection(self, name, **kwargs):
         if name not in self._collections:
@@ -368,7 +368,7 @@ def sample_document(sample_text) -> DocumentData:
 
 
 @pytest.fixture
-def sample_chunks() -> List[str]:
+def sample_chunks() -> list[str]:
     """返回文本分块列表。"""
     return [
         "Mosaic 是一个多模态 AI 生成框架。",
@@ -420,7 +420,7 @@ def sample_csv_file(tmp_path, sample_csv_text):
 # 检索结果 fixtures
 # ---------------------------------------------------------------------------
 @pytest.fixture
-def sample_retrieval_results() -> List[Dict[str, Any]]:
+def sample_retrieval_results() -> list[dict[str, Any]]:
     """返回模拟的检索结果列表（5 条，含 content/score/source/metadata）。"""
     return [
         {

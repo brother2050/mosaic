@@ -23,7 +23,7 @@ from __future__ import annotations
 import abc
 import logging
 import random
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from mosaic.core.events import EventBus, EventType, get_event_bus
 from mosaic.core.node import Node, NodeSpec
@@ -34,7 +34,7 @@ __all__ = ["BaseImageNode"]
 
 
 # 常见图像模型的粗略显存估算（fp16，GB），用于 describe() 与调度器
-_VRAM_ESTIMATES: Dict[str, float] = {
+_VRAM_ESTIMATES: dict[str, float] = {
     "stabilityai/stable-diffusion-xl-base-1.0": 8.0,
     "stabilityai/stable-diffusion-xl-refiner-1.0": 7.0,
     "stabilityai/stable-diffusion-x4-upscaler": 6.0,
@@ -45,7 +45,7 @@ _VRAM_ESTIMATES: Dict[str, float] = {
 }
 
 # 许可证信息
-_LICENSE_INFO: Dict[str, str] = {
+_LICENSE_INFO: dict[str, str] = {
     "stabilityai/stable-diffusion-xl-base-1.0": "OpenRAIL++-M (CreativeML Open RAIL++-M License)",
     "stabilityai/stable-diffusion-xl-refiner-1.0": "OpenRAIL++-M",
     "stabilityai/stable-diffusion-x4-upscaler": "OpenRAIL++-M",
@@ -89,8 +89,8 @@ class BaseImageNode(Node):
     domain: str = "image"
     description: str = "Base image node."
     version: str = "0.1.0"
-    input_types: List[str] = ["image", "mosaic"]
-    output_types: List[str] = ["image"]
+    input_types: list[str] = ["image", "mosaic"]
+    output_types: list[str] = ["image"]
 
     def __init__(
         self,
@@ -100,9 +100,9 @@ class BaseImageNode(Node):
         enable_attention_slicing: bool = True,
         enable_vae_slicing: bool = True,
         enable_model_cpu_offload: bool = False,
-        scheduler_name: Optional[str] = None,
-        scheduler: Optional[Scheduler] = None,
-        bus: Optional[EventBus] = None,
+        scheduler_name: str | None = None,
+        scheduler: Scheduler | None = None,
+        bus: EventBus | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs)
@@ -112,7 +112,7 @@ class BaseImageNode(Node):
         self._enable_attention_slicing: bool = enable_attention_slicing
         self._enable_vae_slicing: bool = enable_vae_slicing
         self._enable_model_cpu_offload: bool = enable_model_cpu_offload
-        self._scheduler_name: Optional[str] = scheduler_name
+        self._scheduler_name: str | None = scheduler_name
         self._scheduler: Scheduler = scheduler or get_scheduler()
         self._bus: EventBus = bus or get_event_bus()
         self._logger = logging.getLogger(f"mosaic.nodes.image.{self.name}")
@@ -272,7 +272,7 @@ class BaseImageNode(Node):
         except Exception as exc:  # noqa: BLE001
             self._logger.warning("Failed to switch scheduler: %s", exc)
 
-    def _prepare_seed(self, seed: Optional[int]) -> Tuple[int, Any]:
+    def _prepare_seed(self, seed: int | None) -> tuple[int, Any]:
         """准备随机种子与 generator。
 
         Parameters
@@ -282,7 +282,7 @@ class BaseImageNode(Node):
 
         Returns
         -------
-        Tuple[int, Optional[torch.Generator]]
+        tuple[int, torch.Generator | None]
             ``(actual_seed, generator)``。
         """
         import torch  # type: ignore
@@ -340,7 +340,7 @@ class BaseImageNode(Node):
 
     @staticmethod
     def _resize_to_multiple_of_8(
-        image: Any, target_size: Optional[Tuple[int, int]] = None
+        image: Any, target_size: tuple[int, int] | None = None
     ) -> Any:
         """将图像尺寸调整为 8 的倍数（diffusers 要求）。
 
@@ -366,7 +366,7 @@ class BaseImageNode(Node):
         h = max(8, (h // 8) * 8)
 
         if (w, h) != image.size:
-            image = image.resize((w, h), Image.LANCZOS)
+            image = image.resize((w, h), Image.Resampling.LANCZOS)
         return image
 
     @staticmethod
@@ -408,7 +408,7 @@ class BaseImageNode(Node):
         # 对齐到 8 的倍数
         new_w = max(8, (new_w // 8) * 8)
         new_h = max(8, (new_h // 8) * 8)
-        return image.resize((new_w, new_h), Image.LANCZOS)
+        return image.resize((new_w, new_h), Image.Resampling.LANCZOS)
 
     # ------------------------------------------------------------------
     # 事件发射辅助
@@ -457,7 +457,7 @@ class BaseImageNode(Node):
             model_info=self._build_model_info(),
         )
 
-    def _build_model_info(self) -> Dict[str, Any]:
+    def _build_model_info(self) -> dict[str, Any]:
         """构造模型信息字典。"""
         vram = _VRAM_ESTIMATES.get(self._model_name, 8.0)
         license_info = _LICENSE_INFO.get(

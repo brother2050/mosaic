@@ -17,7 +17,8 @@ from __future__ import annotations
 
 import base64
 import io
-from typing import Any, Dict, Iterator, List, Optional, Tuple, Type
+from collections.abc import Iterator
+from typing import Any
 
 __all__ = [
     "MosaicData",
@@ -84,7 +85,7 @@ def _b64_to_image(token: str) -> Any:
     return Image.open(io.BytesIO(raw))
 
 
-def _array_to_dict(array: Any) -> Dict[str, Any]:
+def _array_to_dict(array: Any) -> dict[str, Any]:
     """将 numpy.ndarray 序列化为带元数据的字典。"""
     np = _import_numpy()
     if not isinstance(array, np.ndarray):
@@ -97,7 +98,7 @@ def _array_to_dict(array: Any) -> Dict[str, Any]:
     }
 
 
-def _dict_to_array(payload: Dict[str, Any]) -> Any:
+def _dict_to_array(payload: dict[str, Any]) -> Any:
     """将带元数据的字典还原为 numpy.ndarray。"""
     np = _import_numpy()
     data = payload["data"]
@@ -172,7 +173,7 @@ class MosaicData:
     data_type: str = "mosaic"
 
     def __init__(self, **kwargs: Any) -> None:
-        self._data: Dict[str, Any] = dict(kwargs)
+        self._data: dict[str, Any] = dict(kwargs)
 
     # -- 字典式协议 --------------------------------------------------------
     def __getitem__(self, key: str) -> Any:
@@ -216,18 +217,18 @@ class MosaicData:
         """安全取值，键不存在时返回默认值。"""
         return self._data.get(key, default)
 
-    def update(self, other: Dict[str, Any]) -> None:
+    def update(self, other: dict[str, Any]) -> None:
         """用 ``other`` 中的键值对更新当前数据。"""
         self._data.update(other)
 
     # -- 序列化 ------------------------------------------------------------
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """将数据序列化为纯字典（可 JSON 化）。
 
         ``PIL.Image`` 编码为 base64 PNG，``numpy.ndarray`` 转为带元数据的
         嵌套列表，确保返回值可被 ``json`` 等标准序列化器处理。
         """
-        payload: Dict[str, Any] = {
+        payload: dict[str, Any] = {
             "__data_type__": self.data_type,
         }
         for key, value in self._data.items():
@@ -235,13 +236,13 @@ class MosaicData:
         return payload
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "MosaicData":
+    def from_dict(cls, data: dict[str, Any]) -> "MosaicData":
         """从字典反序列化为数据实例。
 
         若字典中包含 ``__data_type__`` 字段，将分发到对应子类。
         """
         dtype = data.get("__data_type__", cls.data_type)
-        target_cls: Type[MosaicData] = DATA_TYPE_REGISTRY.get(dtype, cls)
+        target_cls: type[MosaicData] = DATA_TYPE_REGISTRY.get(dtype, cls)
         # 过滤掉元信息键
         clean = {
             k: _deserialize_value(v)
@@ -287,7 +288,7 @@ class TextData(MosaicData):
         self,
         content: str = "",
         language: str = "auto",
-        metadata: Optional[Dict[str, Any]] = None,
+        metadata: dict[str, Any] | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(
@@ -308,7 +309,7 @@ class TextData(MosaicData):
         return self._data["language"]
 
     @property
-    def metadata(self) -> Dict[str, Any]:
+    def metadata(self) -> dict[str, Any]:
         """附加元数据。"""
         return self._data["metadata"]
 
@@ -341,8 +342,8 @@ class ImageData(MosaicData):
     def __init__(
         self,
         image: Any = None,
-        size: Optional[Tuple[int, int]] = None,
-        metadata: Optional[Dict[str, Any]] = None,
+        size: tuple[int, int] | None = None,
+        metadata: dict[str, Any] | None = None,
         **kwargs: Any,
     ) -> None:
         if size is None and image is not None:
@@ -360,12 +361,12 @@ class ImageData(MosaicData):
         return self._data["image"]
 
     @property
-    def size(self) -> Optional[Tuple[int, int]]:
+    def size(self) -> tuple[int, int] | None:
         """图像尺寸 ``(width, height)``。"""
         return self._data["size"]
 
     @property
-    def metadata(self) -> Dict[str, Any]:
+    def metadata(self) -> dict[str, Any]:
         """附加元数据。"""
         return self._data["metadata"]
 
@@ -406,7 +407,7 @@ class AudioData(MosaicData):
         self,
         waveform: Any = None,
         sample_rate: int = 22050,
-        metadata: Optional[Dict[str, Any]] = None,
+        metadata: dict[str, Any] | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(
@@ -427,7 +428,7 @@ class AudioData(MosaicData):
         return self._data["sample_rate"]
 
     @property
-    def metadata(self) -> Dict[str, Any]:
+    def metadata(self) -> dict[str, Any]:
         """附加元数据。"""
         return self._data["metadata"]
 
@@ -460,9 +461,9 @@ class VideoData(MosaicData):
 
     def __init__(
         self,
-        frames: Optional[List[Any]] = None,
+        frames: list[Any] | None = None,
         fps: int = 30,
-        metadata: Optional[Dict[str, Any]] = None,
+        metadata: dict[str, Any] | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(
@@ -473,7 +474,7 @@ class VideoData(MosaicData):
         )
 
     @property
-    def frames(self) -> List[Any]:
+    def frames(self) -> list[Any]:
         """视频帧列表。"""
         return self._data["frames"]
 
@@ -483,7 +484,7 @@ class VideoData(MosaicData):
         return self._data["fps"]
 
     @property
-    def metadata(self) -> Dict[str, Any]:
+    def metadata(self) -> dict[str, Any]:
         """附加元数据。"""
         return self._data["metadata"]
 
@@ -520,9 +521,9 @@ class SubtitleData(MosaicData):
 
     def __init__(
         self,
-        segments: Optional[List[Dict[str, Any]]] = None,
+        segments: list[dict[str, Any]] | None = None,
         format: str = "srt",
-        metadata: Optional[Dict[str, Any]] = None,
+        metadata: dict[str, Any] | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(
@@ -533,7 +534,7 @@ class SubtitleData(MosaicData):
         )
 
     @property
-    def segments(self) -> List[Dict[str, Any]]:
+    def segments(self) -> list[dict[str, Any]]:
         """字幕片段列表。"""
         return self._data["segments"]
 
@@ -543,7 +544,7 @@ class SubtitleData(MosaicData):
         return self._data["format"]
 
     @property
-    def metadata(self) -> Dict[str, Any]:
+    def metadata(self) -> dict[str, Any]:
         """附加元数据。"""
         return self._data["metadata"]
 
@@ -584,9 +585,9 @@ class DocumentData(MosaicData):
 
     def __init__(
         self,
-        chunks: Optional[List[str]] = None,
-        metadata: Optional[Dict[str, Any]] = None,
-        chunk_metadata: Optional[List[Dict[str, Any]]] = None,
+        chunks: list[str] | None = None,
+        metadata: dict[str, Any] | None = None,
+        chunk_metadata: list[dict[str, Any]] | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(
@@ -597,17 +598,17 @@ class DocumentData(MosaicData):
         )
 
     @property
-    def chunks(self) -> List[str]:
+    def chunks(self) -> list[str]:
         """文本分块列表。"""
         return self._data["chunks"]
 
     @property
-    def metadata(self) -> Dict[str, Any]:
+    def metadata(self) -> dict[str, Any]:
         """文档级附加元数据。"""
         return self._data["metadata"]
 
     @property
-    def chunk_metadata(self) -> List[Dict[str, Any]]:
+    def chunk_metadata(self) -> list[dict[str, Any]]:
         """每个 chunk 的元信息列表。"""
         return self._data["chunk_metadata"]
 
@@ -647,9 +648,9 @@ class RagQueryResult(MosaicData):
     def __init__(
         self,
         query: str = "",
-        results: Optional[List[Dict[str, Any]]] = None,
-        answer: Optional[str] = None,
-        citations: Optional[List[Dict[str, Any]]] = None,
+        results: list[dict[str, Any]] | None = None,
+        answer: str | None = None,
+        citations: list[dict[str, Any]] | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(
@@ -666,17 +667,17 @@ class RagQueryResult(MosaicData):
         return self._data["query"]
 
     @property
-    def results(self) -> List[Dict[str, Any]]:
+    def results(self) -> list[dict[str, Any]]:
         """检索结果列表。"""
         return self._data["results"]
 
     @property
-    def answer(self) -> Optional[str]:
+    def answer(self) -> str | None:
         """生成的回答（可能为 None）。"""
         return self._data.get("answer")
 
     @property
-    def citations(self) -> Optional[List[Dict[str, Any]]]:
+    def citations(self) -> list[dict[str, Any]] | None:
         """引用列表（可能为 None）。"""
         return self._data.get("citations")
 
@@ -726,7 +727,7 @@ class MotionData(MosaicData):
         frame_count: int = 0,
         fps: int = 30,
         skeleton_type: str = "coco",
-        metadata: Optional[Dict[str, Any]] = None,
+        metadata: dict[str, Any] | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(
@@ -759,7 +760,7 @@ class MotionData(MosaicData):
         return self._data["skeleton_type"]
 
     @property
-    def metadata(self) -> Dict[str, Any]:
+    def metadata(self) -> dict[str, Any]:
         """附加元数据。"""
         return self._data["metadata"]
 
@@ -805,7 +806,7 @@ class AvatarData(MosaicData):
         face_embedding: Any = None,
         motion: Any = None,
         audio: Any = None,
-        metadata: Optional[Dict[str, Any]] = None,
+        metadata: dict[str, Any] | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(
@@ -838,7 +839,7 @@ class AvatarData(MosaicData):
         return self._data.get("audio")
 
     @property
-    def metadata(self) -> Dict[str, Any]:
+    def metadata(self) -> dict[str, Any]:
         """附加元数据。"""
         return self._data["metadata"]
 
@@ -860,7 +861,7 @@ class AvatarData(MosaicData):
 # ---------------------------------------------------------------------------
 # 类型注册表：支撑 from_dict 的多态分发
 # ---------------------------------------------------------------------------
-DATA_TYPE_REGISTRY: Dict[str, Type[MosaicData]] = {
+DATA_TYPE_REGISTRY: dict[str, type[MosaicData]] = {
     "mosaic": MosaicData,
     "text": TextData,
     "image": ImageData,
@@ -874,6 +875,6 @@ DATA_TYPE_REGISTRY: Dict[str, Type[MosaicData]] = {
 }
 
 
-def data_from_dict(data: Dict[str, Any]) -> MosaicData:
+def data_from_dict(data: dict[str, Any]) -> MosaicData:
     """便捷函数：根据 ``__data_type__`` 字段自动分发到正确子类。"""
     return MosaicData.from_dict(data)

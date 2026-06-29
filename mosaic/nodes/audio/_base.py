@@ -20,7 +20,7 @@ from __future__ import annotations
 import abc
 import logging
 import os
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from mosaic.core.events import EventBus, EventType, get_event_bus
 from mosaic.core.node import Node, NodeSpec
@@ -31,7 +31,7 @@ __all__ = ["BaseAudioNode"]
 
 
 # 常见音频模型的粗略显存估算（GB），用于 describe() 与调度器
-_VRAM_ESTIMATES: Dict[str, float] = {
+_VRAM_ESTIMATES: dict[str, float] = {
     # edge-tts 为云端 TTS，不占用本地 GPU 显存
     "edge-tts": 0.0,
     "openai/whisper-large-v3": 10.0,
@@ -50,7 +50,7 @@ _VRAM_ESTIMATES: Dict[str, float] = {
 }
 
 # 许可证信息
-_LICENSE_INFO: Dict[str, str] = {
+_LICENSE_INFO: dict[str, str] = {
     # edge-tts 为微软 Azure 神经网络语音的非官方 Python 客户端
     "edge-tts": "Microsoft Azure Neural TTS (unofficial client, MIT)",
     "openai/whisper-large-v3": "MIT License",
@@ -92,22 +92,22 @@ class BaseAudioNode(Node):
     domain: str = "audio"
     description: str = "Base audio node."
     version: str = "0.1.0"
-    input_types: List[str] = ["text", "audio", "mosaic"]
-    output_types: List[str] = ["audio"]
+    input_types: list[str] = ["text", "audio", "mosaic"]
+    output_types: list[str] = ["audio"]
 
     def __init__(
         self,
         model: str = "",
         device: str = "cuda",
-        sample_rate: Optional[int] = None,
-        scheduler: Optional[Scheduler] = None,
-        bus: Optional[EventBus] = None,
+        sample_rate: int | None = None,
+        scheduler: Scheduler | None = None,
+        bus: EventBus | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs)
         self._model_name: str = model
         self._device: str = device
-        self._target_sample_rate: Optional[int] = sample_rate
+        self._target_sample_rate: int | None = sample_rate
         self._scheduler: Scheduler = scheduler or get_scheduler()
         self._bus: EventBus = bus or get_event_bus()
         self._logger = logging.getLogger(f"mosaic.nodes.audio.{self.name}")
@@ -198,7 +198,7 @@ class BaseAudioNode(Node):
     # 音频前后处理工具
     # ------------------------------------------------------------------
     @staticmethod
-    def _load_audio(path_or_array: Any) -> Tuple[Any, int]:
+    def _load_audio(path_or_array: Any) -> tuple[Any, int]:
         """从文件路径或数组加载音频。
 
         Parameters
@@ -209,7 +209,7 @@ class BaseAudioNode(Node):
 
         Returns
         -------
-        Tuple[numpy.ndarray, int]
+        tuple[numpy.ndarray, int]
             ``(waveform, sample_rate)``。
         """
         # AudioData 实例
@@ -490,13 +490,13 @@ class BaseAudioNode(Node):
             model_info=self._build_model_info(),
         )
 
-    def _build_model_info(self) -> Dict[str, Any]:
+    def _build_model_info(self) -> dict[str, Any]:
         """构造模型信息字典。"""
         vram = _VRAM_ESTIMATES.get(self._model_name, 4.0)
         license_info = _LICENSE_INFO.get(
             self._model_name, "See model card on HuggingFace"
         )
-        info: Dict[str, Any] = {
+        info: dict[str, Any] = {
             "name": self._model_name,
             "source": "HuggingFace",
             "license": license_info,

@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import abc
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Type
+from typing import Any
 
 from mosaic.core.types import MosaicData
 
@@ -58,11 +58,11 @@ class NodeSpec:
     domain: str
     description: str = ""
     version: str = "0.1.0"
-    input_types: List[str] = field(default_factory=list)
-    output_types: List[str] = field(default_factory=list)
-    model_info: Dict[str, Any] = field(default_factory=dict)
+    input_types: list[str] = field(default_factory=list)
+    output_types: list[str] = field(default_factory=list)
+    model_info: dict[str, Any] = field(default_factory=dict)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """将规格说明转为纯字典。"""
         return {
             "name": self.name,
@@ -133,8 +133,8 @@ class Node(abc.ABC):
     domain: str = "core"
     description: str = "Base node, override in subclass."
     version: str = "0.1.0"
-    input_types: List[str] = []
-    output_types: List[str] = []
+    input_types: list[str] = []
+    output_types: list[str] = []
 
     def __init__(self, **kwargs: Any) -> None:
         # 允许实例化时覆写类属性
@@ -208,7 +208,7 @@ class Node(abc.ABC):
         """判断节点是否接受给定的数据类型标识。"""
         return data_type in self.input_types
 
-    def produces(self) -> List[str]:
+    def produces(self) -> list[str]:
         """返回节点输出的数据类型标识列表。"""
         return list(self.output_types)
 

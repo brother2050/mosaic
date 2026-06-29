@@ -11,7 +11,7 @@ import os
 import sys
 import tempfile
 import types
-from typing import Any, List
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -160,7 +160,7 @@ def _make_gradient_frame(width: int, height: int, offset: int) -> Image.Image:
 
 
 @pytest.fixture
-def sample_frames() -> List[Image.Image]:
+def sample_frames() -> list[Image.Image]:
     """创建 10 帧 PIL.Image（渐变颜色块，64x64 RGB）。"""
     return [_make_gradient_frame(64, 64, i) for i in range(10)]
 

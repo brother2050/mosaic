@@ -46,7 +46,7 @@ from __future__ import annotations
 
 import random
 import time
-from typing import Any, List, Optional, Tuple
+from typing import Any
 
 from mosaic.core.registry import registry
 from mosaic.core.types import MosaicData, VideoData
@@ -213,7 +213,7 @@ class VideoContinuation(BaseVideoNode):
         )
         return closest
 
-    def _prepare_seed(self, seed: Optional[int]) -> Tuple[int, Any]:
+    def _prepare_seed(self, seed: int | None) -> tuple[int, Any]:
         """准备随机种子与 generator。
 
         使用 ``random`` 模块在未指定种子时生成随机种子，并基于
@@ -226,7 +226,7 @@ class VideoContinuation(BaseVideoNode):
 
         Returns
         -------
-        Tuple[int, torch.Generator]
+        tuple[int, torch.Generator]
             实际使用的种子与对应的 ``torch.Generator``。
         """
         import torch  # type: ignore
@@ -245,7 +245,7 @@ class VideoContinuation(BaseVideoNode):
 
         return seed, generator
 
-    def _extract_frames_from_output(self, output: Any) -> List[Any]:
+    def _extract_frames_from_output(self, output: Any) -> list[Any]:
         """从 CogVideoX Pipeline 输出中提取帧列表。
 
         CogVideoX 输出格式可能因版本而异：
@@ -259,13 +259,13 @@ class VideoContinuation(BaseVideoNode):
 
         Returns
         -------
-        List[PIL.Image]
+        list[PIL.Image]
             帧列表。
         """
         from PIL import Image  # type: ignore
         import numpy as np  # type: ignore
 
-        frames: List[Any] = []
+        frames: list[Any] = []
 
         if hasattr(output, "frames"):
             raw = output.frames
@@ -298,10 +298,10 @@ class VideoContinuation(BaseVideoNode):
 
     def _crossfade_frames(
         self,
-        tail_frames: List[Any],
-        head_frames: List[Any],
+        tail_frames: list[Any],
+        head_frames: list[Any],
         overlap: int,
-    ) -> List[Any]:
+    ) -> list[Any]:
         """对重叠区域的帧做交叉淡化（加权平均）。
 
         将 ``tail_frames``（原始视频尾部帧）与 ``head_frames``（生成片段
@@ -320,7 +320,7 @@ class VideoContinuation(BaseVideoNode):
 
         Returns
         -------
-        List[PIL.Image]
+        list[PIL.Image]
             交叉淡化后的 ``overlap`` 帧。
 
         Raises
@@ -349,15 +349,15 @@ class VideoContinuation(BaseVideoNode):
         # 统一尺寸到 tail 的首帧（防御性，正常情况下已对齐）
         target_size = tail_frames[0].size
 
-        blended: List[Any] = []
+        blended: list[Any] = []
         for i in range(overlap):
             alpha = alphas[i]
             tail = tail_frames[i]
             head = head_frames[i]
             if tail.size != target_size:
-                tail = tail.resize(target_size, Image.LANCZOS)
+                tail = tail.resize(target_size, Image.Resampling.LANCZOS)
             if head.size != target_size:
-                head = head.resize(target_size, Image.LANCZOS)
+                head = head.resize(target_size, Image.Resampling.LANCZOS)
 
             tail_arr = np.array(tail.convert("RGB"), dtype=np.float32)
             head_arr = np.array(head.convert("RGB"), dtype=np.float32)
@@ -411,7 +411,7 @@ class VideoContinuation(BaseVideoNode):
                     f"got {type(video).__name__ if video is not None else 'None'}."
                 )
 
-            original_frames: List[Any] = list(video.frames)
+            original_frames: list[Any] = list(video.frames)
             if not original_frames:
                 raise ValueError(
                     "VideoContinuation requires a non-empty 'video' "

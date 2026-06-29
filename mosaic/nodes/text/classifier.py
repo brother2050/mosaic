@@ -14,7 +14,7 @@ c) **zero-shot 模式**：``len(labels) > 10`` 时，使用
 from __future__ import annotations
 
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from mosaic.core.node import NodeSpec
 from mosaic.core.registry import registry
@@ -206,8 +206,8 @@ class TextClassifier(BaseTextNode):
 
     # -- 专用分类模型 ------------------------------------------------------
     def _classify_specialized(
-        self, text: str, labels: List[str], multi_label: bool
-    ) -> Dict[str, Any]:
+        self, text: str, labels: list[str], multi_label: bool
+    ) -> dict[str, Any]:
         """专用分类模型模式：直接用模型推理。
 
         注意：专用分类模型的类别是预定义的，``labels`` 参数在此模式下仅用于
@@ -228,8 +228,8 @@ class TextClassifier(BaseTextNode):
 
     # -- 生成模式 ----------------------------------------------------------
     def _classify_generation(
-        self, text: str, labels: List[str], multi_label: bool
-    ) -> Dict[str, Any]:
+        self, text: str, labels: list[str], multi_label: bool
+    ) -> dict[str, Any]:
         """生成模式：用 LLM 从给定标签列表中选择。"""
         labels_str = "、".join(labels)
         if multi_label:
@@ -267,7 +267,7 @@ class TextClassifier(BaseTextNode):
         return {"predicted_label": predicted_label, "scores": scores}
 
     @staticmethod
-    def _parse_labels(generated: str, labels: List[str]) -> List[str]:
+    def _parse_labels(generated: str, labels: list[str]) -> list[str]:
         """从模型生成文本中解析出有效标签。
 
         按顿号、逗号、换行等分隔符切分，再与候选标签做包含匹配。
@@ -281,7 +281,7 @@ class TextClassifier(BaseTextNode):
         import re
 
         parts = re.split(r"[、,，\n;；]+", text)
-        matched: List[str] = []
+        matched: list[str] = []
         seen: set = set()
         for part in parts:
             part = part.strip()
@@ -302,8 +302,8 @@ class TextClassifier(BaseTextNode):
 
     # -- zero-shot 模式 ---------------------------------------------------
     def _classify_zero_shot(
-        self, text: str, labels: List[str], multi_label: bool
-    ) -> Dict[str, Any]:
+        self, text: str, labels: list[str], multi_label: bool
+    ) -> dict[str, Any]:
         """zero-shot 模式：使用 zero-shot-classification pipeline。"""
         self._ensure_zero_shot_pipeline()
         result = self._zero_shot_pipeline(

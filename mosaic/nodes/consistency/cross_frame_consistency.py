@@ -47,7 +47,7 @@ Limitations
 from __future__ import annotations
 
 import time
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from mosaic.core.node import NodeSpec
 from mosaic.core.registry import registry
@@ -59,10 +59,10 @@ __all__ = ["CrossFrameConsistency"]
 
 
 # Story-Diffusion 默认回退到 SD 1.5 时的额外显存 / 许可证信息
-_EXTRA_VRAM: Dict[str, float] = {
+_EXTRA_VRAM: dict[str, float] = {
     "runwayml/stable-diffusion-v1-5": 4.0,
 }
-_EXTRA_LICENSE: Dict[str, str] = {
+_EXTRA_LICENSE: dict[str, str] = {
     "runwayml/stable-diffusion-v1-5": "OpenRAIL-M (CreativeML Open RAIL-M)",
 }
 
@@ -123,11 +123,11 @@ class CrossFrameConsistency(BaseConsistencyNode):
         "methods."
     )
     version: str = "0.1.0"
-    input_types: List[str] = ["image", "text", "mosaic"]
-    output_types: List[str] = ["image"]
+    input_types: list[str] = ["image", "text", "mosaic"]
+    output_types: list[str] = ["image"]
 
     #: 支持的一致性方法集合。
-    _SUPPORTED_METHODS: Tuple[str, ...] = (
+    _SUPPORTED_METHODS: tuple[str, ...] = (
         "consistory",
         "story-diffusion",
         "all-in-one",
@@ -139,8 +139,8 @@ class CrossFrameConsistency(BaseConsistencyNode):
         method: str = "consistory",
         device: str = "cuda",
         dtype: str = "float16",
-        scheduler: Optional[Any] = None,
-        bus: Optional[Any] = None,
+        scheduler: Any | None = None,
+        bus: Any | None = None,
         **kwargs: Any,
     ) -> None:
         if method not in self._SUPPORTED_METHODS:
@@ -159,7 +159,7 @@ class CrossFrameConsistency(BaseConsistencyNode):
         # 运行时状态
         self._kv_mode: str = "off"  # "off" / "anchor" / "share"
         self._consistency_strength: float = 0.85
-        self._shared_kv_cache: Dict[str, Any] = {}
+        self._shared_kv_cache: dict[str, Any] = {}
         self._ip_adapter_loaded: bool = False
         self._attention_wrapped: bool = False
 
@@ -474,7 +474,7 @@ class CrossFrameConsistency(BaseConsistencyNode):
     def _generate_frame(
         self,
         prompt: str,
-        negative_prompt: Optional[str],
+        negative_prompt: str | None,
         width: int,
         height: int,
         num_inference_steps: int,
@@ -506,7 +506,7 @@ class CrossFrameConsistency(BaseConsistencyNode):
         PIL.Image.Image
             生成的单帧图像。
         """
-        pipe_kwargs: Dict[str, Any] = {
+        pipe_kwargs: dict[str, Any] = {
             "prompt": prompt,
             "width": width,
             "height": height,
@@ -636,7 +636,7 @@ class CrossFrameConsistency(BaseConsistencyNode):
 
             # -- 逐帧生成 -------------------------------------------------
             total = len(prompts)
-            images: List[Any] = []
+            images: list[Any] = []
 
             # all-in-one: 参考图作为 IP-Adapter 锚帧
             ip_anchor = (
@@ -702,7 +702,7 @@ class CrossFrameConsistency(BaseConsistencyNode):
                 if reference_image is not None
                 else (images[0] if images else None)
             )
-            consistency_scores: List[float] = []
+            consistency_scores: list[float] = []
             for img in images:
                 if anchor_for_scoring is None or img is None:
                     consistency_scores.append(0.0)

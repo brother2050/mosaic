@@ -15,7 +15,7 @@ b) **通用生成模式**：未指定专用模型时，复用 :class:`BaseTextNo
 from __future__ import annotations
 
 import time
-from typing import Any, Dict
+from typing import Any
 
 from mosaic.core.node import NodeSpec
 from mosaic.core.registry import registry
@@ -29,7 +29,7 @@ __all__ = ["TextSummarizer"]
 _VALID_STYLES = {"concise", "detailed", "bullet_points"}
 
 #: 各风格对应的 prompt 指令片段。
-_STYLE_INSTRUCTIONS: Dict[str, str] = {
+_STYLE_INSTRUCTIONS: dict[str, str] = {
     "concise": "请用简洁的语言概括以下文本的核心要点，不超过{max_length}字。",
     "detailed": "请对以下文本进行详细摘要，保留关键信息和逻辑结构，不超过{max_length}字。",
     "bullet_points": (

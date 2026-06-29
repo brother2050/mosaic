@@ -13,7 +13,7 @@
 from __future__ import annotations
 
 import time
-from typing import Any, Optional
+from typing import Any
 
 from mosaic.core.events import EventBus, get_event_bus
 from mosaic.core.node import NodeSpec
@@ -220,7 +220,7 @@ class BackgroundRemover(BaseImageNode):
         # 后处理：将预测结果 resize 回原图尺寸
         pred = preds[0].squeeze()
         pred_mask = transforms.ToPILImage()(pred)
-        pred_mask = pred_mask.resize(orig_size, Image.LANCZOS)
+        pred_mask = pred_mask.resize(orig_size, Image.Resampling.LANCZOS)
 
         # 将 mask 转换为 numpy 数组
         mask_array = np.array(pred_mask)

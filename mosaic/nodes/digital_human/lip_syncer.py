@@ -47,7 +47,7 @@ Limitations
 from __future__ import annotations
 
 import time
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from mosaic.core.node import NodeSpec
 from mosaic.core.registry import registry
@@ -59,35 +59,35 @@ __all__ = ["LipSyncer"]
 
 
 # method -> 默认模型标识
-_DEFAULT_MODELS: Dict[str, str] = {
+_DEFAULT_MODELS: dict[str, str] = {
     "musetalk": "KwaiVGI/MuseTalk",
     "wav2lip": "wav2lip",
     "sadtalker": "cvitkwai/SadTalker",
 }
 
 # method -> 粗略显存需求（GB, fp16），用于 describe()
-_METHOD_VRAM: Dict[str, float] = {
+_METHOD_VRAM: dict[str, float] = {
     "musetalk": 7.0,
     "wav2lip": 3.0,
     "sadtalker": 5.0,
 }
 
 # method -> 许可证（覆盖未知模型的默认值）
-_METHOD_LICENSE: Dict[str, str] = {
+_METHOD_LICENSE: dict[str, str] = {
     "musetalk": "CC-BY-NC 4.0",
     "wav2lip": "CC-BY-NC 4.0 (research only)",
     "sadtalker": "Apache-2.0 (code), CC-BY-NC-4.0 (model weights)",
 }
 
 # method -> 人脸裁剪工作尺寸
-_WORK_SIZE: Dict[str, Tuple[int, int]] = {
+_WORK_SIZE: dict[str, tuple[int, int]] = {
     "musetalk": (256, 256),
     "wav2lip": (96, 96),
     "sadtalker": (256, 256),
 }
 
 _DEFAULT_FPS: int = 25
-_DEFAULT_PADDING: List[int] = [0, 20, 0, 20]  # [left, top, right, bottom]
+_DEFAULT_PADDING: list[int] = [0, 20, 0, 20]  # [left, top, right, bottom]
 
 
 @registry.register
@@ -129,8 +129,8 @@ class LipSyncer(BaseDigitalHumanNode):
         "and SadTalker backends; only the mouth region is modified."
     )
     version: str = "0.1.0"
-    input_types: List[str] = ["image", "audio", "video", "mosaic"]
-    output_types: List[str] = ["video", "image", "audio", "mosaic"]
+    input_types: list[str] = ["image", "audio", "video", "mosaic"]
+    output_types: list[str] = ["video", "image", "audio", "mosaic"]
 
     def __init__(
         self,
@@ -334,7 +334,7 @@ class LipSyncer(BaseDigitalHumanNode):
                     "local checkpoint directory. Install via "
                     "`pip install sadtalker` or set `model` to a local path."
                 )
-            components: Dict[str, Any] = {}
+            components: dict[str, Any] = {}
             for name in ("mapping", "generator", "kp_extractor", "renderer"):
                 ckpt = os.path.join(self._model_name, f"{name}.pth")
                 if os.path.exists(ckpt):
@@ -372,7 +372,7 @@ class LipSyncer(BaseDigitalHumanNode):
         ----------
         input_data:
             必须包含 ``face_image`` (PIL.Image | str | VideoData |
-            List[PIL.Image]) 与 ``audio`` (AudioData | str | ndarray)。
+            list[PIL.Image]) 与 ``audio`` (AudioData | str | ndarray)。
             可选：``fps`` (int, 默认 25)、
             ``output_format`` ("video"|"frames", 默认 "video")、
             ``padding`` ([left, top, right, bottom], 默认 [0,20,0,20])、
@@ -381,7 +381,7 @@ class LipSyncer(BaseDigitalHumanNode):
         Returns
         -------
         MosaicData
-            含 ``video`` (VideoData) 或 ``frames`` (List[PIL.Image])、
+            含 ``video`` (VideoData) 或 ``frames`` (list[PIL.Image])、
             ``audio`` (AudioData)、``duration``、``fps``。
 
         Raises
@@ -511,21 +511,21 @@ class LipSyncer(BaseDigitalHumanNode):
     # ------------------------------------------------------------------
     def _run_lip_sync(
         self,
-        base_frames: List[Any],
-        padded_bbox: Tuple[int, int, int, int],
-        mouth_bbox: Tuple[int, int, int, int],
+        base_frames: list[Any],
+        padded_bbox: tuple[int, int, int, int],
+        mouth_bbox: tuple[int, int, int, int],
         waveform: Any,
         sample_rate: int,
         fps: int,
         total_frames: int,
         parsing_mode: str,
-    ) -> List[Any]:
+    ) -> list[Any]:
         """逐帧执行口型同步，仅融合嘴部区域回原图。"""
         work_size = _WORK_SIZE.get(self._method, (256, 256))
 
         self._emit_progress(0, total_frames, "Lip syncing")
 
-        out_frames: List[Any] = []
+        out_frames: list[Any] = []
         for i in range(total_frames):
             base_frame = base_frames[i % len(base_frames)]
 
@@ -602,9 +602,9 @@ class LipSyncer(BaseDigitalHumanNode):
         self,
         base_frame: Any,
         modified_face: Any,
-        padded_bbox: Tuple[int, int, int, int],
-        mouth_bbox: Tuple[int, int, int, int],
-        work_size: Tuple[int, int],
+        padded_bbox: tuple[int, int, int, int],
+        mouth_bbox: tuple[int, int, int, int],
+        work_size: tuple[int, int],
     ) -> Any:
         """将模型输出中的嘴部子区域融合回原图，其他部分保持不变。
 
@@ -645,7 +645,7 @@ class LipSyncer(BaseDigitalHumanNode):
     # ------------------------------------------------------------------
     # 信号加载与几何工具
     # ------------------------------------------------------------------
-    def _load_audio_signal(self, audio: Any) -> Tuple[Any, int]:
+    def _load_audio_signal(self, audio: Any) -> tuple[Any, int]:
         """加载音频为 (waveform, sample_rate)。"""
         from mosaic.nodes.audio._base import BaseAudioNode
 
@@ -660,7 +660,7 @@ class LipSyncer(BaseDigitalHumanNode):
 
     def _prepare_base_frames(
         self, face_input: Any, total_frames: int
-    ) -> List[Any]:
+    ) -> list[Any]:
         """准备基础帧序列。
 
         * 单张图片（str / PIL.Image）：复制 ``total_frames`` 份；
@@ -685,7 +685,7 @@ class LipSyncer(BaseDigitalHumanNode):
         if not frames:
             raise ValueError("face_image contains no frames.")
 
-        out: List[Any] = []
+        out: list[Any] = []
         for i in range(total_frames):
             f = frames[i % len(frames)]
             if not isinstance(f, Image.Image):
@@ -694,7 +694,7 @@ class LipSyncer(BaseDigitalHumanNode):
         return out
 
     @staticmethod
-    def _parse_padding(padding: Any) -> Tuple[int, int, int, int]:
+    def _parse_padding(padding: Any) -> tuple[int, int, int, int]:
         """解析 padding 为 (left, top, right, bottom)。"""
         if isinstance(padding, (int, float)):
             p = int(padding)
@@ -709,10 +709,10 @@ class LipSyncer(BaseDigitalHumanNode):
 
     @staticmethod
     def _expand_bbox(
-        bbox: Tuple[int, int, int, int],
-        padding: Tuple[int, int, int, int],
-        image_size: Tuple[int, int],
-    ) -> Tuple[int, int, int, int]:
+        bbox: tuple[int, int, int, int],
+        padding: tuple[int, int, int, int],
+        image_size: tuple[int, int],
+    ) -> tuple[int, int, int, int]:
         """按 [left, top, right, bottom] 扩展 bbox 并裁剪到图像范围。"""
         x1, y1, x2, y2 = bbox
         pad_l, pad_t, pad_r, pad_b = padding
@@ -726,10 +726,10 @@ class LipSyncer(BaseDigitalHumanNode):
     @staticmethod
     def _mouth_bbox(
         landmarks: Any,
-        face_bbox: Tuple[int, int, int, int],
-        image_size: Tuple[int, int],
+        face_bbox: tuple[int, int, int, int],
+        image_size: tuple[int, int],
         parsing_mode: str,
-    ) -> Tuple[int, int, int, int]:
+    ) -> tuple[int, int, int, int]:
         """根据关键点估算嘴部区域 ``(x1, y1, x2, y2)``。
 
         ``parsing_mode="jaw"`` 时使用嘴部关键点 + 下颌扩展；否则使用嘴部
@@ -791,7 +791,7 @@ class LipSyncer(BaseDigitalHumanNode):
         )
 
     @staticmethod
-    def _extract_images(output: Any) -> List[Any]:
+    def _extract_images(output: Any) -> list[Any]:
         """从模型输出中提取 PIL.Image 列表（兼容多种返回格式）。"""
         from PIL import Image  # type: ignore
         import numpy as np  # type: ignore
@@ -818,7 +818,7 @@ class LipSyncer(BaseDigitalHumanNode):
         if isinstance(raw, list):
             if raw and isinstance(raw[0], list):
                 raw = raw[0]
-            images: List[Any] = []
+            images: list[Any] = []
             for f in raw:
                 if isinstance(f, Image.Image):
                     images.append(f)

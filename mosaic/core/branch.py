@@ -20,7 +20,8 @@
 
 from __future__ import annotations
 
-from typing import Any, Callable, Dict, List, Optional, Union
+from collections.abc import Callable
+from typing import Any
 
 from mosaic.core.node import Node, NodeSpec
 from mosaic.core.types import MosaicData
@@ -28,7 +29,7 @@ from mosaic.core.types import MosaicData
 __all__ = ["Branch", "Merge", "PathLike"]
 
 #: 路径类型：单个节点/管道，或由它们组成的线性列表。
-PathLike = Union[Node, "Pipeline", List[Union[Node, "Pipeline"]]]  # noqa: F821
+PathLike = "Node | Pipeline | list[Node | Pipeline]"  # noqa: F821
 
 
 class Branch:
@@ -87,14 +88,14 @@ class Branch:
 
     def __init__(
         self,
-        paths: Optional[Dict[str, PathLike]] = None,
+        paths: dict[str, PathLike] | None = None,
         *,
-        condition: Optional[Callable[[MosaicData], str]] = None,
+        condition: Callable[[MosaicData], str] | None = None,
         input_strategy: str = "copy",
         fail_fast: bool = True,
         **named: PathLike,
     ) -> None:
-        merged: Dict[str, PathLike] = {}
+        merged: dict[str, PathLike] = {}
         if paths:
             merged.update(paths)
         merged.update(named)
@@ -107,8 +108,8 @@ class Branch:
                 f"expected 'copy' or 'distribute'."
             )
 
-        self.paths: Dict[str, PathLike] = merged
-        self.condition: Optional[Callable[[MosaicData], str]] = condition
+        self.paths: dict[str, PathLike] = merged
+        self.condition: Callable[[MosaicData], str] | None = condition
         self.input_strategy: str = input_strategy
         self.fail_fast: bool = fail_fast
 
@@ -174,14 +175,14 @@ class Merge(Node):
     domain = "core"
     description = "Fan-in: merge multiple upstream outputs into one MosaicData."
     version = "0.1.0"
-    input_types: List[str] = ["mosaic"]
-    output_types: List[str] = ["mosaic"]
+    input_types: list[str] = ["mosaic"]
+    output_types: list[str] = ["mosaic"]
 
     def __init__(
         self,
         strategy: str = "dict",
-        merge_fn: Optional[Callable[[MosaicData], MosaicData]] = None,
-        keep: Optional[str] = None,
+        merge_fn: Callable[[MosaicData], MosaicData] | None = None,
+        keep: str | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs)
@@ -238,7 +239,7 @@ class Merge(Node):
 
     def describe(self) -> NodeSpec:
         """返回节点规格说明。"""
-        model_info: Dict[str, Any] = {"strategy": self._strategy}
+        model_info: dict[str, Any] = {"strategy": self._strategy}
         if self._keep is not None:
             model_info["keep"] = self._keep
         if self._merge_fn is not None:

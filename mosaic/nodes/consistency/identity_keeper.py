@@ -24,7 +24,7 @@
 from __future__ import annotations
 
 import time
-from typing import Any, List, Optional, Tuple
+from typing import Any
 
 from mosaic.core.node import NodeSpec
 from mosaic.core.registry import registry
@@ -36,7 +36,7 @@ __all__ = ["IdentityKeeper"]
 
 
 # 支持的身份保持方法
-_SUPPORTED_METHODS: Tuple[str, ...] = (
+_SUPPORTED_METHODS: tuple[str, ...] = (
     "instantid",
     "ip-adapter-face",
     "photomaker",
@@ -111,8 +111,8 @@ class IdentityKeeper(BaseConsistencyNode):
         "identity consistency score between the reference and the output."
     )
     version: str = "0.1.0"
-    input_types: List[str] = ["image", "mosaic"]
-    output_types: List[str] = ["image"]
+    input_types: list[str] = ["image", "mosaic"]
+    output_types: list[str] = ["image"]
 
     def __init__(
         self,
@@ -170,7 +170,7 @@ class IdentityKeeper(BaseConsistencyNode):
         self._apply_optimizations()
         self._loaded = True
 
-    def _resolve_dtype_and_variant(self) -> Tuple[Any, Optional[str]]:
+    def _resolve_dtype_and_variant(self) -> tuple[Any, str | None]:
         """返回 (torch.dtype, variant) 用于 from_pretrained。"""
         torch_dtype = self._resolve_dtype()
         variant = "fp16" if self._dtype_str in ("float16", "fp16") else None
@@ -433,7 +433,7 @@ class IdentityKeeper(BaseConsistencyNode):
     def _generate_instantid(
         self,
         prompt: str,
-        negative_prompt: Optional[str],
+        negative_prompt: str | None,
         ref_img: Any,
         face_image: Any,
         width: int,
@@ -473,7 +473,7 @@ class IdentityKeeper(BaseConsistencyNode):
     def _generate_ip_adapter_face(
         self,
         prompt: str,
-        negative_prompt: Optional[str],
+        negative_prompt: str | None,
         ref_img: Any,
         face_image: Any,
         width: int,
@@ -505,7 +505,7 @@ class IdentityKeeper(BaseConsistencyNode):
     def _generate_photomaker(
         self,
         prompt: str,
-        negative_prompt: Optional[str],
+        negative_prompt: str | None,
         ref_img: Any,
         face_image: Any,
         width: int,

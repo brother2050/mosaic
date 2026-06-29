@@ -8,7 +8,7 @@
 from __future__ import annotations
 
 import sys
-from typing import Any, Dict, List, Tuple
+from typing import Any
 from unittest.mock import MagicMock
 
 import numpy as np
@@ -64,7 +64,7 @@ def _mock_diffusers() -> None:
                 self.unet = MagicMock()
                 self.vae = MagicMock()
                 self.scheduler = MagicMock()
-                self.attn_processors: Dict[str, Any] = {}
+                self.attn_processors: dict[str, Any] = {}
 
             def to(self, device: str) -> "_MockPipeline":
                 return self
@@ -207,7 +207,7 @@ def sample_driving_video() -> Any:
 
 
 @pytest.fixture
-def sample_expression_params() -> List[Dict[str, Any]]:
+def sample_expression_params() -> list[dict[str, Any]]:
     """返回 10 帧的表情参数序列。"""
     params = []
     for i in range(10):
@@ -250,7 +250,7 @@ def sample_motion_data() -> MotionData:
 
 
 @pytest.fixture
-def sample_text_list() -> List[str]:
+def sample_text_list() -> list[str]:
     """返回一组测试文本列表（5 句短句）。"""
     return [
         "你好，我是数字人助手。",

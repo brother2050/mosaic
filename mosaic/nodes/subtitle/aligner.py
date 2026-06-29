@@ -18,7 +18,7 @@
 from __future__ import annotations
 
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from mosaic.core.registry import registry
 from mosaic.core.types import AudioData, MosaicData, SubtitleData
@@ -67,12 +67,12 @@ class SubtitleAligner(BaseSubtitleNode):
     def __init__(
         self,
         method: str = "whisper",
-        language: Optional[str] = None,
+        language: str | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs)
         self._method: str = method
-        self._language: Optional[str] = language
+        self._language: str | None = language
         # 内部 ASR pipeline（whisper 对齐时使用）
         self._pipeline: Any = None
 
@@ -238,7 +238,7 @@ class SubtitleAligner(BaseSubtitleNode):
 
     def _align_whisper(
         self,
-        segments: List[Dict[str, Any]],
+        segments: list[dict[str, Any]],
         waveform: Any,
         sample_rate: int,
     ) -> tuple:
@@ -246,13 +246,13 @@ class SubtitleAligner(BaseSubtitleNode):
 
         Returns
         -------
-        Tuple[List[Dict], float, float]
+        tuple[list[Dict], float, float]
             ``(aligned_segments, time_shift, alignment_score)``
         """
         import numpy as np  # type: ignore
 
         # 使用 Whisper 获取词级时间戳
-        pipe_kwargs: Dict[str, Any] = {
+        pipe_kwargs: dict[str, Any] = {
             "return_timestamps": "word",
         }
         if self._language is not None:
@@ -274,7 +274,7 @@ class SubtitleAligner(BaseSubtitleNode):
         word_chunks = result.get("chunks", [])
 
         # 构建词级时间戳列表
-        word_timestamps: List[Dict[str, Any]] = []
+        word_timestamps: list[dict[str, Any]] = []
         for chunk in word_chunks:
             ts = chunk.get("timestamp", [None, None])
             word = chunk.get("text", "").strip()
@@ -290,7 +290,7 @@ class SubtitleAligner(BaseSubtitleNode):
             return list(segments), 0.0, 0.3
 
         # 将字幕片段与词级时间戳匹配
-        aligned: List[Dict[str, Any]] = []
+        aligned: list[dict[str, Any]] = []
         word_idx = 0
         matched_count = 0
 
@@ -347,7 +347,7 @@ class SubtitleAligner(BaseSubtitleNode):
 
     def _align_aeneas(
         self,
-        segments: List[Dict[str, Any]],
+        segments: list[dict[str, Any]],
         waveform: Any,
         sample_rate: int,
         audio_input: Any,
@@ -356,7 +356,7 @@ class SubtitleAligner(BaseSubtitleNode):
 
         Returns
         -------
-        Tuple[List[Dict], float, float]
+        tuple[list[Dict], float, float]
             ``(aligned_segments, time_shift, alignment_score)``
         """
         try:
@@ -399,7 +399,7 @@ class SubtitleAligner(BaseSubtitleNode):
             ExecuteTask(task).execute()
 
             # 解析对齐结果
-            aligned: List[Dict[str, Any]] = []
+            aligned: list[dict[str, Any]] = []
             for i, frag in enumerate(task.sync_map_fragments):
                 seg = segments[i] if i < len(segments) else {}
                 aligned.append({
@@ -432,7 +432,7 @@ class SubtitleAligner(BaseSubtitleNode):
 
     def _align_dtw(
         self,
-        segments: List[Dict[str, Any]],
+        segments: list[dict[str, Any]],
         waveform: Any,
         sample_rate: int,
         audio_duration: float,
@@ -444,7 +444,7 @@ class SubtitleAligner(BaseSubtitleNode):
 
         Returns
         -------
-        Tuple[List[Dict], float, float]
+        tuple[list[Dict], float, float]
             ``(aligned_segments, time_shift, alignment_score)``
         """
         if not segments:
@@ -461,7 +461,7 @@ class SubtitleAligner(BaseSubtitleNode):
         # 按比例重新分配时间轴
         scale = audio_duration / subtitle_duration if subtitle_duration > 0 else 1.0
 
-        aligned: List[Dict[str, Any]] = []
+        aligned: list[dict[str, Any]] = []
         current_time = 0.0
 
         for i, seg in enumerate(segments, 1):

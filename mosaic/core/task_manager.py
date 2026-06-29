@@ -18,7 +18,7 @@ from __future__ import annotations
 import logging
 import threading
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from mosaic.core.events import EventBus, get_event_bus
 from mosaic.core.task import AsyncTask, TaskStatus
@@ -58,10 +58,10 @@ class TaskManager:
 
     def __init__(
         self,
-        bus: Optional[EventBus] = None,
+        bus: EventBus | None = None,
     ) -> None:
         self._bus: EventBus = bus or get_event_bus()
-        self._tasks: Dict[str, AsyncTask] = {}
+        self._tasks: dict[str, AsyncTask] = {}
         self._lock: threading.Lock = threading.Lock()
         self._logger: logging.Logger = logging.getLogger("mosaic.task_manager")
 
@@ -112,7 +112,7 @@ class TaskManager:
     # ------------------------------------------------------------------
     # 查询
     # ------------------------------------------------------------------
-    def get(self, task_id: str) -> Optional[AsyncTask]:
+    def get(self, task_id: str) -> AsyncTask | None:
         """获取指定任务。
 
         Parameters
@@ -122,7 +122,7 @@ class TaskManager:
 
         Returns
         -------
-        Optional[AsyncTask]
+        AsyncTask | None
             任务实例，不存在返回 ``None``。
         """
         with self._lock:
@@ -130,8 +130,8 @@ class TaskManager:
 
     def list_tasks(
         self,
-        status: Optional[str] = None,
-    ) -> List[AsyncTask]:
+        status: str | None = None,
+    ) -> list[AsyncTask]:
         """列出所有任务，可按状态过滤。
 
         Parameters
@@ -142,7 +142,7 @@ class TaskManager:
 
         Returns
         -------
-        List[AsyncTask]
+        list[AsyncTask]
             任务列表，按创建时间排序。
         """
         with self._lock:
@@ -217,7 +217,7 @@ class TaskManager:
         """
         now = time.time()
         cutoff = now - max_age
-        removed: List[str] = []
+        removed: list[str] = []
 
         with self._lock:
             for task_id, task in list(self._tasks.items()):
@@ -239,18 +239,18 @@ class TaskManager:
     # ------------------------------------------------------------------
     # 统计
     # ------------------------------------------------------------------
-    def status_summary(self) -> Dict[str, int]:
+    def status_summary(self) -> dict[str, int]:
         """返回任务统计信息。
 
         Returns
         -------
-        Dict[str, int]
+        dict[str, int]
             各状态的任务数量，包含 ``total`` 总数。
         """
         with self._lock:
             tasks = list(self._tasks.values())
 
-        summary: Dict[str, int] = {
+        summary: dict[str, int] = {
             "pending": 0,
             "running": 0,
             "completed": 0,

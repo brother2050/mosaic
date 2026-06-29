@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import sys
 import types
-from typing import Any, Dict, List
+from typing import Any
 from unittest.mock import MagicMock
 
 import numpy as np

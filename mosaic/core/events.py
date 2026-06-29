@@ -27,7 +27,8 @@ import inspect
 import logging
 import threading
 from dataclasses import dataclass, field
-from typing import Any, Awaitable, Callable, Dict, List, Optional, Union
+from collections.abc import Awaitable, Callable
+from typing import Any
 
 __all__ = [
     "EventType",
@@ -71,7 +72,7 @@ class EventType:
     ALL = "*"
 
     @classmethod
-    def all_types(cls) -> List[str]:
+    def all_types(cls) -> list[str]:
         """返回所有具体事件类型常量（不含通配符）。"""
         return [
             cls.PIPELINE_START,
@@ -105,7 +106,7 @@ class MosaicEvent:
 
     event_type: str
     timestamp: float = field(default_factory=lambda: __import__("time").time())
-    payload: Dict[str, Any] = field(default_factory=dict)
+    payload: dict[str, Any] = field(default_factory=dict)
 
     def __repr__(self) -> str:
         return (
@@ -117,7 +118,7 @@ class MosaicEvent:
 
 #: 事件回调函数签名：同步 ``Callable[[MosaicEvent], None]`` 或异步
 #: ``Callable[[MosaicEvent], Awaitable[None]]``。
-EventCallback = Union[Callable[[MosaicEvent], None], Callable[[MosaicEvent], Awaitable[None]]]
+EventCallback = Callable[[MosaicEvent], None] | Callable[[MosaicEvent], Awaitable[None]]
 
 
 # ---------------------------------------------------------------------------
@@ -135,7 +136,7 @@ class EventBus:
     线程安全：订阅管理与事件派发均受内部锁保护。
     """
 
-    _instance: Optional["EventBus"] = None
+    _instance: "EventBus" | None = None
     _instance_lock = threading.Lock()
 
     def __new__(cls) -> "EventBus":
@@ -153,11 +154,11 @@ class EventBus:
             return
         self._initialized: bool = True
         # event_type -> 回调列表
-        self._subscribers: Dict[str, List[EventCallback]] = {}
+        self._subscribers: dict[str, list[EventCallback]] = {}
         self._lock = threading.RLock()
         # 异步回调专用事件循环（后台线程）
-        self._async_loop: Optional[asyncio.AbstractEventLoop] = None
-        self._async_thread: Optional[threading.Thread] = None
+        self._async_loop: asyncio.AbstractEventLoop | None = None
+        self._async_thread: threading.Thread | None = None
         self._async_lock = threading.Lock()
         # 内部日志器
         self._logger = logging.getLogger("mosaic.events")
@@ -212,7 +213,7 @@ class EventBus:
                 self._subscribers.pop(event_type, None)
             return True
 
-    def clear(self, event_type: Optional[str] = None) -> int:
+    def clear(self, event_type: str | None = None) -> int:
         """清除订阅。
 
         Parameters
@@ -233,7 +234,7 @@ class EventBus:
             cbs = self._subscribers.pop(event_type, [])
             return len(cbs)
 
-    def subscriber_count(self, event_type: Optional[str] = None) -> int:
+    def subscriber_count(self, event_type: str | None = None) -> int:
         """返回订阅者数量。``None`` 表示全部类型合计。"""
         with self._lock:
             if event_type is None:
@@ -263,7 +264,7 @@ class EventBus:
         event = MosaicEvent(event_type=event_type, payload=payload)
         # 收集匹配回调（持锁快照）
         with self._lock:
-            callbacks: List[EventCallback] = []
+            callbacks: list[EventCallback] = []
             callbacks.extend(self._subscribers.get(event_type, []))
             callbacks.extend(self._subscribers.get(EventType.ALL, []))
 
@@ -385,18 +386,18 @@ class LoggingListener:
 
     def __init__(
         self,
-        logger: Optional[logging.Logger] = None,
+        logger: logging.Logger | None = None,
         level: int = logging.INFO,
-        event_types: Optional[List[str]] = None,
+        event_types: list[str] | None = None,
     ) -> None:
         self._logger: logging.Logger = logger or logging.getLogger("mosaic.events")
         self._level: int = level
-        self._event_types: List[str] = event_types or [EventType.ALL]
-        self._bus: Optional[EventBus] = None
+        self._event_types: list[str] = event_types or [EventType.ALL]
+        self._bus: EventBus | None = None
         # 记录已注册的回调，便于 detach
-        self._callbacks: Dict[str, EventCallback] = {}
+        self._callbacks: dict[str, EventCallback] = {}
 
-    def attach(self, bus: Optional[EventBus] = None) -> "LoggingListener":
+    def attach(self, bus: EventBus | None = None) -> "LoggingListener":
         """挂载到事件总线，开始监听并输出日志。
 
         Parameters

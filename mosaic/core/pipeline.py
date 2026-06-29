@@ -32,7 +32,8 @@ import concurrent.futures
 import time
 from collections import deque
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+from collections.abc import Callable
+from typing import Any
 
 from mosaic.core.branch import Branch, Merge, PathLike
 from mosaic.core.context import Context, Event, EventHandler, RunConfig
@@ -73,8 +74,8 @@ class DryRunResult:
     """
 
     ok: bool
-    issues: List[str] = field(default_factory=list)
-    steps: List[NodeSpec] = field(default_factory=list)
+    issues: list[str] = field(default_factory=list)
+    steps: list[NodeSpec] = field(default_factory=list)
 
     def __bool__(self) -> bool:
         """``bool(result)`` 等价于 ``result.ok``。"""
@@ -99,16 +100,16 @@ class _ConditionalNode(Node):
     domain = "core"
     description = "Conditional branch router: select one path at runtime."
     version = "0.1.0"
-    input_types: List[str] = ["mosaic"]
-    output_types: List[str] = ["mosaic"]
+    input_types: list[str] = ["mosaic"]
+    output_types: list[str] = ["mosaic"]
 
     def __init__(
         self,
-        paths: Dict[str, "Pipeline"],
+        paths: dict[str, "Pipeline"],
         condition: Callable[[MosaicData], str],
     ) -> None:
         super().__init__()
-        self._paths: Dict[str, "Pipeline"] = paths
+        self._paths: dict[str, "Pipeline"] = paths
         self._condition: Callable[[MosaicData], str] = condition
 
     def load(self) -> None:
@@ -176,13 +177,13 @@ class _DAGNode:
 
     node_id: str
     node: Node
-    predecessors: List[str] = field(default_factory=list)
-    input_labels: List[str] = field(default_factory=list)
-    successors: List[str] = field(default_factory=list)
-    branch_name: Optional[str] = None
+    predecessors: list[str] = field(default_factory=list)
+    input_labels: list[str] = field(default_factory=list)
+    successors: list[str] = field(default_factory=list)
+    branch_name: str | None = None
 
 
-def _normalize_path(path: PathLike) -> List[Any]:
+def _normalize_path(path: PathLike) -> list[Any]:
     """将单节点或列表统一为元素列表。"""
     if isinstance(path, (list, tuple)):
         return list(path)
@@ -237,28 +238,28 @@ class Pipeline(Node):
     domain = "pipeline"
     description = "A composable pipeline of nodes."
     version = "0.1.0"
-    input_types: List[str] = []
-    output_types: List[str] = []
+    input_types: list[str] = []
+    output_types: list[str] = []
 
     def __init__(
         self,
         name: str = "pipeline",
-        elements: Optional[List[Any]] = None,
+        elements: list[Any] | None = None,
         description: str = "A composable pipeline of nodes.",
         **kwargs: Any,
     ) -> None:
         super().__init__(name=name, description=description, **kwargs)
-        self._elements: List[Any] = list(elements) if elements else []
-        self._dag: Optional[Dict[str, _DAGNode]] = None
-        self._terminals: List[Tuple[str, str]] = []  # (label, node_id)
-        self._sources: List[str] = []
-        self._id_counter: Dict[str, int] = {}
-        self._last_context: Optional[Context] = None
-        self._last_result: Optional[PipelineResult] = None
+        self._elements: list[Any] = list(elements) if elements else []
+        self._dag: dict[str, _DAGNode] | None = None
+        self._terminals: list[tuple[str, str]] = []  # (label, node_id)
+        self._sources: list[str] = []
+        self._id_counter: dict[str, int] = {}
+        self._last_context: Context | None = None
+        self._last_result: PipelineResult | None = None
 
     # -- 元素管理 ----------------------------------------------------------
     @property
-    def elements(self) -> List[Any]:
+    def elements(self) -> list[Any]:
         """返回编排元素列表的副本（用于 ``|`` 展开等）。"""
         return list(self._elements)
 
@@ -297,9 +298,9 @@ class Pipeline(Node):
         self,
         input_data: MosaicData,
         *,
-        config: Optional[RunConfig] = None,
-        callbacks: Optional[List[EventHandler]] = None,
-        context: Optional[Context] = None,
+        config: RunConfig | None = None,
+        callbacks: list[EventHandler] | None = None,
+        context: Context | None = None,
     ) -> MosaicData:
         """执行管道。
 
@@ -310,10 +311,10 @@ class Pipeline(Node):
     def describe(self) -> NodeSpec:
         """返回管道的聚合规格说明。"""
         self._build_dag_if_needed()
-        input_types: List[str] = []
+        input_types: list[str] = []
         for sid in self._sources:
             input_types.extend(self._dag[sid].node.input_types)
-        output_types: List[str] = []
+        output_types: list[str] = []
         for _label, tid in self._terminals:
             output_types.extend(self._dag[tid].node.output_types)
         domains = sorted({dn.node.domain for dn in self._dag.values()})
@@ -356,13 +357,13 @@ class Pipeline(Node):
         self._dag = {}
         self._id_counter = {}
         self._terminals = []
-        frontier: List[Tuple[str, str]] = []  # (label, node_id)
+        frontier: list[tuple[str, str]] = []  # (label, node_id)
         for element in self._elements:
             frontier = self._add_element(element, frontier)
         self._terminals = frontier
         self._sources = [nid for nid, dn in self._dag.items() if not dn.predecessors]
 
-    def _add_node(self, node: Node, branch_name: Optional[str] = None) -> str:
+    def _add_node(self, node: Node, branch_name: str | None = None) -> str:
         """注册一个节点，返回唯一 id（重名加 ``#n`` 后缀）。"""
         base = getattr(node, "name", "node")
         n = self._id_counter.get(base, 0)
@@ -380,8 +381,8 @@ class Pipeline(Node):
     def _add_element(
         self,
         element: Any,
-        frontier: List[Tuple[str, str]],
-    ) -> List[Tuple[str, str]]:
+        frontier: list[tuple[str, str]],
+    ) -> list[tuple[str, str]]:
         """将一个编排元素加入 DAG，返回新的 frontier。"""
         if isinstance(element, Branch):
             return self._add_branch(element, frontier)
@@ -398,12 +399,12 @@ class Pipeline(Node):
     def _add_branch(
         self,
         branch: Branch,
-        frontier: List[Tuple[str, str]],
-    ) -> List[Tuple[str, str]]:
+        frontier: list[tuple[str, str]],
+    ) -> list[tuple[str, str]]:
         """处理 Branch 元素，返回新的 frontier。"""
         if branch.is_conditional:
             # 条件分支：每条路径编译为子管道，封装为单个路由节点
-            sub_pipes: Dict[str, Pipeline] = {}
+            sub_pipes: dict[str, Pipeline] = {}
             for pname, path in branch.paths.items():
                 sub_pipes[pname] = Pipeline(
                     f"{self.name}::{pname}", _normalize_path(path)
@@ -415,7 +416,7 @@ class Pipeline(Node):
             return [(cnode.name, nid)]
 
         # fan-out：每条路径作为扁平子链加入父 DAG，标记 branch_name
-        new_frontier: List[Tuple[str, str]] = []
+        new_frontier: list[tuple[str, str]] = []
         for pname, path in branch.paths.items():
             chain_ids = self._add_chain(path, frontier, branch_name=pname)
             new_frontier.append((pname, chain_ids[-1]))
@@ -424,13 +425,13 @@ class Pipeline(Node):
     def _add_chain(
         self,
         path: PathLike,
-        source_frontier: List[Tuple[str, str]],
-        branch_name: Optional[str] = None,
-    ) -> List[str]:
+        source_frontier: list[tuple[str, str]],
+        branch_name: str | None = None,
+    ) -> list[str]:
         """将一条路径（单节点或线性子链）加入 DAG，返回节点 id 列表。"""
         items = _normalize_path(path)
-        ids: List[str] = []
-        prev_id: Optional[str] = None
+        ids: list[str] = []
+        prev_id: str | None = None
         for i, item in enumerate(items):
             if not isinstance(item, Node):
                 raise TypeError(
@@ -495,7 +496,7 @@ class Pipeline(Node):
         且二者均非空，则报告不匹配。空类型列表视为"接受任意类型"。
         """
         self._build_dag_if_needed()
-        issues: List[str] = []
+        issues: list[str] = []
 
         # 结构校验
         try:
@@ -505,7 +506,7 @@ class Pipeline(Node):
             return DryRunResult(ok=False, issues=issues, steps=[])
 
         order = self._topological_order()
-        steps: List[NodeSpec] = []
+        steps: list[NodeSpec] = []
         for nid in order:
             dn = self._dag[nid]
             try:
@@ -533,11 +534,11 @@ class Pipeline(Node):
         return DryRunResult(ok=not issues, issues=issues, steps=steps)
 
     # -- 拓扑与可达性 ------------------------------------------------------
-    def _topological_order(self) -> List[str]:
+    def _topological_order(self) -> list[str]:
         """Kahn 拓扑排序，返回节点 id 列表（有环时长度小于节点总数）。"""
         indeg = {nid: len(dn.predecessors) for nid, dn in self._dag.items()}
         queue: deque = deque([nid for nid, d in indeg.items() if d == 0])
-        order: List[str] = []
+        order: list[str] = []
         while queue:
             nid = queue.popleft()
             order.append(nid)
@@ -547,7 +548,7 @@ class Pipeline(Node):
                     queue.append(succ)
         return order
 
-    def _reachable_from(self, sources: List[str]) -> set:
+    def _reachable_from(self, sources: list[str]) -> set:
         """从给定源点出发前向可达的节点集合。"""
         seen: set = set()
         queue: deque = deque(sources)
@@ -580,9 +581,9 @@ class Pipeline(Node):
         self,
         input_data: MosaicData,
         *,
-        config: Optional[RunConfig] = None,
-        callbacks: Optional[List[EventHandler]] = None,
-        context: Optional[Context] = None,
+        config: RunConfig | None = None,
+        callbacks: list[EventHandler] | None = None,
+        context: Context | None = None,
         fail_fast: bool = True,
         max_workers: int = 4,
     ) -> MosaicData:
@@ -629,9 +630,9 @@ class Pipeline(Node):
         self,
         input_data: MosaicData,
         *,
-        config: Optional[RunConfig] = None,
-        callbacks: Optional[List[EventHandler]] = None,
-        context: Optional[Context] = None,
+        config: RunConfig | None = None,
+        callbacks: list[EventHandler] | None = None,
+        context: Context | None = None,
         fail_fast: bool = True,
         max_workers: int = 4,
     ) -> PipelineResult:
@@ -718,7 +719,7 @@ class Pipeline(Node):
         *,
         fail_fast: bool = True,
         max_workers: int = 4,
-    ) -> Tuple[Dict[str, MosaicData], List[NodeError], Dict[str, float]]:
+    ) -> tuple[dict[str, MosaicData], list[NodeError], dict[str, float]]:
         """执行 DAG，支持并行。
 
         使用依赖驱动的就绪队列：当一个节点的所有前驱都完成时，它变为
@@ -726,12 +727,12 @@ class Pipeline(Node):
 
         Returns
         -------
-        Tuple[outputs, errors, node_durations]
+        tuple[outputs, errors, node_durations]
             ``(节点输出字典, 错误列表, 节点耗时字典)``。
         """
-        outputs: Dict[str, MosaicData] = {}
-        errors: List[NodeError] = []
-        node_durations: Dict[str, float] = {}
+        outputs: dict[str, MosaicData] = {}
+        errors: list[NodeError] = []
+        node_durations: dict[str, float] = {}
         completed: set = set()
         pending: set = set(self._dag.keys())
 
@@ -745,11 +746,11 @@ class Pipeline(Node):
         # 并行执行
         executor = concurrent.futures.ThreadPoolExecutor(max_workers=max_workers)
         try:
-            futures: Dict[concurrent.futures.Future, str] = {}
+            futures: dict[concurrent.futures.Future, str] = {}
 
             while pending or futures:
                 # 找出就绪节点（所有前驱已完成）
-                ready: List[str] = []
+                ready: list[str] = []
                 for nid in list(pending):
                     preds = self._dag[nid].predecessors
                     if all(p in completed for p in preds):
@@ -814,14 +815,14 @@ class Pipeline(Node):
         input_data: MosaicData,
         *,
         fail_fast: bool = True,
-    ) -> Tuple[Dict[str, MosaicData], List[NodeError], Dict[str, float]]:
+    ) -> tuple[dict[str, MosaicData], list[NodeError], dict[str, float]]:
         """串行执行 DAG（兼容旧逻辑）。
 
         当 ``max_workers <= 1`` 或无并行路径时使用。
         """
-        outputs: Dict[str, MosaicData] = {}
-        errors: List[NodeError] = []
-        node_durations: Dict[str, float] = {}
+        outputs: dict[str, MosaicData] = {}
+        errors: list[NodeError] = []
+        node_durations: dict[str, float] = {}
         order = self._topological_order()
 
         for nid in order:
@@ -875,12 +876,12 @@ class Pipeline(Node):
         dn: _DAGNode,
         node_input: MosaicData,
         ctx: Context,
-    ) -> Tuple[MosaicData, float]:
+    ) -> tuple[MosaicData, float]:
         """在并行执行中运行单个节点（工作线程调用）。
 
         Returns
         -------
-        Tuple[MosaicData, float]
+        tuple[MosaicData, float]
             ``(节点输出, 耗时秒数)``。
         """
         ctx.emit(
@@ -941,7 +942,7 @@ class Pipeline(Node):
     def _gather_input(
         self,
         dn: _DAGNode,
-        outputs: Dict[str, MosaicData],
+        outputs: dict[str, MosaicData],
         pipeline_input: MosaicData,
     ) -> MosaicData:
         """为某个 DAG 节点组装输入。"""
@@ -962,7 +963,7 @@ class Pipeline(Node):
                 combined[label] = outputs[pid]
         return combined
 
-    def _collect_output(self, outputs: Dict[str, MosaicData]) -> Optional[MosaicData]:
+    def _collect_output(self, outputs: dict[str, MosaicData]) -> MosaicData | None:
         """从终点收集管道最终输出。"""
         if not self._terminals:
             return MosaicData()
@@ -978,7 +979,7 @@ class Pipeline(Node):
 
     # -- 中间产物访问 ------------------------------------------------------
     @property
-    def intermediate_names(self) -> List[str]:
+    def intermediate_names(self) -> list[str]:
         """上次运行后可用的中间产物（节点 id）列表。"""
         if self._last_context is None:
             return []
@@ -1012,16 +1013,16 @@ class Pipeline(Node):
         )
 
     @property
-    def last_result(self) -> Optional[PipelineResult]:
+    def last_result(self) -> PipelineResult | None:
         """上次运行的 :class:`PipelineResult`（``execute_result`` 后可用）。"""
         return self._last_result
 
     @property
-    def node_specs(self) -> List[NodeSpec]:
+    def node_specs(self) -> list[NodeSpec]:
         """按拓扑序返回各节点的规格说明。"""
         self._build_dag_if_needed()
         order = self._topological_order()
-        specs: List[NodeSpec] = []
+        specs: list[NodeSpec] = []
         for nid in order:
             try:
                 specs.append(self._dag[nid].node.describe())

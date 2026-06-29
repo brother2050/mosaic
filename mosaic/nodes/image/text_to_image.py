@@ -8,7 +8,7 @@
 from __future__ import annotations
 
 import time
-from typing import Any, List
+from typing import Any
 
 from mosaic.core.registry import registry
 from mosaic.core.types import MosaicData
@@ -155,7 +155,7 @@ class TextToImage(BaseImageNode):
         elapsed = time.perf_counter() - t0
 
         # 提取生成的图片
-        images: List[Any] = output.images if hasattr(output, "images") else []
+        images: list[Any] = output.images if hasattr(output, "images") else []
 
         result = MosaicData(
             images=images,

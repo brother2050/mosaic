@@ -35,8 +35,6 @@ from __future__ import annotations
 import re
 import string
 from pathlib import Path
-from typing import Dict, List, Optional, Union
-
 __all__ = ["NodeGenerator", "to_snake_case"]
 
 
@@ -92,7 +90,7 @@ class NodeGenerator:
     """
 
     #: 模板文件名 -> 生成文件名的映射
-    _FILE_MAPPING: Dict[str, str] = {
+    _FILE_MAPPING: dict[str, str] = {
         "node.py.j2": "{node_name_snake}.py",
         "init.py.j2": "__init__.py",
         "test.py.j2": "test_{node_name_snake}.py",
@@ -112,13 +110,13 @@ class NodeGenerator:
         domain: str,
         node_name: str,
         description: str = "",
-        input_types: Optional[List[str]] = None,
-        output_types: Optional[List[str]] = None,
+        input_types: list[str] | None = None,
+        output_types: list[str] | None = None,
         model_name: str = "",
         author: str = "",
         license: str = "Apache-2.0",
         output_dir: str = "./",
-    ) -> List[str]:
+    ) -> list[str]:
         """生成节点文件，返回生成的文件路径列表。
 
         Parameters
@@ -144,7 +142,7 @@ class NodeGenerator:
 
         Returns
         -------
-        List[str]
+        list[str]
             生成的文件绝对路径列表。
 
         Raises
@@ -168,7 +166,7 @@ class NodeGenerator:
             output_types = ["text"]
 
         # 构造模板变量（input_types / output_types 转为 Python 字面量）
-        variables: Dict[str, str] = {
+        variables: dict[str, str] = {
             "domain": domain,
             "node_name": node_name,
             "node_name_snake": node_name_snake,
@@ -184,7 +182,7 @@ class NodeGenerator:
         out_path = Path(output_dir).expanduser().resolve()
         out_path.mkdir(parents=True, exist_ok=True)
 
-        generated: List[str] = []
+        generated: list[str] = []
         for tpl_name, out_name_tpl in self._FILE_MAPPING.items():
             out_name = out_name_tpl.format(node_name_snake=node_name_snake)
             content = self._render_template(tpl_name, variables)
@@ -196,7 +194,7 @@ class NodeGenerator:
 
     # -- 模板渲染 ----------------------------------------------------------
     def _render_template(
-        self, template_name: str, variables: Dict[str, str]
+        self, template_name: str, variables: dict[str, str]
     ) -> str:
         """读取模板文件并使用 ``string.Template`` 替换变量。
 
@@ -227,7 +225,7 @@ class NodeGenerator:
         return string.Template(raw).safe_substitute(variables)
 
     # -- 交互式模式 --------------------------------------------------------
-    def interactive(self) -> List[str]:
+    def interactive(self) -> list[str]:
         """交互式模式：通过 ``input()`` 收集参数并生成节点。
 
         依次提示用户输入域、节点类名、描述、输入/输出类型、模型名称、
@@ -235,7 +233,7 @@ class NodeGenerator:
 
         Returns
         -------
-        List[str]
+        list[str]
             生成的文件路径列表；用户取消时返回空列表。
         """
         print("=" * 50)
@@ -301,7 +299,7 @@ class NodeGenerator:
         return raw if raw else default
 
     @staticmethod
-    def _parse_list(raw: str, default: List[str]) -> List[str]:
+    def _parse_list(raw: str, default: list[str]) -> list[str]:
         """将逗号分隔的字符串解析为列表。"""
         if not raw:
             return list(default)

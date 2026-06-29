@@ -310,7 +310,7 @@ def test_blend_face_ratio_one(sample_avatar_image):
     # 在人脸区域内，像素值应等于 face_image resize 后的像素
     x1, y1, x2, y2 = bbox
     w, h = x2 - x1, y2 - y1
-    resized_face = face_image.resize((w, h), Image.LANCZOS)
+    resized_face = face_image.resize((w, h), Image.Resampling.LANCZOS)
     blended_region = np.array(blended.crop((x1, y1, x2, y2)).convert("RGB"))
     face_region = np.array(resized_face.convert("RGB"))
     assert np.array_equal(blended_region, face_region), (

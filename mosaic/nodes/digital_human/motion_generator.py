@@ -27,7 +27,8 @@
 from __future__ import annotations
 
 import time
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from collections.abc import Callable
+from typing import Any
 
 from mosaic.core.node import NodeSpec
 from mosaic.core.registry import registry
@@ -50,7 +51,7 @@ __all__ = ["MotionGenerator"]
 #  11: left_hip       12: right_hip
 #  13: left_knee      14: right_knee
 #  15: left_ankle     16: right_ankle
-_COCO_KEYPOINT_NAMES: Tuple[str, ...] = (
+_COCO_KEYPOINT_NAMES: tuple[str, ...] = (
     "nose", "left_eye", "right_eye", "left_ear", "right_ear",
     "left_shoulder", "right_shoulder", "left_elbow", "right_elbow",
     "left_wrist", "right_wrist", "left_hip", "right_hip",
@@ -60,7 +61,7 @@ _NUM_COCO_KEYPOINTS: int = len(_COCO_KEYPOINT_NAMES)  # 17
 
 # 归一化静止姿态（坐标范围约 [0, 1]，人物居中、面向观察者）。
 # 形状 (17, 2)，列顺序 (x, y)，y 向下为正。
-_REST_POSE: Tuple[Tuple[float, float], ...] = (
+_REST_POSE: tuple[tuple[float, float], ...] = (
     (0.50, 0.18),  # nose
     (0.48, 0.15),  # left_eye
     (0.52, 0.15),  # right_eye
@@ -94,7 +95,7 @@ _KP = {name: idx for idx, name in enumerate(_COCO_KEYPOINT_NAMES)}
 PresetGenerator = Callable[[Any], Any]
 
 
-def _wave(t: Any) -> Any:
+def _wave(t: np.ndarray) -> np.ndarray:
     """挥手：右臂周期性上下摆动，右手腕幅度最大。"""
     import numpy as np  # type: ignore
 
@@ -113,7 +114,7 @@ def _wave(t: Any) -> Any:
     return kps
 
 
-def _bow(t: Any) -> Any:
+def _bow(t: np.ndarray) -> np.ndarray:
     """鞠躬：上半身前倾后恢复（整体下压并回弹）。"""
     import numpy as np  # type: ignore
 
@@ -141,7 +142,7 @@ def _bow(t: Any) -> Any:
     return kps
 
 
-def _nod(t: Any) -> Any:
+def _nod(t: np.ndarray) -> np.ndarray:
     """点头：头部前后摆动（y 方向小幅振荡）。"""
     import numpy as np  # type: ignore
 
@@ -157,7 +158,7 @@ def _nod(t: Any) -> Any:
     return kps
 
 
-def _shake_head(t: Any) -> Any:
+def _shake_head(t: np.ndarray) -> np.ndarray:
     """摇头：头部左右摆动（x 方向小幅振荡）。"""
     import numpy as np  # type: ignore
 
@@ -173,7 +174,7 @@ def _shake_head(t: Any) -> Any:
     return kps
 
 
-def _clap(t: Any) -> Any:
+def _clap(t: np.ndarray) -> np.ndarray:
     """鼓掌：双手腕向中心靠拢后分开。"""
     import numpy as np  # type: ignore
 
@@ -195,7 +196,7 @@ def _clap(t: Any) -> Any:
     return kps
 
 
-def _walk(t: Any) -> Any:
+def _walk(t: np.ndarray) -> np.ndarray:
     """走路：双腿交替前后摆动，手臂反向摆动。"""
     import numpy as np  # type: ignore
 
@@ -223,7 +224,7 @@ def _walk(t: Any) -> Any:
     return kps
 
 
-def _dance(t: Any) -> Any:
+def _dance(t: np.ndarray) -> np.ndarray:
     """跳舞：手臂上举摆动 + 髋部左右摆动，节奏较快。"""
     import numpy as np  # type: ignore
 
@@ -250,7 +251,7 @@ def _dance(t: Any) -> Any:
     return kps
 
 
-def _raise_hand(t: Any) -> Any:
+def _raise_hand(t: np.ndarray) -> np.ndarray:
     """举手：右臂高举过头顶并保持。"""
     import numpy as np  # type: ignore
 
@@ -267,7 +268,7 @@ def _raise_hand(t: Any) -> Any:
     return kps
 
 
-def _sit(t: Any) -> Any:
+def _sit(t: np.ndarray) -> np.ndarray:
     """坐下：髋部下沉、膝盖弯曲。"""
     import numpy as np  # type: ignore
 
@@ -290,7 +291,7 @@ def _sit(t: Any) -> Any:
     return kps
 
 
-def _stand(t: Any) -> Any:
+def _stand(t: np.ndarray) -> np.ndarray:
     """站立：基本静止，仅保留轻微呼吸起伏。"""
     import numpy as np  # type: ignore
 
@@ -306,7 +307,7 @@ def _stand(t: Any) -> Any:
     return kps
 
 
-def _jump(t: Any) -> Any:
+def _jump(t: np.ndarray) -> np.ndarray:
     """跳跃：整体上下抛物运动 + 屈膝蓄力。"""
     import numpy as np  # type: ignore
 
@@ -333,7 +334,7 @@ def _jump(t: Any) -> Any:
     return kps
 
 
-def _point(t: Any) -> Any:
+def _point(t: np.ndarray) -> np.ndarray:
     """指引/指向：右臂前伸指向。"""
     import numpy as np  # type: ignore
 
@@ -349,7 +350,7 @@ def _point(t: Any) -> Any:
     return kps
 
 
-def _thinking(t: Any) -> Any:
+def _thinking(t: np.ndarray) -> np.ndarray:
     """思考：右手托腮。"""
     import numpy as np  # type: ignore
 
@@ -370,7 +371,7 @@ def _thinking(t: Any) -> Any:
     return kps
 
 
-def _stretch(t: Any) -> Any:
+def _stretch(t: np.ndarray) -> np.ndarray:
     """伸展：双臂上举伸展。"""
     import numpy as np  # type: ignore
 
@@ -389,7 +390,7 @@ def _stretch(t: Any) -> Any:
     return kps
 
 
-def _turn_around(t: Any) -> Any:
+def _turn_around(t: np.ndarray) -> np.ndarray:
     """转身：髋部与肩部水平偏移，模拟侧身。"""
     import numpy as np  # type: ignore
 
@@ -409,7 +410,7 @@ def _turn_around(t: Any) -> Any:
 
 
 # 预设动作注册表：name -> (生成器, 默认周期秒数, 描述)
-_PRESET_ANIMATIONS: Dict[str, Tuple[PresetGenerator, float, str]] = {
+_PRESET_ANIMATIONS: dict[str, tuple[PresetGenerator, float, str]] = {
     "wave":        (_wave,        2.4, "挥手：右臂周期性上下摆动"),
     "bow":         (_bow,         2.4, "鞠躬：上半身前倾后恢复"),
     "nod":         (_nod,         2.0, "点头：头部前后摆动"),
@@ -429,7 +430,7 @@ _PRESET_ANIMATIONS: Dict[str, Tuple[PresetGenerator, float, str]] = {
 
 
 # 支持的生成方式
-_SUPPORTED_METHODS: Tuple[str, ...] = (
+_SUPPORTED_METHODS: tuple[str, ...] = (
     "text2motion",
     "audio2motion",
     "preset",
@@ -512,12 +513,12 @@ class MotionGenerator(BaseDigitalHumanNode):
         "smoothing."
     )
     version: str = "0.1.0"
-    input_types: List[str] = ["text", "audio", "mosaic"]
-    output_types: List[str] = ["motion", "mosaic"]
+    input_types: list[str] = ["text", "audio", "mosaic"]
+    output_types: list[str] = ["motion", "mosaic"]
 
     def __init__(
         self,
-        model: Optional[str] = None,
+        model: str | None = None,
         method: str = "preset",
         skeleton_type: str = "coco",
         device: str = "cuda",
@@ -780,7 +781,7 @@ class MotionGenerator(BaseDigitalHumanNode):
         preset_name: str,
         duration: float,
         fps: int,
-    ) -> Tuple[Any, int, float]:
+    ) -> tuple[Any, int, float]:
         """从预设动作库生成关键点序列。
 
         Parameters
@@ -794,7 +795,7 @@ class MotionGenerator(BaseDigitalHumanNode):
 
         Returns
         -------
-        Tuple[numpy.ndarray, int, float]
+        tuple[numpy.ndarray, int, float]
             ``(keypoints, frame_count, duration)``，keypoints 形状
             ``(frame_count, 17, 2)``。
         """
@@ -829,7 +830,7 @@ class MotionGenerator(BaseDigitalHumanNode):
         audio: Any,
         duration: float,
         fps: int,
-    ) -> Tuple[Any, int, float]:
+    ) -> tuple[Any, int, float]:
         """基于音频节拍分析从预设库选择并拼接动作片段。
 
         Parameters
@@ -843,7 +844,7 @@ class MotionGenerator(BaseDigitalHumanNode):
 
         Returns
         -------
-        Tuple[numpy.ndarray, int, float]
+        tuple[numpy.ndarray, int, float]
             ``(keypoints, frame_count, duration)``。
         """
         import numpy as np  # type: ignore
@@ -918,7 +919,7 @@ class MotionGenerator(BaseDigitalHumanNode):
         prompt: str,
         duration: float,
         fps: int,
-    ) -> Tuple[Any, int, float]:
+    ) -> tuple[Any, int, float]:
         """使用文本驱动模型生成动作。
 
         当模型不可用或推理失败时，回退到根据 prompt 关键词选择预设动作
@@ -935,7 +936,7 @@ class MotionGenerator(BaseDigitalHumanNode):
 
         Returns
         -------
-        Tuple[numpy.ndarray, int, float]
+        tuple[numpy.ndarray, int, float]
             ``(keypoints, frame_count, duration)``。
         """
         import numpy as np  # type: ignore
@@ -975,7 +976,7 @@ class MotionGenerator(BaseDigitalHumanNode):
 
     def _run_text2motion_model(
         self, prompt: str, duration: float, fps: int
-    ) -> Optional[Any]:
+    ) -> Any | None:
         """调用 MotionGPT 模型生成关键点。
 
         不同 MotionGPT 实现的 API 差异较大，这里采用通用的 generate 调用
@@ -1016,7 +1017,7 @@ class MotionGenerator(BaseDigitalHumanNode):
         return None
 
     @staticmethod
-    def _adjust_keypoints(motion: Any, target_kp: int) -> Any:
+    def _adjust_keypoints(motion: np.ndarray, target_kp: int) -> np.ndarray:
         """将关键点数量调整到 ``target_kp``（截断或补零）。"""
         import numpy as np  # type: ignore
 
@@ -1034,7 +1035,7 @@ class MotionGenerator(BaseDigitalHumanNode):
         return np.concatenate([motion, pad], axis=1)
 
     @staticmethod
-    def _resize_keypoints(keypoints: Any, target_frames: int) -> Any:
+    def _resize_keypoints(keypoints: np.ndarray, target_frames: int) -> np.ndarray:
         """将关键点序列重采样到 ``target_frames`` 帧。"""
         import numpy as np  # type: ignore
 
@@ -1085,7 +1086,7 @@ class MotionGenerator(BaseDigitalHumanNode):
     # 音频处理工具
     # ------------------------------------------------------------------
     @staticmethod
-    def _load_audio_waveform(audio: Any) -> Tuple[Any, int]:
+    def _load_audio_waveform(audio: Any) -> tuple[Any, int]:
         """从 AudioData / ndarray / 文件路径加载波形与采样率。"""
         if isinstance(audio, AudioData):
             return audio.waveform, audio.sample_rate
@@ -1118,7 +1119,7 @@ class MotionGenerator(BaseDigitalHumanNode):
         return 0.0
 
     @staticmethod
-    def _to_mono(waveform: Any) -> Any:
+    def _to_mono(waveform: np.ndarray) -> np.ndarray:
         """转单声道。"""
         try:
             import numpy as np  # type: ignore
@@ -1134,7 +1135,7 @@ class MotionGenerator(BaseDigitalHumanNode):
         sample_rate: int,
         fps: int,
         frame_count: int,
-    ) -> List[int]:
+    ) -> list[int]:
         """检测音频节拍，返回节拍对应的帧索引列表。
 
         优先使用 ``librosa`` 的 onset/beat 检测；缺失时回退到基于 RMS
@@ -1174,7 +1175,7 @@ class MotionGenerator(BaseDigitalHumanNode):
                 beats.append(i)
         # 限制最小间隔，避免过密
         min_gap = max(1, int(fps * 0.2))
-        filtered: List[int] = []
+        filtered: list[int] = []
         for b in beats:
             if not filtered or b - filtered[-1] >= min_gap:
                 filtered.append(b)
@@ -1205,7 +1206,7 @@ class MotionGenerator(BaseDigitalHumanNode):
     # 平滑
     # ------------------------------------------------------------------
     @staticmethod
-    def _smooth_keypoints(keypoints: Any, window: int = 5) -> Any:
+    def _smooth_keypoints(keypoints: np.ndarray, window: int = 5) -> np.ndarray:
         """对关键点序列做滑动平均平滑。
 
         Parameters

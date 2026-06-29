@@ -51,7 +51,7 @@ from __future__ import annotations
 import math
 import os
 import time
-from typing import Any, List, Optional, Tuple
+from typing import Any
 
 from mosaic.core.registry import registry
 from mosaic.core.types import MosaicData, VideoData
@@ -62,7 +62,7 @@ __all__ = ["FrameInterpolator"]
 
 
 # 支持的插值方法
-_VALID_METHODS: Tuple[str, ...] = ("rife", "film", "linear")
+_VALID_METHODS: tuple[str, ...] = ("rife", "film", "linear")
 
 # 分段大小：每块处理的相邻帧对数，用于控制显存峰值
 _DEFAULT_CHUNK_SIZE: int = 64
@@ -127,7 +127,7 @@ class FrameInterpolator(BaseVideoNode):
 
     def __init__(
         self,
-        model: Optional[str] = None,
+        model: str | None = None,
         method: str = "rife",
         device: str = "cuda",
         dtype: str = "float16",
@@ -265,8 +265,8 @@ class FrameInterpolator(BaseVideoNode):
         self,
         original_fps: int,
         scale_factor: int,
-        target_fps: Optional[int],
-    ) -> Tuple[int, Optional[int]]:
+        target_fps: int | None,
+    ) -> tuple[int, int | None]:
         """根据 ``target_fps`` 或 ``scale_factor`` 推算 2x 递归次数。
 
         ``target_fps`` 优先；未提供时使用 ``scale_factor``。
@@ -282,7 +282,7 @@ class FrameInterpolator(BaseVideoNode):
 
         Returns
         -------
-        Tuple[int, Optional[int]]
+        tuple[int, int | None]
             ``(num_passes, target_fps)``。
         """
         if target_fps is not None:
@@ -316,17 +316,17 @@ class FrameInterpolator(BaseVideoNode):
     # 帧预处理
     # ------------------------------------------------------------------
     @staticmethod
-    def _normalize_frame_sizes(frames: List[Any]) -> List[Any]:
+    def _normalize_frame_sizes(frames: list[Any]) -> list[Any]:
         """将所有帧统一到首帧尺寸（防御性，便于逐对插值）。"""
         if not frames:
             return frames
         from PIL import Image  # type: ignore
 
         base_size = frames[0].size
-        out: List[Any] = [frames[0]]
+        out: list[Any] = [frames[0]]
         for f in frames[1:]:
             if f.size != base_size:
-                f = f.resize(base_size, Image.LANCZOS)
+                f = f.resize(base_size, Image.Resampling.LANCZOS)
             out.append(f)
         return out
 
@@ -335,11 +335,11 @@ class FrameInterpolator(BaseVideoNode):
     # ------------------------------------------------------------------
     def _interpolate_2x(
         self,
-        frames: List[Any],
+        frames: list[Any],
         progress_base: int = 0,
-        progress_total: Optional[int] = None,
+        progress_total: int | None = None,
         pass_label: str = "",
-    ) -> List[Any]:
+    ) -> list[Any]:
         """执行一次 2x 插帧（在每对相邻帧间插入 1 帧）。
 
         按 ``self._method`` 分派到 ``_interpolate_linear`` /
@@ -359,7 +359,7 @@ class FrameInterpolator(BaseVideoNode):
 
         Returns
         -------
-        List[PIL.Image]
+        list[PIL.Image]
             插帧后的帧列表，长度约为 ``2 * len(frames) - 1``。
         """
         label = pass_label or self._method
@@ -381,12 +381,12 @@ class FrameInterpolator(BaseVideoNode):
 
     def _interpolate_pairs(
         self,
-        frames: List[Any],
+        frames: list[Any],
         pair_fn: Any,
         label: str,
         progress_base: int = 0,
-        progress_total: Optional[int] = None,
-    ) -> List[Any]:
+        progress_total: int | None = None,
+    ) -> list[Any]:
         """分段对相邻帧对执行插值并组装结果。
 
         对每对相邻帧 ``(frames[i], frames[i+1])`` 调用 ``pair_fn`` 生成
@@ -408,7 +408,7 @@ class FrameInterpolator(BaseVideoNode):
 
         Returns
         -------
-        List[PIL.Image]
+        list[PIL.Image]
             插帧后的帧列表。
         """
         n = len(frames)
@@ -417,7 +417,7 @@ class FrameInterpolator(BaseVideoNode):
 
         total_pairs = n - 1
         chunk = self._chunk_size
-        result: List[Any] = [frames[0]]
+        result: list[Any] = [frames[0]]
         done = 0
 
         for start in range(0, total_pairs, chunk):
@@ -438,11 +438,11 @@ class FrameInterpolator(BaseVideoNode):
 
     def _interpolate_linear(
         self,
-        frames: List[Any],
+        frames: list[Any],
         progress_base: int = 0,
-        progress_total: Optional[int] = None,
+        progress_total: int | None = None,
         label: str = "linear",
-    ) -> List[Any]:
+    ) -> list[Any]:
         """线性插值：对相邻两帧做加权平均。
 
         不依赖任何模型，纯 CPU 即可运行。每对相邻帧的中间帧取
@@ -461,7 +461,7 @@ class FrameInterpolator(BaseVideoNode):
 
         Returns
         -------
-        List[PIL.Image]
+        list[PIL.Image]
             2x 插帧后的帧列表。
         """
         return self._interpolate_pairs(
@@ -474,11 +474,11 @@ class FrameInterpolator(BaseVideoNode):
 
     def _interpolate_rife(
         self,
-        frames: List[Any],
+        frames: list[Any],
         progress_base: int = 0,
-        progress_total: Optional[int] = None,
+        progress_total: int | None = None,
         label: str = "rife",
-    ) -> List[Any]:
+    ) -> list[Any]:
         """RIFE 插值：使用 RIFE ONNX 模型推理生成中间帧。
 
         Parameters
@@ -494,7 +494,7 @@ class FrameInterpolator(BaseVideoNode):
 
         Returns
         -------
-        List[PIL.Image]
+        list[PIL.Image]
             2x 插帧后的帧列表。
         """
         if self._pipeline is None:
@@ -509,11 +509,11 @@ class FrameInterpolator(BaseVideoNode):
 
     def _interpolate_film(
         self,
-        frames: List[Any],
+        frames: list[Any],
         progress_base: int = 0,
-        progress_total: Optional[int] = None,
+        progress_total: int | None = None,
         label: str = "film",
-    ) -> List[Any]:
+    ) -> list[Any]:
         """FILM 插值：使用 FILM 模型推理生成中间帧。
 
         Parameters
@@ -529,7 +529,7 @@ class FrameInterpolator(BaseVideoNode):
 
         Returns
         -------
-        List[PIL.Image]
+        list[PIL.Image]
             2x 插帧后的帧列表。
         """
         if self._pipeline is None:
@@ -572,7 +572,7 @@ class FrameInterpolator(BaseVideoNode):
 
         size = frame_a.size
         if frame_b.size != size:
-            frame_b = frame_b.resize(size, Image.LANCZOS)
+            frame_b = frame_b.resize(size, Image.Resampling.LANCZOS)
 
         a_arr = np.array(frame_a.convert("RGB"), dtype=np.float32)
         b_arr = np.array(frame_b.convert("RGB"), dtype=np.float32)
@@ -611,13 +611,13 @@ class FrameInterpolator(BaseVideoNode):
         session = self._pipeline
         size = frame_a.size
         if frame_b.size != size:
-            frame_b = frame_b.resize(size, Image.LANCZOS)
+            frame_b = frame_b.resize(size, Image.Resampling.LANCZOS)
 
         a_hwc = np.array(frame_a.convert("RGB"), dtype=np.float32) / 255.0
         b_hwc = np.array(frame_b.convert("RGB"), dtype=np.float32) / 255.0
 
         feeds: dict = {}
-        image_inputs: List[Tuple[str, List[int]]] = []
+        image_inputs: list[tuple[str, list[int]]] = []
         for inp in session.get_inputs():
             shape = [d if isinstance(d, int) else -1 for d in (inp.shape or [])]
             if len(shape) == 4:
@@ -658,7 +658,7 @@ class FrameInterpolator(BaseVideoNode):
         return Image.fromarray(out)
 
     @staticmethod
-    def _to_model_layout(arr_hwc: Any, shape: List[int]) -> Any:
+    def _to_model_layout(arr_hwc: Any, shape: list[int]) -> Any:
         """按目标形状把 ``(H, W, 3)`` 数组转为 ``(1, 3, H, W)`` 或 ``(1, H, W, 3)``。"""
         import numpy as np  # type: ignore
 
@@ -696,7 +696,7 @@ class FrameInterpolator(BaseVideoNode):
         model = self._pipeline
         size = frame_a.size
         if frame_b.size != size:
-            frame_b = frame_b.resize(size, Image.LANCZOS)
+            frame_b = frame_b.resize(size, Image.Resampling.LANCZOS)
 
         a = np.array(frame_a.convert("RGB"), dtype=np.float32) / 255.0
         b = np.array(frame_b.convert("RGB"), dtype=np.float32) / 255.0
@@ -758,7 +758,7 @@ class FrameInterpolator(BaseVideoNode):
                     f"got {type(video).__name__ if video is not None else 'None'}."
                 )
 
-            frames: List[Any] = list(video.frames)
+            frames: list[Any] = list(video.frames)
             if not frames:
                 raise ValueError(
                     "FrameInterpolator requires a non-empty 'video' "
@@ -799,7 +799,7 @@ class FrameInterpolator(BaseVideoNode):
             )
 
             # 预估各 pass 的工作量，用于全局进度
-            work_per_pass: List[int] = []
+            work_per_pass: list[int] = []
             n = original_frame_count
             total_work = 0
             for _ in range(num_passes):

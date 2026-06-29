@@ -20,7 +20,7 @@ from __future__ import annotations
 import importlib
 import inspect
 import pkgutil
-from typing import Any, Dict, List, Optional, Type
+from typing import Any
 
 from mosaic.core.node import Node, NodeSpec
 
@@ -39,12 +39,12 @@ class NodeRegistry:
     """
 
     def __init__(self) -> None:
-        self._nodes: Dict[str, Type[Node]] = {}
-        self._instances: Dict[str, Node] = {}
+        self._nodes: dict[str, type[Node]] = {}
+        self._instances: dict[str, Node] = {}
         self._scanned: bool = False
 
     # -- 注册 --------------------------------------------------------------
-    def register(self, node_class: Type[Node]) -> Type[Node]:
+    def register(self, node_class: type[Node]) -> type[Node]:
         """注册一个节点类。
 
         既可用作装饰器::
@@ -64,7 +64,7 @@ class NodeRegistry:
 
         Returns
         -------
-        Type[Node]
+        type[Node]
             原样返回被注册的类，便于装饰器链式使用。
 
         Raises
@@ -143,7 +143,7 @@ class NodeRegistry:
             self._instances[name] = self._nodes[name]()
         return self._instances[name]
 
-    def get_class(self, name: str) -> Type[Node]:
+    def get_class(self, name: str) -> type[Node]:
         """按名称获取节点类（不实例化）。"""
         if name not in self._nodes:
             raise KeyError(
@@ -153,7 +153,7 @@ class NodeRegistry:
         return self._nodes[name]
 
     # -- 列举 --------------------------------------------------------------
-    def list_nodes(self, domain: Optional[str] = None) -> List[NodeSpec]:
+    def list_nodes(self, domain: str | None = None) -> list[NodeSpec]:
         """列出所有节点的规格说明，可按域过滤。
 
         Parameters
@@ -163,10 +163,10 @@ class NodeRegistry:
 
         Returns
         -------
-        List[NodeSpec]
+        list[NodeSpec]
             节点规格说明列表，按名称排序。
         """
-        specs: List[NodeSpec] = []
+        specs: list[NodeSpec] = []
         seen: set = set()
         for node_class in self._nodes.values():
             # 同一类可能因 name + 类名 被登记两次，去重
@@ -180,7 +180,7 @@ class NodeRegistry:
         specs.sort(key=lambda s: s.name)
         return specs
 
-    def list_domains(self) -> List[str]:
+    def list_domains(self) -> list[str]:
         """列出所有已注册节点涉及的域（去重排序）。"""
         domains: set = set()
         for node_class in self._nodes.values():
@@ -188,7 +188,7 @@ class NodeRegistry:
             domains.add(spec.domain)
         return sorted(domains)
 
-    def list_names(self) -> List[str]:
+    def list_names(self) -> list[str]:
         """列出所有已注册节点的名称。"""
         return sorted(
             cls.name for cls in {c for c in self._nodes.values()}
@@ -202,7 +202,7 @@ class NodeRegistry:
         return len({c for c in self._nodes.values()})
 
     # -- 自动扫描 ----------------------------------------------------------
-    def discover(self, package: str = "mosaic.nodes") -> List[Type[Node]]:
+    def discover(self, package: str = "mosaic.nodes") -> list[type[Node]]:
         """自动扫描 ``mosaic.nodes`` 包下的所有节点类并注册。
 
         采用 ``pkgutil.walk_packages`` 递归遍历子模块，对每个模块中
@@ -215,14 +215,14 @@ class NodeRegistry:
 
         Returns
         -------
-        List[Type[Node]]
+        list[type[Node]]
             本次扫描新注册的节点类列表。
         """
         if self._scanned:
             return []
         self._scanned = True
 
-        newly_registered: List[Type[Node]] = []
+        newly_registered: list[type[Node]] = []
         try:
             pkg = importlib.import_module(package)
         except ImportError:
@@ -260,7 +260,7 @@ class NodeRegistry:
 
     # -- 内部辅助 ----------------------------------------------------------
     @staticmethod
-    def _safe_describe(node_class: Type[Node]) -> NodeSpec:
+    def _safe_describe(node_class: type[Node]) -> NodeSpec:
         """安全获取节点规格说明。
 
         优先调用 ``describe`` 实例方法；若实例化失败则根据类属性构建。

@@ -19,7 +19,7 @@ from __future__ import annotations
 import abc
 import logging
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from mosaic.core.events import EventBus, EventType, get_event_bus
 from mosaic.core.node import Node, NodeSpec
@@ -46,13 +46,13 @@ class BaseSubtitleNode(Node):
     domain: str = "subtitle"
     description: str = "Base subtitle node."
     version: str = "0.1.0"
-    input_types: List[str] = ["audio", "subtitle", "text", "mosaic"]
-    output_types: List[str] = ["subtitle"]
+    input_types: list[str] = ["audio", "subtitle", "text", "mosaic"]
+    output_types: list[str] = ["subtitle"]
 
     def __init__(
         self,
-        scheduler: Optional[Scheduler] = None,
-        bus: Optional[EventBus] = None,
+        scheduler: Scheduler | None = None,
+        bus: EventBus | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs)
@@ -176,7 +176,7 @@ class BaseSubtitleNode(Node):
         return 0.0
 
     @staticmethod
-    def _parse_srt(content: str) -> List[Dict[str, Any]]:
+    def _parse_srt(content: str) -> list[dict[str, Any]]:
         """解析 SRT 格式字幕内容。
 
         Parameters
@@ -186,10 +186,10 @@ class BaseSubtitleNode(Node):
 
         Returns
         -------
-        List[Dict[str, Any]]
+        list[dict[str, Any]]
             字幕片段列表，每段含 ``index``/``start``/``end``/``text``。
         """
-        segments: List[Dict[str, Any]] = []
+        segments: list[dict[str, Any]] = []
         # 按空行分割块
         blocks = re.split(r"\n\s*\n", content.strip())
         for block in blocks:
@@ -232,7 +232,7 @@ class BaseSubtitleNode(Node):
         return segments
 
     @staticmethod
-    def _parse_vtt(content: str) -> List[Dict[str, Any]]:
+    def _parse_vtt(content: str) -> list[dict[str, Any]]:
         """解析 WebVTT 格式字幕内容。
 
         Parameters
@@ -242,10 +242,10 @@ class BaseSubtitleNode(Node):
 
         Returns
         -------
-        List[Dict[str, Any]]
+        list[dict[str, Any]]
             字幕片段列表。
         """
-        segments: List[Dict[str, Any]] = []
+        segments: list[dict[str, Any]] = []
         lines = content.split("\n")
 
         # 跳过 WEBVTT 头部
@@ -301,7 +301,7 @@ class BaseSubtitleNode(Node):
         return segments
 
     @staticmethod
-    def _to_srt(segments: List[Dict[str, Any]]) -> str:
+    def _to_srt(segments: list[dict[str, Any]]) -> str:
         """将字幕片段列表转为 SRT 格式字符串。
 
         Parameters
@@ -314,7 +314,7 @@ class BaseSubtitleNode(Node):
         str
             SRT 格式字符串。
         """
-        lines: List[str] = []
+        lines: list[str] = []
         for i, seg in enumerate(segments, 1):
             start = BaseSubtitleNode._format_timestamp(seg["start"], "srt")
             end = BaseSubtitleNode._format_timestamp(seg["end"], "srt")
@@ -326,7 +326,7 @@ class BaseSubtitleNode(Node):
         return "\n".join(lines)
 
     @staticmethod
-    def _to_vtt(segments: List[Dict[str, Any]]) -> str:
+    def _to_vtt(segments: list[dict[str, Any]]) -> str:
         """将字幕片段列表转为 WebVTT 格式字符串。
 
         Parameters
@@ -339,7 +339,7 @@ class BaseSubtitleNode(Node):
         str
             WebVTT 格式字符串。
         """
-        lines: List[str] = ["WEBVTT", ""]
+        lines: list[str] = ["WEBVTT", ""]
         for seg in segments:
             start = BaseSubtitleNode._format_timestamp(seg["start"], "vtt")
             end = BaseSubtitleNode._format_timestamp(seg["end"], "vtt")
@@ -351,9 +351,9 @@ class BaseSubtitleNode(Node):
 
     @staticmethod
     def _merge_short_segments(
-        segments: List[Dict[str, Any]],
+        segments: list[dict[str, Any]],
         min_duration: float = 0.5,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """合并过短的字幕片段。
 
         Parameters
@@ -365,13 +365,13 @@ class BaseSubtitleNode(Node):
 
         Returns
         -------
-        List[Dict[str, Any]]
+        list[dict[str, Any]]
             合并后的片段列表。
         """
         if not segments:
             return []
 
-        result: List[Dict[str, Any]] = []
+        result: list[dict[str, Any]] = []
         current = dict(segments[0])
 
         for seg in segments[1:]:
@@ -391,10 +391,10 @@ class BaseSubtitleNode(Node):
 
     @staticmethod
     def _split_long_segments(
-        segments: List[Dict[str, Any]],
+        segments: list[dict[str, Any]],
         max_duration: float = 10.0,
         max_chars: int = 42,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """拆分过长的字幕片段。
 
         Parameters
@@ -408,10 +408,10 @@ class BaseSubtitleNode(Node):
 
         Returns
         -------
-        List[Dict[str, Any]]
+        list[dict[str, Any]]
             拆分后的片段列表。
         """
-        result: List[Dict[str, Any]] = []
+        result: list[dict[str, Any]] = []
         for seg in segments:
             duration = seg["end"] - seg["start"]
             text = seg.get("text", "").strip()
@@ -423,7 +423,7 @@ class BaseSubtitleNode(Node):
             # 按标点拆分文本
             sentences = re.split(r"([。！？.!?；;，,\n]+)", text)
             # 重组句子（保留标点）
-            parts: List[str] = []
+            parts: list[str] = []
             current_part = ""
             for s in sentences:
                 current_part += s
@@ -464,7 +464,7 @@ class BaseSubtitleNode(Node):
     # ------------------------------------------------------------------
     def _make_subtitle_data(
         self,
-        segments: List[Dict[str, Any]],
+        segments: list[dict[str, Any]],
         fmt: str = "srt",
         **metadata: Any,
     ) -> SubtitleData:
@@ -483,7 +483,7 @@ class BaseSubtitleNode(Node):
         -------
         SubtitleData
         """
-        meta: Dict[str, Any] = {"segment_count": len(segments)}
+        meta: dict[str, Any] = {"segment_count": len(segments)}
         meta.update(metadata)
         return SubtitleData(
             segments=segments,

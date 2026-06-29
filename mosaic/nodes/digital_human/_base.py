@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import abc
 import logging
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from mosaic.core.events import EventBus, EventType, get_event_bus
 from mosaic.core.node import Node, NodeSpec
@@ -31,7 +31,7 @@ __all__ = ["BaseDigitalHumanNode"]
 
 
 # 常见数字人模型的粗略显存估算（fp16，GB）
-_VRAM_ESTIMATES: Dict[str, float] = {
+_VRAM_ESTIMATES: dict[str, float] = {
     "KwaiVGI/LivePortrait": 5.0,
     "KwaiVGI/MuseTalk": 7.0,
     "cvitkwai/SadTalker": 5.0,
@@ -39,7 +39,7 @@ _VRAM_ESTIMATES: Dict[str, float] = {
 }
 
 # 许可证信息
-_LICENSE_INFO: Dict[str, str] = {
+_LICENSE_INFO: dict[str, str] = {
     "KwaiVGI/LivePortrait": "MIT License (model weights)",
     "KwaiVGI/MuseTalk": "CC-BY-NC 4.0",
     "cvitkwai/SadTalker": "Apache-2.0 (code), CC-BY-NC-4.0 (model weights)",
@@ -69,15 +69,15 @@ class BaseDigitalHumanNode(Node):
     domain: str = "digital_human"
     description: str = "Base digital human node."
     version: str = "0.1.0"
-    input_types: List[str] = ["image", "audio", "video", "text", "mosaic"]
-    output_types: List[str] = ["video", "image", "mosaic"]
+    input_types: list[str] = ["image", "audio", "video", "text", "mosaic"]
+    output_types: list[str] = ["video", "image", "mosaic"]
 
     def __init__(
         self,
         device: str = "cuda",
         dtype: str = "float16",
-        scheduler: Optional[Scheduler] = None,
-        bus: Optional[EventBus] = None,
+        scheduler: Scheduler | None = None,
+        bus: EventBus | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs)
@@ -217,7 +217,7 @@ class BaseDigitalHumanNode(Node):
     @staticmethod
     def _detect_face(
         image: Any,
-    ) -> Tuple[Any, Tuple[int, int, int, int], Any]:
+    ) -> tuple[Any, tuple[int, int, int, int], Any]:
         """检测人脸，返回人脸区域、边界框、关键点。
 
         使用 ``insightface`` 进行人脸检测（如果可用），否则使用简单
@@ -230,7 +230,7 @@ class BaseDigitalHumanNode(Node):
 
         Returns
         -------
-        Tuple[PIL.Image.Image, Tuple[int, int, int, int], Any]
+        tuple[PIL.Image.Image, tuple[int, int, int, int], Any]
             ``(face_image, bbox, landmarks)``，bbox 为 ``(x1, y1, x2, y2)``，
             landmarks 为 5 个关键点坐标（左眼、右眼、鼻尖、左嘴角、右嘴角）。
 
@@ -345,7 +345,7 @@ class BaseDigitalHumanNode(Node):
     def _align_face(
         image: Any,
         landmarks: Any,
-        target_size: Tuple[int, int] = (256, 256),
+        target_size: tuple[int, int] = (256, 256),
     ) -> Any:
         """人脸对齐。
 
@@ -372,7 +372,7 @@ class BaseDigitalHumanNode(Node):
             image = BaseDigitalHumanNode._load_image(image)
 
         if landmarks is None or len(landmarks) < 2:
-            return image.resize(target_size, Image.LANCZOS)
+            return image.resize(target_size, Image.Resampling.LANCZOS)
 
         landmarks = np.asarray(landmarks, dtype=np.float32)
         left_eye = landmarks[0]
@@ -391,15 +391,15 @@ class BaseDigitalHumanNode(Node):
 
         # 旋转并对齐
         rotated = image.rotate(
-            angle, center=center, resample=Image.BILINEAR
+            angle, center=center, resample=Image.Resampling.BILINEAR
         )
-        return rotated.resize(target_size, Image.LANCZOS)
+        return rotated.resize(target_size, Image.Resampling.LANCZOS)
 
     @staticmethod
     def _crop_and_resize(
         image: Any,
-        bbox: Tuple[int, int, int, int],
-        target_size: Tuple[int, int] = (256, 256),
+        bbox: tuple[int, int, int, int],
+        target_size: tuple[int, int] = (256, 256),
         padding: int = 0,
     ) -> Any:
         """裁剪并调整大小。
@@ -433,12 +433,12 @@ class BaseDigitalHumanNode(Node):
             y2 = min(image.size[1], y2 + padding)
 
         cropped = image.crop((x1, y1, x2, y2))
-        return cropped.resize(target_size, Image.LANCZOS)
+        return cropped.resize(target_size, Image.Resampling.LANCZOS)
 
     @staticmethod
     def _apply_expression(
         face_image: Any,
-        expression_params: Dict[str, Any],
+        expression_params: dict[str, Any],
     ) -> Any:
         """应用表情参数到人脸图像。
 
@@ -485,7 +485,7 @@ class BaseDigitalHumanNode(Node):
     def _blend_face(
         original_image: Any,
         face_image: Any,
-        bbox: Tuple[int, int, int, int],
+        bbox: tuple[int, int, int, int],
         blend_ratio: float = 1.0,
     ) -> Any:
         """将生成的人脸融合回原图。
@@ -523,7 +523,7 @@ class BaseDigitalHumanNode(Node):
             return original_image
 
         # 将 face_image resize 到 bbox 大小
-        resized_face = face_image.resize((w, h), Image.LANCZOS)
+        resized_face = face_image.resize((w, h), Image.Resampling.LANCZOS)
 
         # Alpha 混合
         result = original_image.copy()
@@ -602,7 +602,7 @@ class BaseDigitalHumanNode(Node):
     def describe(self) -> NodeSpec:
         """返回节点规格说明（子类实现）。"""
 
-    def _build_model_info(self, model_name: str) -> Dict[str, Any]:
+    def _build_model_info(self, model_name: str) -> dict[str, Any]:
         """构造模型信息字典。"""
         vram = _VRAM_ESTIMATES.get(model_name, 8.0)
         license_info = _LICENSE_INFO.get(

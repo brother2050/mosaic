@@ -30,7 +30,7 @@ import logging
 import os
 import sys
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Set, Type
+from typing import Any
 
 from mosaic.core.node import Node, NodeSpec
 from mosaic.core.registry import NodeRegistry, registry
@@ -78,9 +78,9 @@ class PluginInfo:
     source: str
     version: str = "0.1.0"
     description: str = ""
-    author: Optional[str] = None
-    node_class: Optional[Type[Node]] = None
-    module_path: Optional[str] = None
+    author: str | None = None
+    node_class: type[Node] | None = None
+    module_path: str | None = None
 
     def __repr__(self) -> str:
         return (
@@ -94,10 +94,10 @@ class PluginInfo:
 # ---------------------------------------------------------------------------
 def node(
     domain: str = "custom",
-    name: Optional[str] = None,
+    name: str | None = None,
     version: str = "0.1.0",
     description: str = "",
-    author: Optional[str] = None,
+    author: str | None = None,
 ) -> Any:
     """装饰器：将一个 Node 子类注册为 Mosaic 插件节点。
 
@@ -129,7 +129,7 @@ def node(
         类装饰器。
     """
 
-    def decorator(cls: Type[Node]) -> Type[Node]:
+    def decorator(cls: type[Node]) -> type[Node]:
         if not (inspect.isclass(cls) and issubclass(cls, Node)):
             raise TypeError(
                 f"@node can only decorate Node subclasses, got {cls!r}."
@@ -180,12 +180,12 @@ class PluginManager:
 
     def __init__(
         self,
-        registry_instance: Optional[NodeRegistry] = None,
+        registry_instance: NodeRegistry | None = None,
     ) -> None:
         self._registry: NodeRegistry = registry_instance or registry
-        self._plugins: Dict[str, PluginInfo] = {}
-        self._plugin_dirs: List[str] = []
-        self._decorator_plugins: Set[str] = set()
+        self._plugins: dict[str, PluginInfo] = {}
+        self._plugin_dirs: list[str] = []
+        self._decorator_plugins: set[str] = set()
         self._loaded: bool = False
 
     # -- 加载 --------------------------------------------------------------
@@ -217,13 +217,8 @@ class PluginManager:
         try:
             from importlib.metadata import entry_points
 
-            # Python 3.10+ 的 entry_points 返回 EntryPoints 对象
-            try:
-                eps = entry_points(group=self.ENTRY_POINT_GROUP)
-            except TypeError:
-                # Python 3.10 兼容
-                all_eps = entry_points()
-                eps = all_eps.get(self.ENTRY_POINT_GROUP, [])
+            # Python 3.10+ 稳定 API：entry_points(group=...) 直接返回 EntryPoints
+            eps = entry_points(group=self.ENTRY_POINT_GROUP)
         except Exception:
             return 0
 
@@ -332,7 +327,7 @@ class PluginManager:
         return count
 
     # -- 查询 --------------------------------------------------------------
-    def list_plugins(self, source: Optional[str] = None) -> List[PluginInfo]:
+    def list_plugins(self, source: str | None = None) -> list[PluginInfo]:
         """列出所有已加载的插件。
 
         Parameters
@@ -343,7 +338,7 @@ class PluginManager:
 
         Returns
         -------
-        List[PluginInfo]
+        list[PluginInfo]
             插件信息列表，按名称排序。
         """
         plugins = list(self._plugins.values())
@@ -352,7 +347,7 @@ class PluginManager:
         plugins.sort(key=lambda p: p.name)
         return plugins
 
-    def get_plugin(self, name: str) -> Optional[PluginInfo]:
+    def get_plugin(self, name: str) -> PluginInfo | None:
         """按名称获取插件信息。
 
         Parameters
@@ -362,12 +357,12 @@ class PluginManager:
 
         Returns
         -------
-        Optional[PluginInfo]
+        PluginInfo | None
             插件信息；未找到时返回 ``None``。
         """
         return self._plugins.get(name)
 
-    def get_plugin_node(self, name: str) -> Optional[Type[Node]]:
+    def get_plugin_node(self, name: str) -> type[Node] | None:
         """按名称获取插件节点类。
 
         Parameters
@@ -377,7 +372,7 @@ class PluginManager:
 
         Returns
         -------
-        Optional[Type[Node]]
+        type[Node] | None
             节点类；未找到时返回 ``None``。
         """
         info = self._plugins.get(name)
@@ -473,7 +468,7 @@ class PluginManager:
             self._scan_directory(abs_path)
 
     # -- 内置节点标记 ------------------------------------------------------
-    def mark_builtin(self, names: Optional[List[str]] = None) -> None:
+    def mark_builtin(self, names: list[str] | None = None) -> None:
         """将已注册的内置节点标记为 ``builtin`` 来源。
 
         在 :meth:`registry.discover` 之后调用，将发现的内置节点
@@ -503,8 +498,10 @@ class PluginManager:
                     module_path=node_class.__module__,
                 )
                 self._plugins[spec_name] = info
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning(
+                    "Failed to mark builtin node %s: %s", spec_name, exc
+                )
 
     # -- 统计 --------------------------------------------------------------
     def __len__(self) -> int:

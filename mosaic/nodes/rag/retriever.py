@@ -18,7 +18,7 @@ from __future__ import annotations
 import logging
 import os
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from mosaic.core.events import EventBus, EventType, get_event_bus
 from mosaic.core.node import NodeSpec
@@ -71,24 +71,24 @@ class Retriever(BaseRagNode):
         "Supports FAISS and ChromaDB backends."
     )
     version: str = "0.1.0"
-    input_types: List[str] = ["text", "mosaic"]
-    output_types: List[str] = ["rag_query_result", "mosaic"]
+    input_types: list[str] = ["text", "mosaic"]
+    output_types: list[str] = ["rag_query_result", "mosaic"]
 
     def __init__(
         self,
         index_type: str = "faiss",
-        index_path: Optional[str] = None,
+        index_path: str | None = None,
         embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2",
         device: str = "cuda",
         metric: str = "ip",
-        bus: Optional[EventBus] = None,
-        scheduler: Optional[Scheduler] = None,
+        bus: EventBus | None = None,
+        scheduler: Scheduler | None = None,
         indexer: Any = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(bus=bus, **kwargs)
         self._index_type: str = index_type.lower()
-        self._index_path: Optional[str] = index_path
+        self._index_path: str | None = index_path
         self._model_name: str = embedding_model
         self._device: str = device
         self._metric: str = metric.lower()
@@ -97,8 +97,8 @@ class Retriever(BaseRagNode):
 
         # 运行时状态
         self._model: Any = None  # 嵌入模型
-        self._collections: Dict[str, Any] = {}
-        self._chunk_store: Dict[str, List[Dict[str, Any]]] = {}
+        self._collections: dict[str, Any] = {}
+        self._chunk_store: dict[str, list[dict[str, Any]]] = {}
 
     # ------------------------------------------------------------------
     # Node 接口实现
@@ -213,7 +213,7 @@ class Retriever(BaseRagNode):
             )
 
             # 构造结果
-            results: List[Dict[str, Any]] = []
+            results: list[dict[str, Any]] = []
             for item in raw_results:
                 score = item.get("score", 0.0)
                 if score >= score_threshold:
@@ -289,7 +289,7 @@ class Retriever(BaseRagNode):
             emb = self._encode_with_transformers([query])
             return emb[0]
 
-    def _encode_with_transformers(self, texts: List[str]) -> Any:
+    def _encode_with_transformers(self, texts: list[str]) -> Any:
         """使用 transformers AutoModel + mean pooling 计算嵌入。"""
         import numpy as np  # type: ignore
         import torch  # type: ignore
@@ -337,8 +337,8 @@ class Retriever(BaseRagNode):
         collection_name: str,
         query_embedding: Any,
         top_k: int,
-        filter_metadata: Optional[Dict[str, Any]],
-    ) -> List[Dict[str, Any]]:
+        filter_metadata: dict[str, Any] | None,
+    ) -> list[dict[str, Any]]:
         """执行检索，返回原始结果列表。"""
         import numpy as np  # type: ignore
 
@@ -361,8 +361,8 @@ class Retriever(BaseRagNode):
         collection_name: str,
         query_embedding: Any,
         top_k: int,
-        filter_metadata: Optional[Dict[str, Any]],
-    ) -> List[Dict[str, Any]]:
+        filter_metadata: dict[str, Any] | None,
+    ) -> list[dict[str, Any]]:
         """FAISS 检索。"""
         import numpy as np  # type: ignore
 
@@ -384,7 +384,7 @@ class Retriever(BaseRagNode):
         query_vec = np.array([query_embedding], dtype=np.float32)
         scores, indices = index.search(query_vec, actual_k)
 
-        results: List[Dict[str, Any]] = []
+        results: list[dict[str, Any]] = []
         for i, idx in enumerate(indices[0]):
             if idx < 0 or idx >= len(chunk_store):
                 continue
@@ -406,8 +406,8 @@ class Retriever(BaseRagNode):
         collection_name: str,
         query_embedding: Any,
         top_k: int,
-        filter_metadata: Optional[Dict[str, Any]],
-    ) -> List[Dict[str, Any]]:
+        filter_metadata: dict[str, Any] | None,
+    ) -> list[dict[str, Any]]:
         """ChromaDB 检索。"""
         collection = self._collections.get(collection_name)
         if collection is None:
@@ -425,7 +425,7 @@ class Retriever(BaseRagNode):
             where=where_clause,
         )
 
-        results: List[Dict[str, Any]] = []
+        results: list[dict[str, Any]] = []
         documents = results_raw.get("documents", [[]])
         metadatas = results_raw.get("metadatas", [[]])
         distances = results_raw.get("distances", [[]])
@@ -450,8 +450,8 @@ class Retriever(BaseRagNode):
 
     @staticmethod
     def _match_metadata(
-        item_meta: Dict[str, Any],
-        filter_meta: Dict[str, Any],
+        item_meta: dict[str, Any],
+        filter_meta: dict[str, Any],
     ) -> bool:
         """检查 item 元信息是否匹配过滤条件。"""
         for key, value in filter_meta.items():

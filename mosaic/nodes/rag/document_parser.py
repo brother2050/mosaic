@@ -20,7 +20,7 @@ from __future__ import annotations
 import logging
 import os
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from mosaic.core.events import EventBus, EventType, get_event_bus
 from mosaic.core.node import NodeSpec
@@ -73,16 +73,16 @@ class DocumentParser(BaseRagNode):
         "text chunks with metadata for RAG pipelines."
     )
     version: str = "0.1.0"
-    input_types: List[str] = ["text", "mosaic"]
-    output_types: List[str] = ["document", "mosaic"]
+    input_types: list[str] = ["text", "mosaic"]
+    output_types: list[str] = ["document", "mosaic"]
 
     def __init__(
         self,
         chunk_size: int = 512,
         chunk_overlap: int = 50,
         preserve_structure: bool = True,
-        supported_formats: Optional[List[str]] = None,
-        bus: Optional[EventBus] = None,
+        supported_formats: list[str] | None = None,
+        bus: EventBus | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(
@@ -93,9 +93,9 @@ class DocumentParser(BaseRagNode):
         )
         self._preserve_structure: bool = preserve_structure
         self._supported_formats: set = set(
-            f.lower().lstrip(".") for f in (supported_formats or list(_SUPPORTED_FORMATS))
+            f.lower().removeprefix(".") for f in (supported_formats or list(_SUPPORTED_FORMATS))
         )
-        self._available_parsers: Dict[str, bool] = {}
+        self._available_parsers: dict[str, bool] = {}
 
     # ------------------------------------------------------------------
     # Node 接口实现
@@ -194,7 +194,7 @@ class DocumentParser(BaseRagNode):
                 }
             elif isinstance(file_path, str) and file_path:
                 # 校验格式支持
-                ext = os.path.splitext(file_path)[1].lower().lstrip(".")
+                ext = os.path.splitext(file_path)[1].lower().removeprefix(".")
                 if ext not in self._supported_formats:
                     raise ValueError(
                         f"Unsupported file format: .{ext}. "
@@ -280,10 +280,10 @@ class DocumentParser(BaseRagNode):
     # ------------------------------------------------------------------
     def _build_chunk_metadata(
         self,
-        chunks: List[str],
-        doc_metadata: Dict[str, Any],
+        chunks: list[str],
+        doc_metadata: dict[str, Any],
         file_type: str,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """为每个 chunk 构造元信息。
 
         Parameters
@@ -297,11 +297,11 @@ class DocumentParser(BaseRagNode):
 
         Returns
         -------
-        List[Dict[str, Any]]
+        list[dict[str, Any]]
             每个 chunk 的元信息，长度与 ``chunks`` 一致。
         """
         filename = doc_metadata.get("filename", "unknown")
-        chunk_meta_list: List[Dict[str, Any]] = []
+        chunk_meta_list: list[dict[str, Any]] = []
 
         for i, chunk in enumerate(chunks):
             chunk_meta = {

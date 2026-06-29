@@ -25,7 +25,7 @@ from __future__ import annotations
 import abc
 import logging
 import os
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from mosaic.core.events import EventBus, EventType, get_event_bus
 from mosaic.core.node import Node, NodeSpec
@@ -36,7 +36,7 @@ __all__ = ["BaseVideoNode"]
 
 
 # 常见视频模型的粗略显存估算（fp16，GB），用于 describe() 与调度器
-_VRAM_ESTIMATES: Dict[str, float] = {
+_VRAM_ESTIMATES: dict[str, float] = {
     "THUDM/CogVideoX-5b": 18.0,
     "THUDM/CogVideoX-2b": 9.0,
     "stabilityai/stable-video-diffusion-img2vid": 10.0,
@@ -45,7 +45,7 @@ _VRAM_ESTIMATES: Dict[str, float] = {
 }
 
 # 许可证信息
-_LICENSE_INFO: Dict[str, str] = {
+_LICENSE_INFO: dict[str, str] = {
     "THUDM/CogVideoX-5b": "CogVideoX License (Apache 2.0)",
     "THUDM/CogVideoX-2b": "CogVideoX License (Apache 2.0)",
     "stabilityai/stable-video-diffusion-img2vid": "Stability AI Community License",
@@ -78,16 +78,16 @@ class BaseVideoNode(Node):
     domain: str = "video"
     description: str = "Base video node."
     version: str = "0.1.0"
-    input_types: List[str] = ["text", "image", "video", "mosaic"]
-    output_types: List[str] = ["video"]
+    input_types: list[str] = ["text", "image", "video", "mosaic"]
+    output_types: list[str] = ["video"]
 
     def __init__(
         self,
         model: str = "",
         device: str = "cuda",
         dtype: str = "float16",
-        scheduler: Optional[Scheduler] = None,
-        bus: Optional[EventBus] = None,
+        scheduler: Scheduler | None = None,
+        bus: EventBus | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs)
@@ -227,7 +227,7 @@ class BaseVideoNode(Node):
         meta = reader.get_meta_data()
         fps = int(meta.get("fps", 30))
 
-        frames: List[Any] = []
+        frames: list[Any] = []
         for frame in reader:
             # imageio 返回 numpy 数组 (H, W, C)
             pil_frame = Image.fromarray(frame)
@@ -252,7 +252,7 @@ class BaseVideoNode(Node):
 
     @staticmethod
     def _save_video(
-        frames: List[Any],
+        frames: list[Any],
         fps: int,
         path: str,
         codec: str = "libx264",
@@ -303,8 +303,8 @@ class BaseVideoNode(Node):
     @staticmethod
     def _extract_frames(
         video_data: VideoData,
-        indices: List[int],
-    ) -> List[Any]:
+        indices: list[int],
+    ) -> list[Any]:
         """从 VideoData 中提取指定索引的帧。
 
         Parameters
@@ -316,7 +316,7 @@ class BaseVideoNode(Node):
 
         Returns
         -------
-        List[PIL.Image]
+        list[PIL.Image]
             提取的帧列表。
         """
         frames = video_data.frames
@@ -324,9 +324,9 @@ class BaseVideoNode(Node):
 
     @staticmethod
     def _resize_frames(
-        frames: List[Any],
-        target_size: Tuple[int, int],
-    ) -> List[Any]:
+        frames: list[Any],
+        target_size: tuple[int, int],
+    ) -> list[Any]:
         """批量 resize 帧列表。
 
         Parameters
@@ -338,15 +338,15 @@ class BaseVideoNode(Node):
 
         Returns
         -------
-        List[PIL.Image]
+        list[PIL.Image]
             resize 后的帧列表。
         """
         from PIL import Image  # type: ignore
 
-        return [f.resize(target_size, Image.LANCZOS) for f in frames]
+        return [f.resize(target_size, Image.Resampling.LANCZOS) for f in frames]
 
     @staticmethod
-    def _frames_to_tensor(frames: List[Any]) -> Any:
+    def _frames_to_tensor(frames: list[Any]) -> Any:
         """将 PIL.Image 帧列表转为 torch.Tensor。
 
         输出形状为 ``(N, C, H, W)``，值域 ``[0, 1]``。
@@ -380,7 +380,7 @@ class BaseVideoNode(Node):
         return torch.from_numpy(stacked)
 
     @staticmethod
-    def _tensor_to_frames(tensor: Any) -> List[Any]:
+    def _tensor_to_frames(tensor: Any) -> list[Any]:
         """将 torch.Tensor 转为 PIL.Image 帧列表。
 
         输入形状应为 ``(N, C, H, W)`` 或 ``(C, H, W)``。
@@ -392,7 +392,7 @@ class BaseVideoNode(Node):
 
         Returns
         -------
-        List[PIL.Image]
+        list[PIL.Image]
             帧列表。
         """
         import numpy as np  # type: ignore
@@ -412,7 +412,7 @@ class BaseVideoNode(Node):
         else:
             arr = arr.clip(0, 255).astype(np.uint8)
 
-        frames: List[Any] = []
+        frames: list[Any] = []
         if arr.ndim == 3:
             arr = arr[np.newaxis, ...]
 
@@ -451,7 +451,7 @@ class BaseVideoNode(Node):
         return frames[idx]
 
     @staticmethod
-    def _ensure_even_dimensions(width: int, height: int) -> Tuple[int, int]:
+    def _ensure_even_dimensions(width: int, height: int) -> tuple[int, int]:
         """确保宽高为偶数（视频编码要求）。
 
         大多数视频编码器（H.264 / H.265）要求宽高为偶数，否则编码失败。
@@ -466,7 +466,7 @@ class BaseVideoNode(Node):
 
         Returns
         -------
-        Tuple[int, int]
+        tuple[int, int]
             调整后的 ``(width, height)``，均为偶数。
         """
         if width % 2 != 0:
@@ -477,7 +477,7 @@ class BaseVideoNode(Node):
 
     def _ensure_video_data(
         self,
-        frames: List[Any],
+        frames: list[Any],
         fps: int,
         **extra: Any,
     ) -> VideoData:
@@ -504,7 +504,7 @@ class BaseVideoNode(Node):
             width, height = frames[0].size
 
         duration = len(frames) / fps if fps > 0 else 0.0
-        metadata: Dict[str, Any] = {
+        metadata: dict[str, Any] = {
             "duration": duration,
             "width": width,
             "height": height,
@@ -581,7 +581,7 @@ class BaseVideoNode(Node):
             model_info=self._build_model_info(),
         )
 
-    def _build_model_info(self) -> Dict[str, Any]:
+    def _build_model_info(self) -> dict[str, Any]:
         """构造模型信息字典。"""
         vram = _VRAM_ESTIMATES.get(self._model_name, 10.0)
         license_info = _LICENSE_INFO.get(

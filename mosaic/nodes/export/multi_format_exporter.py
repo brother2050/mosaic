@@ -29,7 +29,7 @@ import logging
 import os
 import tempfile
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from mosaic.core.events import EventBus, EventType, get_event_bus
 from mosaic.core.node import Node, NodeSpec
@@ -52,7 +52,7 @@ _AUDIO_FORMATS = {"wav", "mp3", "flac", "ogg"}
 _SUBTITLE_FORMATS = {"srt", "vtt", "ass", "txt"}
 
 # PIL 格式名称映射
-_PIL_FORMAT_MAP: Dict[str, str] = {
+_PIL_FORMAT_MAP: dict[str, str] = {
     "jpg": "JPEG",
     "jpeg": "JPEG",
     "png": "PNG",
@@ -62,7 +62,7 @@ _PIL_FORMAT_MAP: Dict[str, str] = {
 }
 
 # soundfile 格式映射
-_SF_FORMAT_MAP: Dict[str, str] = {
+_SF_FORMAT_MAP: dict[str, str] = {
     "wav": "WAV",
     "mp3": "MP3",
     "flac": "FLAC",
@@ -108,14 +108,14 @@ class MultiFormatExporter(Node):
         "Supports batch conversion with graceful error handling."
     )
     version: str = "0.1.0"
-    input_types: List[str] = [
+    input_types: list[str] = [
         "video", "image", "audio", "subtitle", "mosaic",
     ]
-    output_types: List[str] = ["file"]
+    output_types: list[str] = ["file"]
 
     def __init__(
         self,
-        bus: Optional[EventBus] = None,
+        bus: EventBus | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs)
@@ -264,10 +264,10 @@ class MultiFormatExporter(Node):
     def _export_video(
         self,
         data: Any,
-        formats: List[str],
+        formats: list[str],
         output_dir: str,
         quality: int,
-    ) -> Dict[str, str]:
+    ) -> dict[str, str]:
         """导出视频为多种格式。
 
         Parameters
@@ -283,7 +283,7 @@ class MultiFormatExporter(Node):
 
         Returns
         -------
-        Dict[str, str]
+        dict[str, str]
             格式 -> 文件路径 映射。
         """
         # 提取帧和帧率
@@ -302,7 +302,7 @@ class MultiFormatExporter(Node):
         if not frames:
             raise ValueError("Video data has no frames to export.")
 
-        outputs: Dict[str, str] = {}
+        outputs: dict[str, str] = {}
         timestamp = int(time.time())
 
         for fmt in formats:
@@ -353,7 +353,7 @@ class MultiFormatExporter(Node):
 
     def _export_gif(
         self,
-        frames: List[Any],
+        frames: list[Any],
         fps: int,
         output_path: str,
     ) -> None:
@@ -374,7 +374,7 @@ class MultiFormatExporter(Node):
             raise ValueError("No frames to export as GIF.")
 
         # 确保所有帧都是 PIL.Image
-        pil_frames: List[Any] = []
+        pil_frames: list[Any] = []
         for frame in frames:
             if isinstance(frame, Image.Image):
                 pil_frames.append(frame.convert("P"))
@@ -407,10 +407,10 @@ class MultiFormatExporter(Node):
     def _export_image(
         self,
         data: Any,
-        formats: List[str],
+        formats: list[str],
         output_dir: str,
         quality: int,
-    ) -> Dict[str, str]:
+    ) -> dict[str, str]:
         """导出图像为多种格式。
 
         Parameters
@@ -426,7 +426,7 @@ class MultiFormatExporter(Node):
 
         Returns
         -------
-        Dict[str, str]
+        dict[str, str]
             格式 -> 文件路径 映射。
         """
         from PIL import Image  # type: ignore
@@ -452,7 +452,7 @@ class MultiFormatExporter(Node):
                 f"Image must be PIL.Image.Image, got {type(img).__name__}."
             )
 
-        outputs: Dict[str, str] = {}
+        outputs: dict[str, str] = {}
         timestamp = int(time.time())
 
         for fmt in formats:
@@ -470,7 +470,7 @@ class MultiFormatExporter(Node):
 
             try:
                 pil_format = _PIL_FORMAT_MAP.get(fmt, fmt.upper())
-                save_kwargs: Dict[str, Any] = {}
+                save_kwargs: dict[str, Any] = {}
 
                 # JPEG 不支持 RGBA
                 if pil_format in ("JPEG", "BMP"):
@@ -509,10 +509,10 @@ class MultiFormatExporter(Node):
     def _export_audio(
         self,
         data: Any,
-        formats: List[str],
+        formats: list[str],
         output_dir: str,
         quality: int,
-    ) -> Dict[str, str]:
+    ) -> dict[str, str]:
         """导出音频为多种格式。
 
         Parameters
@@ -528,7 +528,7 @@ class MultiFormatExporter(Node):
 
         Returns
         -------
-        Dict[str, str]
+        dict[str, str]
             格式 -> 文件路径 映射。
         """
         import numpy as np  # type: ignore
@@ -549,7 +549,7 @@ class MultiFormatExporter(Node):
         if waveform is None:
             raise ValueError("Audio data has no waveform to export.")
 
-        outputs: Dict[str, str] = {}
+        outputs: dict[str, str] = {}
         timestamp = int(time.time())
 
         for fmt in formats:
@@ -616,9 +616,9 @@ class MultiFormatExporter(Node):
     def _export_subtitle(
         self,
         data: Any,
-        formats: List[str],
+        formats: list[str],
         output_dir: str,
-    ) -> Dict[str, str]:
+    ) -> dict[str, str]:
         """导出字幕为多种格式。
 
         Parameters
@@ -632,7 +632,7 @@ class MultiFormatExporter(Node):
 
         Returns
         -------
-        Dict[str, str]
+        dict[str, str]
             格式 -> 文件路径 映射。
         """
         from mosaic.nodes.subtitle._base import BaseSubtitleNode
@@ -651,7 +651,7 @@ class MultiFormatExporter(Node):
         if not segments:
             raise ValueError("Subtitle data has no segments to export.")
 
-        outputs: Dict[str, str] = {}
+        outputs: dict[str, str] = {}
         timestamp = int(time.time())
 
         for fmt in formats:
@@ -687,7 +687,7 @@ class MultiFormatExporter(Node):
 
     @staticmethod
     def _subtitle_to_format(
-        segments: List[Dict[str, Any]],
+        segments: list[dict[str, Any]],
         fmt: str,
     ) -> str:
         """将字幕片段转为指定格式字符串。
@@ -712,7 +712,7 @@ class MultiFormatExporter(Node):
             return BaseSubtitleNode._to_vtt(segments)
         elif fmt == "txt":
             # 纯文本：仅保留文本内容
-            lines: List[str] = []
+            lines: list[str] = []
             for seg in segments:
                 lines.append(seg.get("text", "").strip())
             return "\n".join(lines)

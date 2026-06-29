@@ -19,7 +19,7 @@ import os
 import subprocess
 import tempfile
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from mosaic.core.registry import registry
 from mosaic.core.types import AudioData, MosaicData, SubtitleData
@@ -68,15 +68,15 @@ class SubtitleGenerator(BaseSubtitleNode):
         self,
         asr_model: str = "openai/whisper-large-v3",
         output_format: str = "srt",
-        language: Optional[str] = None,
+        language: str | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs)
         self._asr_model_name: str = asr_model
         self._output_format: str = output_format
-        self._language: Optional[str] = language
+        self._language: str | None = language
         # 内部 ASR 节点（延迟创建）
-        self._asr_node: Optional[Any] = None
+        self._asr_node: Any | None = None
 
     def _load_model(self) -> None:
         """加载 Whisper ASR 模型（复用音频域 ASR 节点）。"""
@@ -167,7 +167,7 @@ class SubtitleGenerator(BaseSubtitleNode):
 
         self._emit_start()
         t0 = time.perf_counter()
-        tmp_audio_path: Optional[str] = None
+        tmp_audio_path: str | None = None
 
         try:
             audio_input = input_data.get("audio")
@@ -198,7 +198,7 @@ class SubtitleGenerator(BaseSubtitleNode):
 
             # 构造 ASR pipeline 参数
             if self._asr_node is not None and self._asr_node._pipeline is not None:
-                pipe_kwargs: Dict[str, Any] = {"return_timestamps": True}
+                pipe_kwargs: dict[str, Any] = {"return_timestamps": True}
 
                 # 长音频分片
                 waveform, sr = BaseAudioNode._load_audio(audio_input)
@@ -257,13 +257,13 @@ class SubtitleGenerator(BaseSubtitleNode):
         detected_language = language or asr_result.get("language", "unknown")
 
         # 构造字幕片段
-        segments: List[Dict[str, Any]] = []
+        segments: list[dict[str, Any]] = []
         chunks = asr_result.get("chunks", [])
 
         if word_timestamps and chunks:
             # 词级时间戳：将词合并为行
-            current_words: List[str] = []
-            current_start: Optional[float] = None
+            current_words: list[str] = []
+            current_start: float | None = None
             current_end: float = 0.0
 
             for chunk in chunks:

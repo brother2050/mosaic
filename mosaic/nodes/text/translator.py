@@ -15,7 +15,7 @@ b) **通用生成模式**：未指定专用模型时，复用 :class:`BaseTextNo
 from __future__ import annotations
 
 import time
-from typing import Any, Dict, Optional
+from typing import Any
 
 from mosaic.core.node import NodeSpec
 from mosaic.core.registry import registry
@@ -26,7 +26,7 @@ from mosaic.nodes.text._base import BaseTextNode
 __all__ = ["Translator"]
 
 #: 语言代码 -> 语言名称映射表（用于构造 prompt）。
-_LANGUAGE_NAMES: Dict[str, str] = {
+_LANGUAGE_NAMES: dict[str, str] = {
     "zh": "中文",
     "en": "English",
     "ja": "日本語",

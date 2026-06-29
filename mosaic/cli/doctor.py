@@ -30,8 +30,6 @@ import importlib
 import os
 import sys
 from dataclasses import dataclass
-from typing import List, Optional, Tuple
-
 __all__ = ["run_doctor", "CheckResult"]
 
 # ---------------------------------------------------------------------------
@@ -65,7 +63,7 @@ _SYMBOLS = {
 }
 
 # 可选依赖: (import 名, 显示名)
-_OPTIONAL_PACKAGES: List[Tuple[str, str]] = [
+_OPTIONAL_PACKAGES: list[tuple[str, str]] = [
     ("imageio", "imageio"),
     ("imageio_ffmpeg", "imageio-ffmpeg"),
     ("soundfile", "soundfile"),
@@ -203,7 +201,7 @@ def run_doctor() -> int:
     print("=" * 50)
     print()
 
-    checks: List[CheckResult] = []
+    checks: list[CheckResult] = []
 
     # Python 版本
     checks.append(_check_python_version())

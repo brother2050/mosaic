@@ -33,7 +33,8 @@ import argparse
 import json
 import os
 import sys
-from typing import Any, Dict, List, Optional, Sequence
+from collections.abc import Sequence
+from typing import Any
 
 from mosaic import __version__
 from mosaic.core.node import NodeSpec
@@ -49,9 +50,9 @@ __all__ = ["main"]
 # 表格格式化辅助
 # ---------------------------------------------------------------------------
 def _format_table(
-    rows: List[List[Any]],
-    headers: List[str],
-    max_widths: Optional[List[Optional[int]]] = None,
+    rows: list[list[Any]],
+    headers: list[str],
+    max_widths: list[int | None] | None = None,
 ) -> str:
     """将行数据格式化为对齐的文本表格。
 
@@ -73,9 +74,9 @@ def _format_table(
     if not rows:
         return ""
 
-    processed: List[List[str]] = []
+    processed: list[list[str]] = []
     for row in rows:
-        cells: List[str] = []
+        cells: list[str] = []
         for i, cell in enumerate(row):
             text = str(cell)
             if (
@@ -123,7 +124,7 @@ def _ensure_nodes_discovered() -> None:
     plugin_manager.mark_builtin()
 
 
-def _resolve_node_spec(name: str) -> Optional[NodeSpec]:
+def _resolve_node_spec(name: str) -> NodeSpec | None:
     """根据名称解析节点规格说明。
 
     先从已注册节点列表中按 ``node.name`` 匹配；若未命中，尝试按类名
@@ -136,7 +137,7 @@ def _resolve_node_spec(name: str) -> Optional[NodeSpec]:
 
     Returns
     -------
-    Optional[NodeSpec]
+    NodeSpec | None
         节点规格说明；未找到时返回 ``None``。
     """
     for spec in registry.list_nodes():
@@ -182,7 +183,7 @@ def _parse_yaml(content: str) -> Any:
     return yaml.safe_load(content)
 
 
-def _load_pipeline_file(path: str) -> Dict[str, Any]:
+def _load_pipeline_file(path: str) -> dict[str, Any]:
     """加载管道定义文件（YAML 或 JSON）。
 
     按扩展名选择解析器：``.yaml``/``.yml`` 使用 PyYAML，``.json`` 使用
@@ -195,7 +196,7 @@ def _load_pipeline_file(path: str) -> Dict[str, Any]:
 
     Returns
     -------
-    Dict[str, Any]
+    dict[str, Any]
         解析后的管道定义字典。
 
     Raises
@@ -327,7 +328,7 @@ def _cmd_list(args: argparse.Namespace) -> int:
             print("提示: 使用 @mosaic.node 装饰器或安装第三方插件包来扩展节点。")
             return 0
 
-        rows: List[List[Any]] = [
+        rows: list[list[Any]] = [
             [p.name, p.domain, p.version, p.source, p.description]
             for p in plugins
         ]
@@ -532,7 +533,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
     _ensure_nodes_discovered()
 
     # 构建节点实例列表
-    elements: List[Any] = []
+    elements: list[Any] = []
     for i, node_def in enumerate(node_defs):
         if not isinstance(node_def, dict):
             print(f"错误: 第 {i + 1} 个节点定义必须是字典。")
@@ -625,7 +626,7 @@ def _cmd_doctor(args: argparse.Namespace) -> int:
 # ---------------------------------------------------------------------------
 # 主入口
 # ---------------------------------------------------------------------------
-def main(argv: Optional[Sequence[str]] = None) -> int:
+def main(argv: Sequence[str] | None = None) -> int:
     """CLI 主入口函数。
 
     Parameters

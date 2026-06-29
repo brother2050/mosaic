@@ -15,7 +15,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 from mosaic.core.events import EventBus, get_event_bus
 from mosaic.core.task import AsyncTask
@@ -26,8 +26,8 @@ __all__ = ["create_async_task"]
 def create_async_task(
     pipeline: Any,
     input_data: Any,
-    task_id: Optional[str] = None,
-    bus: Optional[EventBus] = None,
+    task_id: str | None = None,
+    bus: EventBus | None = None,
     **kwargs: Any,
 ) -> AsyncTask:
     """创建并启动异步管道执行任务。

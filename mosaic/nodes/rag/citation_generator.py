@@ -17,7 +17,7 @@ from __future__ import annotations
 import logging
 import re
 import time
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from mosaic.core.events import EventBus, EventType, get_event_bus
 from mosaic.core.node import NodeSpec
@@ -31,7 +31,7 @@ __all__ = ["CitationGenerator"]
 
 
 # 常见 LLM 的粗略显存估算
-_LLM_VRAM: Dict[str, float] = {
+_LLM_VRAM: dict[str, float] = {
     "Qwen/Qwen2.5-7B-Instruct": 16.0,
     "Qwen/Qwen2.5-14B-Instruct": 30.0,
     "Qwen/Qwen2.5-72B-Instruct": 150.0,
@@ -107,8 +107,8 @@ class CitationGenerator(BaseRagNode):
         "context and user query."
     )
     version: str = "0.1.0"
-    input_types: List[str] = ["rag_query_result", "mosaic"]
-    output_types: List[str] = ["text", "mosaic"]
+    input_types: list[str] = ["rag_query_result", "mosaic"]
+    output_types: list[str] = ["text", "mosaic"]
 
     def __init__(
         self,
@@ -120,8 +120,8 @@ class CitationGenerator(BaseRagNode):
         device_map: str = "auto",
         torch_dtype: str = "fp16",
         trust_remote_code: bool = True,
-        bus: Optional[EventBus] = None,
-        scheduler: Optional[Scheduler] = None,
+        bus: EventBus | None = None,
+        scheduler: Scheduler | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(bus=bus, **kwargs)
@@ -307,12 +307,12 @@ class CitationGenerator(BaseRagNode):
             self._device_map,
         )
 
-    def _generate(self, prompt: str) -> Tuple[str, int, int]:
+    def _generate(self, prompt: str) -> tuple[str, int, int]:
         """使用 LLM 生成回答。
 
         Returns
         -------
-        Tuple[str, int, int]
+        tuple[str, int, int]
             ``(generated_text, input_tokens, output_tokens)``。
         """
         import torch  # type: ignore
@@ -345,7 +345,7 @@ class CitationGenerator(BaseRagNode):
         except Exception:  # noqa: BLE001
             pass
 
-        gen_kwargs: Dict[str, Any] = {
+        gen_kwargs: dict[str, Any] = {
             "max_new_tokens": self._max_tokens,
             "do_sample": self._temperature > 0,
             "pad_token_id": self._tokenizer.pad_token_id,
@@ -379,10 +379,10 @@ class CitationGenerator(BaseRagNode):
     # ------------------------------------------------------------------
     def _build_context(
         self,
-        results: List[Dict[str, Any]],
+        results: list[dict[str, Any]],
         style: str,
         language: str,
-    ) -> Tuple[str, Dict[int, int]]:
+    ) -> tuple[str, dict[int, int]]:
         """构造上下文文本和引用映射。
 
         Parameters
@@ -396,12 +396,12 @@ class CitationGenerator(BaseRagNode):
 
         Returns
         -------
-        Tuple[str, Dict[int, int]]
+        tuple[str, dict[int, int]]
             ``(context_text, citation_map)``，其中 citation_map 是
             引用编号 → results 索引的映射。
         """
-        context_parts: List[str] = []
-        citation_map: Dict[int, int] = {}
+        context_parts: list[str] = []
+        citation_map: dict[int, int] = {}
 
         for i, result in enumerate(results):
             citation_id = i + 1
@@ -430,9 +430,9 @@ class CitationGenerator(BaseRagNode):
     def _parse_citations(
         self,
         answer: str,
-        results: List[Dict[str, Any]],
-        citation_map: Dict[int, int],
-    ) -> List[Dict[str, Any]]:
+        results: list[dict[str, Any]],
+        citation_map: dict[int, int],
+    ) -> list[dict[str, Any]]:
         """解析 LLM 输出中的引用标注，生成结构化 citations 列表。
 
         Parameters
@@ -446,7 +446,7 @@ class CitationGenerator(BaseRagNode):
 
         Returns
         -------
-        List[Dict[str, Any]]
+        list[dict[str, Any]]
             引用列表，每个 dict 包含 ``citation_id``、``source``、
             ``content``、``score``。
         """
@@ -463,7 +463,7 @@ class CitationGenerator(BaseRagNode):
                 if part.isdigit():
                     used_ids.add(int(part))
 
-        citations: List[Dict[str, Any]] = []
+        citations: list[dict[str, Any]] = []
         for citation_id in sorted(used_ids):
             result_idx = citation_map.get(citation_id)
             if result_idx is not None and result_idx < len(results):

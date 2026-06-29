@@ -51,7 +51,7 @@ Limitations
 from __future__ import annotations
 
 import time
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from mosaic.core.node import NodeSpec
 from mosaic.core.registry import registry
@@ -63,21 +63,21 @@ __all__ = ["AvatarDriver"]
 
 
 # method -> 默认 HuggingFace 模型标识
-_DEFAULT_MODELS: Dict[str, str] = {
+_DEFAULT_MODELS: dict[str, str] = {
     "liveportrait": "KwaiVGI/LivePortrait",
     "sadtalker": "cvitkwai/SadTalker",
     "musetalk": "KwaiVGI/MuseTalk",
 }
 
 # method -> 粗略显存需求（GB, fp16），用于 describe()
-_METHOD_VRAM: Dict[str, float] = {
+_METHOD_VRAM: dict[str, float] = {
     "liveportrait": 5.0,
     "sadtalker": 5.0,
     "musetalk": 7.0,
 }
 
 # 输出默认参数
-_DEFAULT_RESOLUTION: Tuple[int, int] = (512, 512)
+_DEFAULT_RESOLUTION: tuple[int, int] = (512, 512)
 _DEFAULT_FPS: int = 25
 
 
@@ -121,8 +121,8 @@ class AvatarDriver(BaseDigitalHumanNode):
         "SadTalker and MuseTalk backends; output background matches the source."
     )
     version: str = "0.1.0"
-    input_types: List[str] = ["image", "video", "audio", "mosaic"]
-    output_types: List[str] = ["video", "image", "mosaic"]
+    input_types: list[str] = ["image", "video", "audio", "mosaic"]
+    output_types: list[str] = ["video", "image", "mosaic"]
 
     def __init__(
         self,
@@ -144,7 +144,7 @@ class AvatarDriver(BaseDigitalHumanNode):
             self._model_name = model
 
         # 运行时子模块引用（load 后填充）
-        self._components: Optional[Dict[str, Any]] = None
+        self._components: dict[str, Any] | None = None
         self._audio_encoder: Any = None
 
     # ------------------------------------------------------------------
@@ -254,7 +254,7 @@ class AvatarDriver(BaseDigitalHumanNode):
                     "local checkpoint directory. Install via "
                     "`pip install sadtalker` or set `model` to a local path."
                 )
-            components: Dict[str, Any] = {}
+            components: dict[str, Any] = {}
             for name in ("mapping", "generator", "kp_extractor", "renderer"):
                 ckpt = os.path.join(self._model_name, f"{name}.pth")
                 if os.path.exists(ckpt):
@@ -350,18 +350,18 @@ class AvatarDriver(BaseDigitalHumanNode):
         ----------
         input_data:
             必须包含 ``source_image`` (PIL.Image | str)；驱动源三选一：
-            ``driving_video`` (VideoData | str | List[PIL.Image])、
+            ``driving_video`` (VideoData | str | list[PIL.Image])、
             ``driving_audio`` (AudioData | str | ndarray)、
-            ``expression_params`` (List[dict] | dict)。
+            ``expression_params`` (list[dict] | dict)。
             可选：``output_format`` ("video"|"frames", 默认 "video")、
-            ``fps`` (int, 默认 25)、``resolution`` (Tuple[int,int],
+            ``fps`` (int, 默认 25)、``resolution`` (tuple[int,int],
             默认 (512,512))、``expression_scale`` (float, 默认 1.0)、
             ``motion_scale`` (float, 默认 1.0)。
 
         Returns
         -------
         MosaicData
-            含 ``video`` (VideoData) 或 ``frames`` (List[PIL.Image])、
+            含 ``video`` (VideoData) 或 ``frames`` (list[PIL.Image])、
             ``source_image``、``driving_source_type``、``duration``、``fps``。
 
         Raises
@@ -395,7 +395,7 @@ class AvatarDriver(BaseDigitalHumanNode):
             motion_scale = float(input_data.get("motion_scale", 1.0))
 
             if source_image.size != resolution:
-                source_image = source_image.resize(resolution, Image.LANCZOS)
+                source_image = source_image.resize(resolution, Image.Resampling.LANCZOS)
 
             # 2. 检测并对齐人脸
             _, bbox, _ = self._detect_face(source_image)
@@ -492,12 +492,12 @@ class AvatarDriver(BaseDigitalHumanNode):
     def _drive_from_video(
         self,
         source_image: Any,
-        bbox: Tuple[int, int, int, int],
+        bbox: tuple[int, int, int, int],
         driving_video: Any,
         fps: int,
         expression_scale: float,
         motion_scale: float,
-    ) -> List[Any]:
+    ) -> list[Any]:
         """从驱动视频逐帧迁移表情到源图片。"""
         from PIL import Image  # type: ignore
 
@@ -509,13 +509,13 @@ class AvatarDriver(BaseDigitalHumanNode):
         total = len(driving_frames)
         self._emit_progress(0, total, "Driving from video")
 
-        out_frames: List[Any] = []
+        out_frames: list[Any] = []
         for i, drv_frame in enumerate(driving_frames):
             if not isinstance(drv_frame, Image.Image):
                 drv_frame = Image.fromarray(drv_frame)
             # resize 驱动帧到源分辨率
             if drv_frame.size != source_image.size:
-                drv_frame = drv_frame.resize(source_image.size, Image.LANCZOS)
+                drv_frame = drv_frame.resize(source_image.size, Image.Resampling.LANCZOS)
 
             if self._method == "liveportrait":
                 driven = self._render_liveportrait(
@@ -541,12 +541,12 @@ class AvatarDriver(BaseDigitalHumanNode):
     def _drive_from_audio(
         self,
         source_image: Any,
-        bbox: Tuple[int, int, int, int],
+        bbox: tuple[int, int, int, int],
         driving_audio: Any,
         fps: int,
         expression_scale: float,
         motion_scale: float,
-    ) -> List[Any]:
+    ) -> list[Any]:
         """从驱动音频生成表情序列并驱动。
 
         * ``sadtalker`` / ``musetalk``：原生音频驱动，模型一次性生成全部帧。
@@ -567,7 +567,7 @@ class AvatarDriver(BaseDigitalHumanNode):
 
         # liveportrait：音频 -> 表情参数序列 -> 逐帧驱动
         expr_seq = self._audio_to_expression_seq(waveform, sr, fps, n_frames)
-        out_frames: List[Any] = []
+        out_frames: list[Any] = []
         for i, params in enumerate(expr_seq):
             driven = self._render_liveportrait(
                 source_image,
@@ -585,12 +585,12 @@ class AvatarDriver(BaseDigitalHumanNode):
     def _drive_from_params(
         self,
         source_image: Any,
-        bbox: Tuple[int, int, int, int],
+        bbox: tuple[int, int, int, int],
         expression_params: Any,
         fps: int,
         expression_scale: float,
         motion_scale: float,
-    ) -> List[Any]:
+    ) -> list[Any]:
         """直接接收表情参数序列驱动。"""
         params_seq = self._normalize_expression_params(expression_params)
         if not params_seq:
@@ -599,7 +599,7 @@ class AvatarDriver(BaseDigitalHumanNode):
         total = len(params_seq)
         self._emit_progress(0, total, "Driving from expression params")
 
-        out_frames: List[Any] = []
+        out_frames: list[Any] = []
         for i, params in enumerate(params_seq):
             if self._method == "liveportrait":
                 driven = self._render_liveportrait(
@@ -623,7 +623,7 @@ class AvatarDriver(BaseDigitalHumanNode):
     def _render_liveportrait(
         self,
         source_image: Any,
-        bbox: Tuple[int, int, int, int],
+        bbox: tuple[int, int, int, int],
         signal: Any,
         expression_scale: float,
         motion_scale: float,
@@ -636,7 +636,7 @@ class AvatarDriver(BaseDigitalHumanNode):
         """
         from PIL import Image  # type: ignore
 
-        pipe_kwargs: Dict[str, Any] = {"source_image": source_image}
+        pipe_kwargs: dict[str, Any] = {"source_image": source_image}
         if isinstance(signal, dict):
             params = dict(signal)
             mo = float(params.get("mouth_open", 0.0))
@@ -657,12 +657,12 @@ class AvatarDriver(BaseDigitalHumanNode):
     def _generate_audio_driven(
         self,
         source_image: Any,
-        bbox: Tuple[int, int, int, int],
+        bbox: tuple[int, int, int, int],
         waveform: Any,
         sample_rate: int,
         fps: int,
         n_frames: int,
-    ) -> List[Any]:
+    ) -> list[Any]:
         """使用 sadtalker / musetalk 原生音频驱动批量生成帧。"""
         from PIL import Image  # type: ignore
 
@@ -687,7 +687,7 @@ class AvatarDriver(BaseDigitalHumanNode):
             raise RuntimeError("Audio-driven model returned no frames.")
 
         # 逐帧保证背景与源图一致（模型仅修改人脸/口型区域）
-        composed: List[Any] = []
+        composed: list[Any] = []
         for f in frames:
             if not isinstance(f, Image.Image):
                 f = Image.fromarray(f)
@@ -697,8 +697,8 @@ class AvatarDriver(BaseDigitalHumanNode):
     def _render_expression_fallback(
         self,
         source_image: Any,
-        bbox: Tuple[int, int, int, int],
-        params: Dict[str, Any],
+        bbox: tuple[int, int, int, int],
+        params: dict[str, Any],
     ) -> Any:
         """sadtalker/musetalk 在非音频驱动模式下的简化表情应用回退。
 
@@ -731,7 +731,7 @@ class AvatarDriver(BaseDigitalHumanNode):
             f"got {type(driving_video).__name__}."
         )
 
-    def _load_audio_signal(self, driving_audio: Any) -> Tuple[Any, int]:
+    def _load_audio_signal(self, driving_audio: Any) -> tuple[Any, int]:
         """加载驱动音频为 (waveform, sample_rate)。"""
         from mosaic.nodes.audio._base import BaseAudioNode
 
@@ -750,7 +750,7 @@ class AvatarDriver(BaseDigitalHumanNode):
         sample_rate: int,
         fps: int,
         n_frames: int,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """将音频能量包络转为逐帧表情参数序列（mouth_open 代理）。
 
         这是 ``driving_audio`` + ``liveportrait`` 组合下的启发式桥接：以每帧
@@ -765,7 +765,7 @@ class AvatarDriver(BaseDigitalHumanNode):
         total_samples = mono.shape[-1]
 
         hop = max(1, total_samples // max(1, n_frames))
-        seq: List[Dict[str, Any]] = []
+        seq: list[dict[str, Any]] = []
         for i in range(n_frames):
             seg = mono[i * hop:(i + 1) * hop]
             energy = float(np.sqrt(np.mean(seg ** 2))) if seg.size else 0.0
@@ -779,7 +779,7 @@ class AvatarDriver(BaseDigitalHumanNode):
             )
         return seq
 
-    def _frame_to_expression_params(self, frame: Any) -> Dict[str, Any]:
+    def _frame_to_expression_params(self, frame: Any) -> dict[str, Any]:
         """从驱动帧的人脸关键点推导简化表情参数。"""
         import numpy as np  # type: ignore
 
@@ -802,7 +802,7 @@ class AvatarDriver(BaseDigitalHumanNode):
         }
 
     @staticmethod
-    def _normalize_expression_params(params: Any) -> List[Dict[str, Any]]:
+    def _normalize_expression_params(params: Any) -> list[dict[str, Any]]:
         """将 expression_params 规整为字典列表。"""
         if isinstance(params, dict):
             return [params]
@@ -823,7 +823,7 @@ class AvatarDriver(BaseDigitalHumanNode):
         self,
         source_image: Any,
         driven_frame: Any,
-        bbox: Tuple[int, int, int, int],
+        bbox: tuple[int, int, int, int],
     ) -> Any:
         """将驱动帧与源图合成，保证背景与源图一致。
 
@@ -835,14 +835,14 @@ class AvatarDriver(BaseDigitalHumanNode):
             driven_frame = Image.fromarray(driven_frame)
         if driven_frame.size != source_image.size:
             driven_frame = driven_frame.resize(
-                source_image.size, Image.LANCZOS
+                source_image.size, Image.Resampling.LANCZOS
             )
         x1, y1, x2, y2 = bbox
         driven_face = driven_frame.crop((x1, y1, x2, y2))
         return self._blend_face(source_image, driven_face, bbox, blend_ratio=1.0)
 
     @staticmethod
-    def _extract_images(output: Any) -> List[Any]:
+    def _extract_images(output: Any) -> list[Any]:
         """从模型输出中提取 PIL.Image 列表（兼容多种返回格式）。
 
         支持 diffusers 风格的属性访问（``frames``/``images``/``image``）、
@@ -874,7 +874,7 @@ class AvatarDriver(BaseDigitalHumanNode):
         if isinstance(raw, list):
             if raw and isinstance(raw[0], list):
                 raw = raw[0]
-            images: List[Any] = []
+            images: list[Any] = []
             for f in raw:
                 if isinstance(f, Image.Image):
                     images.append(f)

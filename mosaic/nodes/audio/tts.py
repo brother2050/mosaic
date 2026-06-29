@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import re
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from mosaic.core.registry import registry
 from mosaic.core.types import MosaicData
@@ -46,7 +46,7 @@ __all__ = ["TTS"]
 #   * zh-CN-YunjianNeural   —— 男声，适合播报（male/angry）
 #   * zh-CN-YunxiNeural     —— 年轻男声（young_male）
 #   * zh-CN-YunxiaNeural    —— 儿童声（child）
-_EMOTION_VOICE_MAP: Dict[str, Dict[str, str]] = {
+_EMOTION_VOICE_MAP: dict[str, dict[str, str]] = {
     "zh": {
         "neutral": "zh-CN-XiaoxiaoNeural",
         "cheerful": "zh-CN-XiaoyiNeural",
@@ -93,7 +93,7 @@ _EMOTION_VOICE_MAP: Dict[str, Dict[str, str]] = {
 }
 
 
-def _split_sentences(text: str, max_length: int = 200) -> List[str]:
+def _split_sentences(text: str, max_length: int = 200) -> list[str]:
     """将长文本按句子分割，避免一次生成过长音频。
 
     Parameters
@@ -105,7 +105,7 @@ def _split_sentences(text: str, max_length: int = 200) -> List[str]:
 
     Returns
     -------
-    List[str]
+    list[str]
         分割后的句子列表。
     """
     # 按中英文标点分句
@@ -113,7 +113,7 @@ def _split_sentences(text: str, max_length: int = 200) -> List[str]:
     sentences = [s.strip() for s in sentences if s.strip()]
 
     # 过长的句子进一步按逗号/空格切分
-    result: List[str] = []
+    result: list[str] = []
     for sent in sentences:
         if len(sent) <= max_length:
             result.append(sent)
@@ -135,7 +135,7 @@ def _split_sentences(text: str, max_length: int = 200) -> List[str]:
 
 
 def _resolve_voice(
-    language: str, emotion: str, voice_override: Optional[str]
+    language: str, emotion: str, voice_override: str | None
 ) -> str:
     """根据 language/emotion 解析 edge-tts 语音名称。
 
@@ -168,7 +168,7 @@ def _resolve_voice(
 
 
 def _synthesize_edge_tts(
-    sentences: List[str], voice: str, speed: float, logger: Any = None
+    sentences: list[str], voice: str, speed: float, logger: Any = None
 ) -> tuple:
     """使用 edge-tts 合成语音并解码为 numpy 波形。
 
@@ -210,7 +210,7 @@ def _synthesize_edge_tts(
         return audio_data
 
     # 逐句合成并合并
-    all_audio: List[bytes] = []
+    all_audio: list[bytes] = []
     for sent in sentences:
         audio_bytes = asyncio.run(_synth(sent))
         all_audio.append(audio_bytes)
@@ -235,7 +235,7 @@ def _synthesize_edge_tts(
         import os
         import tempfile
 
-        waveforms: List[Any] = []
+        waveforms: list[Any] = []
         sr = 24000
         for audio_bytes in all_audio:
             tmp_path = tempfile.mktemp(suffix=".mp3")
@@ -319,14 +319,14 @@ class TTS(BaseAudioNode):
     def __init__(
         self,
         model: str = "edge-tts",
-        voice: Optional[str] = None,
+        voice: str | None = None,
         language: str = "zh",
         emotion: str = "neutral",
         speed: float = 1.0,
         **kwargs: Any,
     ) -> None:
         super().__init__(model=model, **kwargs)
-        self._voice: Optional[str] = voice
+        self._voice: str | None = voice
         self._language: str = language
         self._emotion: str = emotion
         self._speed: float = float(speed)
@@ -391,7 +391,7 @@ class TTS(BaseAudioNode):
     # 语音解析
     # ------------------------------------------------------------------
     def _resolve_voice(
-        self, language: str, emotion: str, voice_override: Optional[str]
+        self, language: str, emotion: str, voice_override: str | None
     ) -> str:
         """根据 language/emotion 解析 edge-tts 语音名称。"""
         return _resolve_voice(language, emotion, voice_override)
@@ -495,7 +495,7 @@ class TTS(BaseAudioNode):
     # edge-tts 后端
     # ------------------------------------------------------------------
     def _generate_edge_tts(
-        self, sentences: List[str], voice: str, speed: float
+        self, sentences: list[str], voice: str, speed: float
     ) -> tuple:
         """使用 edge-tts 生成语音。
 
@@ -513,11 +513,11 @@ class TTS(BaseAudioNode):
     # ------------------------------------------------------------------
     # transformers 后端
     # ------------------------------------------------------------------
-    def _generate_transformers(self, sentences: List[str]) -> tuple:
+    def _generate_transformers(self, sentences: list[str]) -> tuple:
         """使用 transformers pipeline 生成语音。"""
         import numpy as np  # type: ignore
 
-        waveforms: List[Any] = []
+        waveforms: list[Any] = []
         sr = 16000  # 默认采样率
 
         for sent in sentences:

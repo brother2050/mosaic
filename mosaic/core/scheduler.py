@@ -23,7 +23,8 @@ import collections
 import logging
 import threading
 import time
-from typing import Any, Deque, Dict, List, Optional
+from collections import deque
+from typing import Any
 
 from mosaic.core.events import EventBus, EventType, get_event_bus
 from mosaic.core.node import Node, NodeSpec
@@ -47,11 +48,11 @@ class SchedulerStatus:
         self.memory_total_gb: float = 0.0
         self.memory_used_gb: float = 0.0
         self.memory_limit_gb: float = 0.0
-        self.tracked_nodes: List[str] = []
-        self.loaded_nodes: List[str] = []
-        self.node_memory: Dict[str, float] = {}
+        self.tracked_nodes: list[str] = []
+        self.loaded_nodes: list[str] = []
+        self.node_memory: dict[str, float] = {}
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """转为纯字典。"""
         return {
             "mode": self.mode,
@@ -89,19 +90,19 @@ class Scheduler:
 
     def __init__(
         self,
-        bus: Optional[EventBus] = None,
-        memory_limit_gb: Optional[float] = None,
-        device: Optional[str] = None,
+        bus: EventBus | None = None,
+        memory_limit_gb: float | None = None,
+        device: str | None = None,
     ) -> None:
         self._bus: EventBus = bus or get_event_bus()
         self._logger = logging.getLogger("mosaic.scheduler")
 
         # 跟踪状态
-        self._tracked: Dict[str, Node] = {}  # name -> Node
-        self._node_memory: Dict[str, float] = {}  # name -> 估算显存(GB)
+        self._tracked: dict[str, Node] = {}  # name -> Node
+        self._node_memory: dict[str, float] = {}  # name -> 估算显存(GB)
         self._loaded_names: set = set()
         # LRU 访问顺序：最近访问的在右端
-        self._lru: Deque[str] = collections.deque()
+        self._lru: deque[str] = collections.deque()
         # 配置
         self._device: str = device if device is not None else self._detect_device()
         self._is_gpu: bool = self._device.startswith("cuda")
@@ -283,7 +284,7 @@ class Scheduler:
         if self._fits(needed_gb):
             return
         # LRU 淘汰：从最久未使用（左端）开始卸载
-        evicted: List[str] = []
+        evicted: list[str] = []
         while not self._fits(needed_gb) and self._lru:
             victim = self._lru[0]
             if victim == exclude:
@@ -399,12 +400,12 @@ class Scheduler:
             pass
 
     # -- 状态查询 ----------------------------------------------------------
-    def status(self) -> Dict[str, Any]:
+    def status(self) -> dict[str, Any]:
         """返回当前显存使用情况快照。
 
         Returns
         -------
-        Dict[str, Any]
+        dict[str, Any]
             含 ``mode``/``device``/``memory_total_gb``/``memory_used_gb``
             /``memory_limit_gb``/``tracked_nodes``/``loaded_nodes``
             /``node_memory`` 等字段。
@@ -468,7 +469,7 @@ class Scheduler:
 # ---------------------------------------------------------------------------
 # 全局默认调度器
 # ---------------------------------------------------------------------------
-_default_scheduler: Optional[Scheduler] = None
+_default_scheduler: Scheduler | None = None
 _default_scheduler_lock = threading.Lock()
 
 
@@ -482,7 +483,7 @@ def get_scheduler() -> Scheduler:
     return _default_scheduler
 
 
-def set_scheduler(scheduler: Optional[Scheduler]) -> None:
+def set_scheduler(scheduler: Scheduler | None) -> None:
     """替换全局默认调度器（主要供测试使用）。"""
     global _default_scheduler
     with _default_scheduler_lock:

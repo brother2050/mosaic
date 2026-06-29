@@ -43,7 +43,7 @@ import os
 import subprocess
 import tempfile
 import time
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from mosaic.core.events import EventBus, EventType, get_event_bus
 from mosaic.core.node import Node, NodeSpec
@@ -54,7 +54,7 @@ __all__ = ["VideoEncoder"]
 
 
 # 支持的输出格式与对应的默认编码器
-_FORMAT_CODEC_MAP: Dict[str, str] = {
+_FORMAT_CODEC_MAP: dict[str, str] = {
     "mp4": "libx264",
     "avi": "mpeg4",
     "webm": "libvpx-vp9",
@@ -63,7 +63,7 @@ _FORMAT_CODEC_MAP: Dict[str, str] = {
 }
 
 # 格式与文件扩展名映射
-_FORMAT_EXTENSIONS: Dict[str, str] = {
+_FORMAT_EXTENSIONS: dict[str, str] = {
     "mp4": "mp4",
     "avi": "avi",
     "webm": "webm",
@@ -132,30 +132,30 @@ class VideoEncoder(Node):
         "Supports audio merging and subtitle burning via FFmpeg."
     )
     version: str = "0.1.0"
-    input_types: List[str] = ["video", "image", "mosaic"]
-    output_types: List[str] = ["file"]
+    input_types: list[str] = ["video", "image", "mosaic"]
+    output_types: list[str] = ["file"]
 
     def __init__(
         self,
         format: str = "mp4",
-        codec: Optional[str] = None,
+        codec: str | None = None,
         quality: int = 23,
         preset: str = "medium",
-        audio_codec: Optional[str] = "aac",
+        audio_codec: str | None = "aac",
         pixel_format: str = "yuv420p",
-        bus: Optional[EventBus] = None,
+        bus: EventBus | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs)
         self._format: str = format.lower()
-        self._codec: Optional[str] = codec
+        self._codec: str | None = codec
         self._quality: int = max(0, min(51, quality))
         self._preset: str = preset if preset in _VALID_PRESETS else "medium"
-        self._audio_codec: Optional[str] = audio_codec
+        self._audio_codec: str | None = audio_codec
         self._pixel_format: str = pixel_format
         self._bus: EventBus = bus or get_event_bus()
         self._logger = logging.getLogger(f"mosaic.nodes.export.{self.name}")
-        self._ffmpeg_path: Optional[str] = None
+        self._ffmpeg_path: str | None = None
 
     # ------------------------------------------------------------------
     # Node 接口实现
@@ -323,7 +323,7 @@ class VideoEncoder(Node):
     # FFmpeg 相关工具
     # ------------------------------------------------------------------
     @staticmethod
-    def _find_ffmpeg() -> Optional[str]:
+    def _find_ffmpeg() -> str | None:
         """查找 FFmpeg 可执行文件路径。
 
         优先使用 ``imageio-ffmpeg`` 提供的 FFmpeg 二进制；
@@ -331,7 +331,7 @@ class VideoEncoder(Node):
 
         Returns
         -------
-        Optional[str]
+        str | None
             FFmpeg 可执行文件路径，未找到返回 ``None``。
         """
         # 尝试 imageio-ffmpeg
@@ -348,7 +348,7 @@ class VideoEncoder(Node):
         return shutil.which("ffmpeg")
 
     @staticmethod
-    def _get_frame_size(frame: Any) -> Tuple[int, int]:
+    def _get_frame_size(frame: Any) -> tuple[int, int]:
         """获取帧的尺寸 ``(width, height)``。"""
         from PIL import Image  # type: ignore
 
@@ -365,7 +365,7 @@ class VideoEncoder(Node):
         )
 
     @staticmethod
-    def _ensure_even(width: int, height: int) -> Tuple[int, int]:
+    def _ensure_even(width: int, height: int) -> tuple[int, int]:
         """确保宽高为偶数（H.264/H.265 编码要求）。"""
         if width % 2 != 0:
             width -= 1
@@ -375,13 +375,13 @@ class VideoEncoder(Node):
 
     def _encode_frames_to_file(
         self,
-        frames: List[Any],
+        frames: list[Any],
         fps: int,
         width: int,
         height: int,
         output_path: str,
         codec: str,
-        bitrate: Optional[str],
+        bitrate: str | None,
     ) -> None:
         """通过 FFmpeg stdin pipe 将帧编码为视频文件。
 
@@ -412,7 +412,7 @@ class VideoEncoder(Node):
             raise RuntimeError("FFmpeg not loaded. Call load() first.")
 
         # 构建 FFmpeg 命令
-        cmd: List[str] = [
+        cmd: list[str] = [
             ffmpeg,
             "-y",  # 覆盖输出
             "-f", "rawvideo",
@@ -453,7 +453,7 @@ class VideoEncoder(Node):
                 if isinstance(frame, Image.Image):
                     img = frame.convert("RGB")
                     if img.size != (width, height):
-                        img = img.resize((width, height), Image.LANCZOS)
+                        img = img.resize((width, height), Image.Resampling.LANCZOS)
                     arr = np.array(img)
                 elif isinstance(frame, np.ndarray):
                     arr = frame
@@ -462,7 +462,7 @@ class VideoEncoder(Node):
                         from PIL import Image as PILImage  # type: ignore
 
                         img = PILImage.fromarray(frame).convert("RGB")
-                        img = img.resize((width, height), PILImage.LANCZOS)
+                        img = img.resize((width, height), PILImage.Resampling.LANCZOS)
                         arr = np.array(img)
                 else:
                     raise TypeError(
@@ -507,7 +507,7 @@ class VideoEncoder(Node):
         subtitle: Any,
         output_path: str,
         codec: str,
-        bitrate: Optional[str],
+        bitrate: str | None,
     ) -> None:
         """合并音频与烧录字幕到视频。
 
@@ -530,18 +530,18 @@ class VideoEncoder(Node):
         if ffmpeg is None:
             raise RuntimeError("FFmpeg not loaded.")
 
-        cmd: List[str] = [ffmpeg, "-y", "-i", video_path]
+        cmd: list[str] = [ffmpeg, "-y", "-i", video_path]
 
         # 音频输入
-        audio_tmp_path: Optional[str] = None
+        audio_tmp_path: str | None = None
         if audio is not None:
             audio_tmp_path = self._prepare_audio_input(audio)
             if audio_tmp_path:
                 cmd.extend(["-i", audio_tmp_path])
 
         # 字幕输入（通过临时文件）
-        subtitle_filter: Optional[str] = None
-        subtitle_tmp_path: Optional[str] = None
+        subtitle_filter: str | None = None
+        subtitle_tmp_path: str | None = None
         if subtitle is not None:
             subtitle_tmp_path = self._prepare_subtitle_input(subtitle)
             if subtitle_tmp_path:
@@ -605,7 +605,7 @@ class VideoEncoder(Node):
                 except OSError:
                     pass
 
-    def _prepare_audio_input(self, audio: Any) -> Optional[str]:
+    def _prepare_audio_input(self, audio: Any) -> str | None:
         """将音频数据准备为 FFmpeg 可读的文件路径。
 
         Parameters
@@ -615,7 +615,7 @@ class VideoEncoder(Node):
 
         Returns
         -------
-        Optional[str]
+        str | None
             音频文件路径。如果是 ``AudioData``，保存为临时 WAV 文件。
         """
         if isinstance(audio, str):
@@ -647,7 +647,7 @@ class VideoEncoder(Node):
         )
         return None
 
-    def _prepare_subtitle_input(self, subtitle: Any) -> Optional[str]:
+    def _prepare_subtitle_input(self, subtitle: Any) -> str | None:
         """将字幕数据准备为 FFmpeg 可读的 SRT 文件。
 
         Parameters
@@ -657,7 +657,7 @@ class VideoEncoder(Node):
 
         Returns
         -------
-        Optional[str]
+        str | None
             SRT 文件路径。
         """
         if isinstance(subtitle, str):

@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import numpy as np
 import pytest
 from PIL import Image as PILImage
 
@@ -74,8 +75,8 @@ class TestImageDataSerialization:
         restored = ImageData.from_dict(d)
 
         # 逐像素比对
-        original_pixels = list(sample_image.getdata())
-        restored_pixels = list(restored.image.getdata())
+        original_pixels = list(np.array(sample_image).flat)
+        restored_pixels = list(np.array(restored.image).flat)
         assert original_pixels == restored_pixels
 
     def test_roundtrip_data_type_marker(self, sample_image):
@@ -163,6 +164,6 @@ class TestImageDataRGBA:
         d = idata.to_dict()
         restored = ImageData.from_dict(d)
 
-        original_pixels = list(rgba_image.getdata())
-        restored_pixels = list(restored.image.getdata())
+        original_pixels = list(np.array(rgba_image).flat)
+        restored_pixels = list(np.array(restored.image).flat)
         assert original_pixels == restored_pixels

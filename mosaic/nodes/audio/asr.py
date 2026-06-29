@@ -17,7 +17,7 @@
 from __future__ import annotations
 
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from mosaic.core.registry import registry
 from mosaic.core.types import AudioData, MosaicData
@@ -69,12 +69,12 @@ class ASR(BaseAudioNode):
     def __init__(
         self,
         model: str = "openai/whisper-large-v3",
-        language: Optional[str] = None,
+        language: str | None = None,
         task: str = "transcribe",
         **kwargs: Any,
     ) -> None:
         super().__init__(model=model, **kwargs)
-        self._language: Optional[str] = language
+        self._language: str | None = language
         self._task: str = task
 
     def _load_model(self) -> None:
@@ -170,7 +170,7 @@ class ASR(BaseAudioNode):
             duration = self._get_duration(waveform, sample_rate)
 
             # 构造 pipeline 参数
-            pipe_kwargs: Dict[str, Any] = {
+            pipe_kwargs: dict[str, Any] = {
                 "return_timestamps": True,
             }
 
@@ -211,11 +211,11 @@ class ASR(BaseAudioNode):
         detected_language = language or result.get("language", "unknown")
 
         # 提取分段信息
-        segments: List[Dict[str, Any]] = []
+        segments: list[dict[str, Any]] = []
         chunks = result.get("chunks", [])
         if chunks:
             for chunk in chunks:
-                seg: Dict[str, Any] = {
+                seg: dict[str, Any] = {
                     "start": float(chunk.get("timestamp", [0, 0])[0] or 0),
                     "end": float(chunk.get("timestamp", [0, 0])[1] or 0),
                     "text": chunk.get("text", "").strip(),

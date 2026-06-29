@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from mosaic.core.types import MosaicData
 
@@ -35,7 +35,7 @@ class NodeError:
     node_id: str
     node_name: str
     error: BaseException
-    branch_name: Optional[str] = None
+    branch_name: str | None = None
 
     def __repr__(self) -> str:
         loc = f" branch={self.branch_name!r}" if self.branch_name else ""
@@ -44,7 +44,7 @@ class NodeError:
             f"error={type(self.error).__name__}: {self.error}){loc}"
         )
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """序列化为字典。"""
         return {
             "node_id": self.node_id,
@@ -89,11 +89,11 @@ class PipelineResult:
     ...         print(err)
     """
 
-    output: Optional[MosaicData] = None
-    intermediate: Dict[str, MosaicData] = field(default_factory=dict)
-    errors: List[NodeError] = field(default_factory=list)
+    output: MosaicData | None = None
+    intermediate: dict[str, MosaicData] = field(default_factory=dict)
+    errors: list[NodeError] = field(default_factory=list)
     duration: float = 0.0
-    node_durations: Dict[str, float] = field(default_factory=dict)
+    node_durations: dict[str, float] = field(default_factory=dict)
     pipeline_name: str = ""
 
     # -- 便捷属性 ----------------------------------------------------------
@@ -103,12 +103,12 @@ class PipelineResult:
         return len(self.errors) == 0
 
     @property
-    def failed_nodes(self) -> List[str]:
+    def failed_nodes(self) -> list[str]:
         """失败的节点名列表。"""
         return [err.node_name for err in self.errors]
 
     @property
-    def failed_node_ids(self) -> List[str]:
+    def failed_node_ids(self) -> list[str]:
         """失败的节点 id 列表。"""
         return [err.node_id for err in self.errors]
 
@@ -141,7 +141,7 @@ class PipelineResult:
             f"Available: {list(self.intermediate.keys())}"
         )
 
-    def list_intermediate(self) -> List[str]:
+    def list_intermediate(self) -> list[str]:
         """列出所有中间产物的节点 id。"""
         return list(self.intermediate.keys())
 
@@ -168,7 +168,7 @@ class PipelineResult:
             lines.append(f"  Intermediates: {len(self.intermediate)} artifacts")
         return "\n".join(lines)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """序列化为可 JSON 化的字典。
 
         注意：``MosaicData`` 会通过其 ``to_dict()`` 序列化，

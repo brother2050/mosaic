@@ -20,7 +20,7 @@ import logging
 import os
 import re
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from mosaic.core.events import EventBus, EventType, get_event_bus
 from mosaic.core.node import Node, NodeSpec
@@ -33,7 +33,7 @@ __all__ = ["BaseRagNode"]
 # ---------------------------------------------------------------------------
 # 常见嵌入模型的粗略显存估算（GB）
 # ---------------------------------------------------------------------------
-_EMBEDDING_VRAM: Dict[str, float] = {
+_EMBEDDING_VRAM: dict[str, float] = {
     "sentence-transformers/all-MiniLM-L6-v2": 0.5,
     "sentence-transformers/all-mpnet-base-v2": 1.5,
     "BAAI/bge-large-en-v1.5": 2.0,
@@ -62,14 +62,14 @@ class BaseRagNode(Node):
     domain: str = "rag"
     description: str = "Base RAG node."
     version: str = "0.1.0"
-    input_types: List[str] = ["text", "mosaic"]
-    output_types: List[str] = ["text", "mosaic"]
+    input_types: list[str] = ["text", "mosaic"]
+    output_types: list[str] = ["text", "mosaic"]
 
     def __init__(
         self,
         chunk_size: int = 512,
         chunk_overlap: int = 50,
-        bus: Optional[EventBus] = None,
+        bus: EventBus | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs)
@@ -111,7 +111,7 @@ class BaseRagNode(Node):
         if not os.path.exists(path):
             raise FileNotFoundError(f"File not found: {path}")
 
-        ext = os.path.splitext(path)[1].lower().lstrip(".")
+        ext = os.path.splitext(path)[1].lower().removeprefix(".")
         if ext in ("txt", "md", "csv"):
             # 纯文本类直接读取
             with open(path, "r", encoding="utf-8", errors="replace") as f:
@@ -136,7 +136,7 @@ class BaseRagNode(Node):
         try:
             import pdfplumber  # type: ignore
 
-            texts: List[str] = []
+            texts: list[str] = []
             with pdfplumber.open(path) as pdf:
                 for page in pdf.pages:
                     page_text = page.extract_text() or ""
@@ -149,7 +149,7 @@ class BaseRagNode(Node):
         try:
             import PyPDF2  # type: ignore
 
-            texts: List[str] = []
+            texts: list[str] = []
             with open(path, "rb") as f:
                 reader = PyPDF2.PdfReader(f)
                 for page in reader.pages:
@@ -201,7 +201,7 @@ class BaseRagNode(Node):
         chunk_size: int = 512,
         chunk_overlap: int = 50,
         preserve_structure: bool = True,
-    ) -> List[str]:
+    ) -> list[str]:
         """将文本分块。
 
         Parameters
@@ -218,7 +218,7 @@ class BaseRagNode(Node):
 
         Returns
         -------
-        List[str]
+        list[str]
             分块后的文本列表。
         """
         if not text or not text.strip():
@@ -236,7 +236,7 @@ class BaseRagNode(Node):
         text: str,
         chunk_size: int,
         chunk_overlap: int,
-    ) -> List[str]:
+    ) -> list[str]:
         """按段落分块，尽量不切断句子。
 
         策略：
@@ -250,7 +250,7 @@ class BaseRagNode(Node):
         if not paragraphs:
             return []
 
-        chunks: List[str] = []
+        chunks: list[str] = []
         current = ""
 
         for para in paragraphs:
@@ -290,12 +290,12 @@ class BaseRagNode(Node):
         text: str,
         chunk_size: int,
         chunk_overlap: int,
-    ) -> List[str]:
+    ) -> list[str]:
         """按固定字符数滑动窗口分块。"""
         if len(text) <= chunk_size:
             return [text]
 
-        chunks: List[str] = []
+        chunks: list[str] = []
         start = 0
         step = chunk_size - chunk_overlap
 
@@ -325,7 +325,7 @@ class BaseRagNode(Node):
         return text.strip()
 
     @staticmethod
-    def _extract_metadata(path: str) -> Dict[str, Any]:
+    def _extract_metadata(path: str) -> dict[str, Any]:
         """提取文件元信息。
 
         Parameters
@@ -335,7 +335,7 @@ class BaseRagNode(Node):
 
         Returns
         -------
-        Dict[str, Any]
+        dict[str, Any]
             包含 ``filename``、``file_size``、``modified_time``、
             ``extension`` 等字段。
         """
@@ -345,7 +345,7 @@ class BaseRagNode(Node):
             "file_path": os.path.abspath(path),
             "file_size": stat.st_size,
             "modified_time": stat.st_mtime,
-            "extension": os.path.splitext(path)[1].lower().lstrip("."),
+            "extension": os.path.splitext(path)[1].lower().removeprefix("."),
         }
 
     # ------------------------------------------------------------------

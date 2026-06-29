@@ -19,7 +19,7 @@ from __future__ import annotations
 import abc
 import logging
 import random
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from mosaic.core.events import EventBus, EventType, get_event_bus
 from mosaic.core.node import Node, NodeSpec
@@ -30,7 +30,7 @@ __all__ = ["BaseConsistencyNode"]
 
 
 # 常见一致性模型的粗略显存估算（fp16，GB）
-_VRAM_ESTIMATES: Dict[str, float] = {
+_VRAM_ESTIMATES: dict[str, float] = {
     "InstantX/InstantID": 12.0,
     "h94/IP-Adapter": 6.0,
     "h94/IP-Adapter-SDXL": 8.0,
@@ -39,7 +39,7 @@ _VRAM_ESTIMATES: Dict[str, float] = {
 }
 
 # 许可证信息
-_LICENSE_INFO: Dict[str, str] = {
+_LICENSE_INFO: dict[str, str] = {
     "InstantX/InstantID": "Apache-2.0 (model weights)",
     "h94/IP-Adapter": "Apache-2.0",
     "h94/IP-Adapter-SDXL": "Apache-2.0",
@@ -70,15 +70,15 @@ class BaseConsistencyNode(Node):
     domain: str = "consistency"
     description: str = "Base consistency node."
     version: str = "0.1.0"
-    input_types: List[str] = ["image", "mosaic"]
-    output_types: List[str] = ["image"]
+    input_types: list[str] = ["image", "mosaic"]
+    output_types: list[str] = ["image"]
 
     def __init__(
         self,
         device: str = "cuda",
         dtype: str = "float16",
-        scheduler: Optional[Scheduler] = None,
-        bus: Optional[EventBus] = None,
+        scheduler: Scheduler | None = None,
+        bus: EventBus | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs)
@@ -124,7 +124,7 @@ class BaseConsistencyNode(Node):
             pass
         return self._device
 
-    def _prepare_seed(self, seed: Optional[int]) -> Tuple[int, Any]:
+    def _prepare_seed(self, seed: int | None) -> tuple[int, Any]:
         """准备随机种子与 generator。
 
         Parameters
@@ -134,7 +134,7 @@ class BaseConsistencyNode(Node):
 
         Returns
         -------
-        Tuple[int, Optional[torch.Generator]]
+        tuple[int, torch.Generator | None]
             ``(actual_seed, generator)``。
         """
         import torch  # type: ignore
@@ -228,7 +228,7 @@ class BaseConsistencyNode(Node):
     @staticmethod
     def _resize_to_model(
         image: Any,
-        target_size: Tuple[int, int] = (512, 512),
+        target_size: tuple[int, int] = (512, 512),
     ) -> Any:
         """将图像 resize 到模型要求尺寸。
 
@@ -255,14 +255,14 @@ class BaseConsistencyNode(Node):
         h = max(8, (h // 8) * 8)
 
         if (w, h) != image.size:
-            image = image.resize((w, h), Image.LANCZOS)
+            image = image.resize((w, h), Image.Resampling.LANCZOS)
         return image
 
     @staticmethod
     def _prepare_face_region(
         image: Any,
         padding_ratio: float = 0.2,
-    ) -> Tuple[Any, Tuple[int, int, int, int]]:
+    ) -> tuple[Any, tuple[int, int, int, int]]:
         """提取人脸区域。
 
         使用 ``insightface`` 进行人脸检测（如果可用），否则使用简单的
@@ -277,7 +277,7 @@ class BaseConsistencyNode(Node):
 
         Returns
         -------
-        Tuple[PIL.Image.Image, Tuple[int, int, int, int]]
+        tuple[PIL.Image.Image, tuple[int, int, int, int]]
             ``(face_image, bbox)``，bbox 为 ``(x1, y1, x2, y2)``。
 
         Raises
@@ -369,8 +369,8 @@ class BaseConsistencyNode(Node):
 
         # 统一尺寸
         target = (256, 256)
-        img1 = img1.resize(target, Image.BILINEAR)
-        img2 = img2.resize(target, Image.BILINEAR)
+        img1 = img1.resize(target, Image.Resampling.BILINEAR)
+        img2 = img2.resize(target, Image.Resampling.BILINEAR)
 
         arr1 = np.array(img1.convert("RGB"), dtype=np.float32) / 255.0
         arr2 = np.array(img2.convert("RGB"), dtype=np.float32) / 255.0
@@ -456,7 +456,7 @@ class BaseConsistencyNode(Node):
     def describe(self) -> NodeSpec:
         """返回节点规格说明（子类实现）。"""
 
-    def _build_model_info(self, model_name: str) -> Dict[str, Any]:
+    def _build_model_info(self, model_name: str) -> dict[str, Any]:
         """构造模型信息字典。"""
         vram = _VRAM_ESTIMATES.get(model_name, 10.0)
         license_info = _LICENSE_INFO.get(

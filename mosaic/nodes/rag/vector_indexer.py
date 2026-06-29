@@ -20,7 +20,7 @@ from __future__ import annotations
 import logging
 import os
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from mosaic.core.events import EventBus, EventType, get_event_bus
 from mosaic.core.node import NodeSpec
@@ -76,25 +76,25 @@ class VectorIndexer(BaseRagNode):
         "(FAISS or ChromaDB) for retrieval."
     )
     version: str = "0.1.0"
-    input_types: List[str] = ["document", "mosaic"]
-    output_types: List[str] = ["mosaic"]
+    input_types: list[str] = ["document", "mosaic"]
+    output_types: list[str] = ["mosaic"]
 
     def __init__(
         self,
         embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2",
         index_type: str = "faiss",
-        index_path: Optional[str] = None,
+        index_path: str | None = None,
         batch_size: int = 32,
         device: str = "cuda",
         metric: str = "ip",
-        bus: Optional[EventBus] = None,
-        scheduler: Optional[Scheduler] = None,
+        bus: EventBus | None = None,
+        scheduler: Scheduler | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(bus=bus, **kwargs)
         self._model_name: str = embedding_model
         self._index_type: str = index_type.lower()
-        self._index_path: Optional[str] = index_path
+        self._index_path: str | None = index_path
         self._batch_size: int = max(1, batch_size)
         self._device: str = device
         self._metric: str = metric.lower()
@@ -103,8 +103,8 @@ class VectorIndexer(BaseRagNode):
         # 运行时状态
         self._model: Any = None  # sentence-transformers 模型
         self._embedding_dim: int = 0
-        self._collections: Dict[str, Any] = {}  # collection_name -> index
-        self._chunk_store: Dict[str, List[Dict[str, Any]]] = {}  # 存储 chunk 文本和元信息
+        self._collections: dict[str, Any] = {}  # collection_name -> index
+        self._chunk_store: dict[str, list[dict[str, Any]]] = {}  # 存储 chunk 文本和元信息
 
     # ------------------------------------------------------------------
     # Node 接口实现
@@ -262,7 +262,7 @@ class VectorIndexer(BaseRagNode):
             model_info=self._build_model_info(),
         )
 
-    def _build_model_info(self) -> Dict[str, Any]:
+    def _build_model_info(self) -> dict[str, Any]:
         """构造模型信息。"""
         vram = _EMBEDDING_VRAM.get(self._model_name, 1.0)
         return {
@@ -276,7 +276,7 @@ class VectorIndexer(BaseRagNode):
     # ------------------------------------------------------------------
     # 嵌入计算
     # ------------------------------------------------------------------
-    def _compute_embeddings(self, texts: List[str]) -> Any:
+    def _compute_embeddings(self, texts: list[str]) -> Any:
         """批量计算文本嵌入向量。
 
         Parameters
@@ -291,7 +291,7 @@ class VectorIndexer(BaseRagNode):
         """
         import numpy as np  # type: ignore
 
-        all_embeddings: List[Any] = []
+        all_embeddings: list[Any] = []
 
         for i in range(0, len(texts), self._batch_size):
             batch = texts[i : i + self._batch_size]
@@ -311,7 +311,7 @@ class VectorIndexer(BaseRagNode):
 
         return np.vstack(all_embeddings)
 
-    def _encode_with_transformers(self, texts: List[str]) -> Any:
+    def _encode_with_transformers(self, texts: list[str]) -> Any:
         """使用 transformers AutoModel + mean pooling 计算嵌入。"""
         import numpy as np  # type: ignore
         import torch  # type: ignore
@@ -416,9 +416,9 @@ class VectorIndexer(BaseRagNode):
         collection_name: str,
         index: Any,
         embeddings: Any,
-        chunks: List[str],
-        chunk_metadata: List[Dict[str, Any]],
-        extra_metadata: List[Dict[str, Any]],
+        chunks: list[str],
+        chunk_metadata: list[dict[str, Any]],
+        extra_metadata: list[dict[str, Any]],
     ) -> None:
         """将嵌入向量和对应的文本/元信息添加到索引。"""
         import numpy as np  # type: ignore
@@ -521,7 +521,7 @@ class VectorIndexer(BaseRagNode):
         """获取指定名称的索引 collection（供 Retriever 使用）。"""
         return self._collections.get(name)
 
-    def get_chunk_store(self, name: str) -> List[Dict[str, Any]]:
+    def get_chunk_store(self, name: str) -> list[dict[str, Any]]:
         """获取指定 collection 的 chunk 存储（供 Retriever 使用）。"""
         return self._chunk_store.get(name, [])
 

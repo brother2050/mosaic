@@ -43,7 +43,7 @@ import os
 import subprocess
 import tempfile
 import time
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from mosaic.core.events import EventBus, EventType, get_event_bus
 from mosaic.core.node import Node, NodeSpec
@@ -57,7 +57,7 @@ __all__ = ["Livestreamer"]
 _VALID_PROTOCOLS = {"rtmp", "srt"}
 
 # 协议与 FFmpeg 输出格式映射
-_PROTOCOL_FORMAT_MAP: Dict[str, str] = {
+_PROTOCOL_FORMAT_MAP: dict[str, str] = {
     "rtmp": "flv",
     "srt": "mpegts",
 }
@@ -113,8 +113,8 @@ class Livestreamer(Node):
         "Supports audio merging and real-time encoding."
     )
     version: str = "0.1.0"
-    input_types: List[str] = ["video", "image", "mosaic"]
-    output_types: List[str] = ["file"]
+    input_types: list[str] = ["video", "image", "mosaic"]
+    output_types: list[str] = ["file"]
 
     def __init__(
         self,
@@ -122,8 +122,8 @@ class Livestreamer(Node):
         codec: str = "libx264",
         bitrate: str = "4M",
         fps: int = 24,
-        resolution: Tuple[int, int] = (1920, 1080),
-        bus: Optional[EventBus] = None,
+        resolution: tuple[int, int] = (1920, 1080),
+        bus: EventBus | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs)
@@ -131,11 +131,11 @@ class Livestreamer(Node):
         self._codec: str = codec
         self._bitrate: str = bitrate
         self._fps: int = max(1, fps)
-        self._resolution: Tuple[int, int] = self._ensure_even(*resolution)
+        self._resolution: tuple[int, int] = self._ensure_even(*resolution)
         self._bus: EventBus = bus or get_event_bus()
         self._logger = logging.getLogger(f"mosaic.nodes.export.{self.name}")
-        self._ffmpeg_path: Optional[str] = None
-        self._stream_process: Optional[subprocess.Popen] = None
+        self._ffmpeg_path: str | None = None
+        self._stream_process: subprocess.Popen | None = None
 
     # ------------------------------------------------------------------
     # Node 接口实现
@@ -282,7 +282,7 @@ class Livestreamer(Node):
     # ------------------------------------------------------------------
     def _stream_frames(
         self,
-        frames: List[Any],
+        frames: list[Any],
         fps: int,
         stream_url: str,
         audio: Any,
@@ -315,7 +315,7 @@ class Livestreamer(Node):
         width, height = self._resolution
 
         # 准备音频临时文件
-        audio_tmp_path: Optional[str] = None
+        audio_tmp_path: str | None = None
         if audio is not None:
             audio_tmp_path = self._prepare_audio_input(audio)
 
@@ -352,13 +352,13 @@ class Livestreamer(Node):
                 if isinstance(frame, Image.Image):
                     img = frame.convert("RGB")
                     if img.size != (width, height):
-                        img = img.resize((width, height), Image.LANCZOS)
+                        img = img.resize((width, height), Image.Resampling.LANCZOS)
                     arr = np.array(img)
                 elif isinstance(frame, np.ndarray):
                     arr = frame
                     if arr.shape[:2] != (height, width):
                         img = Image.fromarray(frame).convert("RGB")
-                        img = img.resize((width, height), Image.LANCZOS)
+                        img = img.resize((width, height), Image.Resampling.LANCZOS)
                         arr = np.array(img)
                 else:
                     self._logger.warning(
@@ -423,8 +423,8 @@ class Livestreamer(Node):
         width: int,
         height: int,
         has_audio: bool,
-        audio_path: Optional[str] = None,
-    ) -> List[str]:
+        audio_path: str | None = None,
+    ) -> list[str]:
         """构建 FFmpeg 推流命令。
 
         Parameters
@@ -444,12 +444,12 @@ class Livestreamer(Node):
 
         Returns
         -------
-        List[str]
+        list[str]
             FFmpeg 命令参数列表。
         """
         output_format = _PROTOCOL_FORMAT_MAP.get(self._protocol, "flv")
 
-        cmd: List[str] = [
+        cmd: list[str] = [
             self._ffmpeg_path,
             "-y",
             # 视频输入：从 stdin 读取 rawvideo
@@ -528,7 +528,7 @@ class Livestreamer(Node):
     # 工具方法
     # ------------------------------------------------------------------
     @staticmethod
-    def _find_ffmpeg() -> Optional[str]:
+    def _find_ffmpeg() -> str | None:
         """查找 FFmpeg 可执行文件路径。"""
         try:
             import imageio_ffmpeg  # type: ignore
@@ -542,7 +542,7 @@ class Livestreamer(Node):
         return shutil.which("ffmpeg")
 
     @staticmethod
-    def _ensure_even(width: int, height: int) -> Tuple[int, int]:
+    def _ensure_even(width: int, height: int) -> tuple[int, int]:
         """确保宽高为偶数。"""
         if width % 2 != 0:
             width -= 1
@@ -550,7 +550,7 @@ class Livestreamer(Node):
             height -= 1
         return max(2, width), max(2, height)
 
-    def _prepare_audio_input(self, audio: Any) -> Optional[str]:
+    def _prepare_audio_input(self, audio: Any) -> str | None:
         """将音频数据准备为 FFmpeg 可读的文件路径。
 
         Parameters
@@ -560,7 +560,7 @@ class Livestreamer(Node):
 
         Returns
         -------
-        Optional[str]
+        str | None
             音频文件路径。
         """
         if isinstance(audio, str):

@@ -27,7 +27,8 @@
 from __future__ import annotations
 
 import time
-from typing import Any, Callable, Dict, Iterator, List, Optional, Tuple, Union
+from collections.abc import Callable, Iterator
+from typing import Any
 
 from mosaic.core.node import NodeSpec
 from mosaic.core.registry import registry
@@ -45,10 +46,10 @@ _DEFAULT_MODEL = "KwaiVGI/LivePortrait"
 _DEFAULT_TTS_MODEL = "edge-tts"
 
 # 支持的驱动模式
-_SUPPORTED_MODES: Tuple[str, ...] = ("audio", "text", "motion")
+_SUPPORTED_MODES: tuple[str, ...] = ("audio", "text", "motion")
 
 # 支持的输出模式
-_SUPPORTED_OUTPUT_MODES: Tuple[str, ...] = ("frames", "callback")
+_SUPPORTED_OUTPUT_MODES: tuple[str, ...] = ("frames", "callback")
 
 # ONNX Runtime 可用时的推理优化提示
 _ONNX_PROVIDERS_PRIORITY = (
@@ -139,16 +140,16 @@ class RealtimeRenderer(BaseDigitalHumanNode):
         "and adaptive frame-skipping to maintain target FPS."
     )
     version: str = "0.1.0"
-    input_types: List[str] = ["image", "audio", "text", "motion", "mosaic"]
-    output_types: List[str] = ["video", "image", "mosaic"]
+    input_types: list[str] = ["image", "audio", "text", "motion", "mosaic"]
+    output_types: list[str] = ["video", "image", "mosaic"]
 
     def __init__(
         self,
         model: str = _DEFAULT_MODEL,
         target_fps: int = 25,
-        resolution: Tuple[int, int] = (512, 512),
+        resolution: tuple[int, int] = (512, 512),
         enable_tts: bool = False,
-        tts_model: Optional[str] = None,
+        tts_model: str | None = None,
         device: str = "cuda",
         dtype: str = "float16",
         **kwargs: Any,
@@ -156,7 +157,7 @@ class RealtimeRenderer(BaseDigitalHumanNode):
         super().__init__(device=device, dtype=dtype, **kwargs)
         self._model_name: str = model
         self._target_fps: int = max(1, int(target_fps))
-        self._resolution: Tuple[int, int] = (
+        self._resolution: tuple[int, int] = (
             max(64, int(resolution[0])),
             max(64, int(resolution[1])),
         )
@@ -171,7 +172,7 @@ class RealtimeRenderer(BaseDigitalHumanNode):
         # 实时渲染状态
         self._realtime_running: bool = False
         self._stop_requested: bool = False
-        self._stats: Dict[str, Any] = self._init_stats()
+        self._stats: dict[str, Any] = self._init_stats()
 
     # ------------------------------------------------------------------
     # 模型加载
@@ -374,7 +375,7 @@ class RealtimeRenderer(BaseDigitalHumanNode):
             * ``output_callback`` (Callable[[PIL.Image], None]) ——
               ``output_mode="callback"`` 时使用。
             * ``target_fps`` (int) —— 覆盖构造时的目标帧率。
-            * ``resolution`` (Tuple[int, int]) —— 覆盖构造时的分辨率。
+            * ``resolution`` (tuple[int, int]) —— 覆盖构造时的分辨率。
 
         Returns
         -------
@@ -453,7 +454,7 @@ class RealtimeRenderer(BaseDigitalHumanNode):
                 mode = "audio"  # 后续走音频驱动流程
 
             # ---------- 逐段渲染 ----------
-            frames: List[Any] = []
+            frames: list[Any] = []
             self._reset_stats()
             self._stats["total_segments"] = total_segments
 
@@ -514,8 +515,8 @@ class RealtimeRenderer(BaseDigitalHumanNode):
         avatar_img: Any,
         audio_segment: Any,
         target_fps: int,
-        resolution: Tuple[int, int],
-    ) -> List[Any]:
+        resolution: tuple[int, int],
+    ) -> list[Any]:
         """渲染单个音频片段对应的帧序列。
 
         将音频片段按 ``target_fps`` 切分为帧，提取每帧的驱动特征（如
@@ -531,8 +532,8 @@ class RealtimeRenderer(BaseDigitalHumanNode):
         frame_count = max(1, int(round(seg_duration * target_fps)))
         frame_interval = 1.0 / target_fps
 
-        frames: List[Any] = []
-        latencies: List[float] = []
+        frames: list[Any] = []
+        latencies: list[float] = []
         target_per_frame = frame_interval
 
         # 使用 while 循环以便在推理过慢时跳帧
@@ -575,8 +576,8 @@ class RealtimeRenderer(BaseDigitalHumanNode):
         avatar_img: Any,
         motion_segment: Any,
         target_fps: int,
-        resolution: Tuple[int, int],
-    ) -> List[Any]:
+        resolution: tuple[int, int],
+    ) -> list[Any]:
         """渲染单个动作片段对应的帧序列。
 
         将 MotionData / 关键点数组作为姿态驱动信号，逐帧应用到形象图片
@@ -589,8 +590,8 @@ class RealtimeRenderer(BaseDigitalHumanNode):
             return []
 
         frame_count = len(keypoints)
-        frames: List[Any] = []
-        latencies: List[float] = []
+        frames: list[Any] = []
+        latencies: list[float] = []
 
         for i in range(frame_count):
             t_start = time.perf_counter()
@@ -613,7 +614,7 @@ class RealtimeRenderer(BaseDigitalHumanNode):
         avatar_img: Any,
         driving: Any,
         mode: str,
-        resolution: Tuple[int, int],
+        resolution: tuple[int, int],
         frame_idx: int,
     ) -> Any:
         """渲染单帧。
@@ -649,7 +650,7 @@ class RealtimeRenderer(BaseDigitalHumanNode):
         avatar_img: Any,
         driving: Any,
         mode: str,
-        resolution: Tuple[int, int],
+        resolution: tuple[int, int],
         frame_idx: int,
     ) -> Any:
         """调用真实驱动模型渲染单帧。
@@ -659,7 +660,7 @@ class RealtimeRenderer(BaseDigitalHumanNode):
         """
         import torch  # type: ignore
 
-        kwargs: Dict[str, Any] = {
+        kwargs: dict[str, Any] = {
             "source_image": avatar_img,
         }
         if mode == "audio":
@@ -684,7 +685,7 @@ class RealtimeRenderer(BaseDigitalHumanNode):
                     arr = np.clip(arr, 0, 255).astype(np.uint8)
                 if arr.shape[-1] not in (3, 4):
                     arr = np.stack([arr] * 3, axis=-1)
-                img = Image.fromarray(arr).resize(resolution, Image.LANCZOS)
+                img = Image.fromarray(arr).resize(resolution, Image.Resampling.LANCZOS)
                 return img
             except Exception as exc:  # noqa: BLE001
                 self._logger.debug(
@@ -704,7 +705,7 @@ class RealtimeRenderer(BaseDigitalHumanNode):
         return self._extract_frame_image(output, resolution)
 
     @staticmethod
-    def _extract_frame_image(output: Any, resolution: Tuple[int, int]) -> Any:
+    def _extract_frame_image(output: Any, resolution: tuple[int, int]) -> Any:
         """从模型输出中提取单帧 PIL.Image。"""
         from PIL import Image  # type: ignore
         import numpy as np  # type: ignore
@@ -726,14 +727,14 @@ class RealtimeRenderer(BaseDigitalHumanNode):
                 img = Image.fromarray(arr)
             else:
                 img = Image.fromarray(arr).convert("RGB")
-        return img.resize(resolution, Image.LANCZOS)
+        return img.resize(resolution, Image.Resampling.LANCZOS)
 
     def _lightweight_render(
         self,
         avatar_img: Any,
         driving: Any,
         mode: str,
-        resolution: Tuple[int, int],
+        resolution: tuple[int, int],
         frame_idx: int,
     ) -> Any:
         """轻量回退渲染：基于驱动信号对形象图片做图像变换。
@@ -744,7 +745,7 @@ class RealtimeRenderer(BaseDigitalHumanNode):
         from PIL import Image, ImageEnhance  # type: ignore
         import numpy as np  # type: ignore
 
-        img = avatar_img.convert("RGB").resize(resolution, Image.LANCZOS)
+        img = avatar_img.convert("RGB").resize(resolution, Image.Resampling.LANCZOS)
 
         # 根据驱动信号计算调制量
         if mode == "audio":
@@ -764,20 +765,20 @@ class RealtimeRenderer(BaseDigitalHumanNode):
 
         # 轻微的周期性头部摆动（仿射）模拟驱动
         angle = 2.0 * np.sin(2 * np.pi * frame_idx / 30.0)
-        img = img.rotate(angle, resample=Image.BILINEAR, fillcolor=(0, 0, 0))
+        img = img.rotate(angle, resample=Image.Resampling.BILINEAR, fillcolor=(0, 0, 0))
 
         return img
 
     # ------------------------------------------------------------------
     # 驱动信号处理
     # ------------------------------------------------------------------
-    def _text_to_audio_stream(self, texts: List[Any]) -> List[AudioData]:
+    def _text_to_audio_stream(self, texts: list[Any]) -> list[AudioData]:
         """将文本流通过 TTS 转换为音频流。"""
         if self._tts_node is None:
             raise RuntimeError(
                 "TTS node is not loaded. Cannot run text mode."
             )
-        audio_stream: List[AudioData] = []
+        audio_stream: list[AudioData] = []
         for text in texts:
             if not isinstance(text, str):
                 raise ValueError(
@@ -792,8 +793,8 @@ class RealtimeRenderer(BaseDigitalHumanNode):
 
     @staticmethod
     def _materialize_stream(
-        input_stream: Union[Iterator[Any], List[Any], Any]
-    ) -> List[Any]:
+        input_stream: Iterator[Any] | list[Any] | Any
+    ) -> list[Any]:
         """将 generator / list / 单个对象归一化为列表。"""
         if isinstance(input_stream, list):
             return list(input_stream)
@@ -806,7 +807,7 @@ class RealtimeRenderer(BaseDigitalHumanNode):
         return [input_stream]
 
     @staticmethod
-    def _extract_audio(segment: Any) -> Tuple[Any, int]:
+    def _extract_audio(segment: Any) -> tuple[Any, int]:
         """从 AudioData / ndarray / 文件路径提取波形与采样率。"""
         if isinstance(segment, AudioData):
             return segment.waveform, segment.sample_rate
@@ -890,7 +891,7 @@ class RealtimeRenderer(BaseDigitalHumanNode):
     def start_realtime(
         self,
         source_image: Any,
-        input_callback: Callable[[], Tuple[str, Any]],
+        input_callback: Callable[[], tuple[str, Any]],
         output_callback: Callable[[Any], None],
     ) -> None:
         """启动实时渲染循环。
@@ -1001,12 +1002,12 @@ class RealtimeRenderer(BaseDigitalHumanNode):
         self._stop_requested = True
         self._logger.info("Realtime stop requested.")
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """获取当前渲染统计。
 
         Returns
         -------
-        Dict[str, Any]
+        dict[str, Any]
             包含 ``total_frames``、``average_fps``、
             ``average_latency_ms``、``dropped_frames`` 等。
             若尚未渲染，返回初始零值统计。
@@ -1031,7 +1032,7 @@ class RealtimeRenderer(BaseDigitalHumanNode):
     # 统计辅助
     # ------------------------------------------------------------------
     @staticmethod
-    def _init_stats() -> Dict[str, Any]:
+    def _init_stats() -> dict[str, Any]:
         """初始化渲染统计字典。"""
         return {
             "total_frames": 0,
@@ -1044,7 +1045,7 @@ class RealtimeRenderer(BaseDigitalHumanNode):
         """重置渲染统计。"""
         self._stats = self._init_stats()
 
-    def _finalize_stats(self, elapsed: float) -> Dict[str, Any]:
+    def _finalize_stats(self, elapsed: float) -> dict[str, Any]:
         """汇总并返回最终渲染统计。"""
         latencies = self._stats.get("latencies", [])
         total_frames = self._stats.get("total_frames", 0)

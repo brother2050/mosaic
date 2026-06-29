@@ -29,7 +29,8 @@ import logging
 import threading
 import time
 import uuid
-from typing import Any, Callable, Dict, List, Optional, Set
+from collections.abc import Callable
+from typing import Any
 
 from mosaic.core.events import EventBus, EventType, get_event_bus
 from mosaic.core.result import PipelineResult
@@ -50,12 +51,12 @@ class TaskStatus:
     CANCELLED = "cancelled"
 
     @classmethod
-    def all_statuses(cls) -> List[str]:
+    def all_statuses(cls) -> list[str]:
         """返回所有状态值。"""
         return [cls.PENDING, cls.RUNNING, cls.COMPLETED, cls.FAILED, cls.CANCELLED]
 
     @classmethod
-    def terminal_statuses(cls) -> List[str]:
+    def terminal_statuses(cls) -> list[str]:
         """返回终态状态值（不会再变化）。"""
         return [cls.COMPLETED, cls.FAILED, cls.CANCELLED]
 
@@ -125,28 +126,28 @@ class AsyncTask:
         pipeline_name: str,
         pipeline: Any,
         input_data: Any,
-        task_id: Optional[str] = None,
-        bus: Optional[EventBus] = None,
+        task_id: str | None = None,
+        bus: EventBus | None = None,
         **kwargs: Any,
     ) -> None:
         self._task_id: str = task_id or str(uuid.uuid4())
         self._pipeline_name: str = pipeline_name
         self._pipeline: Any = pipeline
         self._input_data: Any = input_data
-        self._kwargs: Dict[str, Any] = kwargs
+        self._kwargs: dict[str, Any] = kwargs
         self._bus: EventBus = bus or get_event_bus()
 
         # 状态（受锁保护）
         self._status: str = TaskStatus.PENDING
         self._progress: float = 0.0
-        self._current_node: Optional[str] = None
-        self._result: Optional[PipelineResult] = None
-        self._error: Optional[BaseException] = None
+        self._current_node: str | None = None
+        self._result: PipelineResult | None = None
+        self._error: BaseException | None = None
 
         # 时间戳
         self._created_at: float = time.time()
-        self._started_at: Optional[float] = None
-        self._completed_at: Optional[float] = None
+        self._started_at: float | None = None
+        self._completed_at: float | None = None
 
         # 线程同步
         self._lock: threading.Lock = threading.Lock()
@@ -154,18 +155,18 @@ class AsyncTask:
         self._cancel_event: threading.Event = threading.Event()
 
         # 回调列表
-        self._complete_callbacks: List[CompleteCallback] = []
-        self._error_callbacks: List[ErrorCallback] = []
-        self._progress_callbacks: List[ProgressCallback] = []
+        self._complete_callbacks: list[CompleteCallback] = []
+        self._error_callbacks: list[ErrorCallback] = []
+        self._progress_callbacks: list[ProgressCallback] = []
 
         # 工作线程
-        self._thread: Optional[threading.Thread] = None
+        self._thread: threading.Thread | None = None
 
         # EventBus 订阅记录（用于完成后取消订阅）
-        self._bus_subscriptions: List[tuple] = []
+        self._bus_subscriptions: list[tuple] = []
 
         # 管道中包含的节点名集合（用于过滤 EventBus 事件）
-        self._node_names: Set[str] = set()
+        self._node_names: set[str] = set()
 
         # 日志器
         self._logger: logging.Logger = logging.getLogger(
@@ -193,7 +194,7 @@ class AsyncTask:
             return self._progress
 
     @property
-    def current_node(self) -> Optional[str]:
+    def current_node(self) -> str | None:
         """当前正在执行的节点名。"""
         with self._lock:
             return self._current_node
@@ -209,19 +210,19 @@ class AsyncTask:
         return self._created_at
 
     @property
-    def started_at(self) -> Optional[float]:
+    def started_at(self) -> float | None:
         """任务开始执行时间戳。"""
         with self._lock:
             return self._started_at
 
     @property
-    def completed_at(self) -> Optional[float]:
+    def completed_at(self) -> float | None:
         """任务完成时间戳。"""
         with self._lock:
             return self._completed_at
 
     @property
-    def error(self) -> Optional[BaseException]:
+    def error(self) -> BaseException | None:
         """错误信息（失败时），``None`` 表示无错误。"""
         with self._lock:
             return self._error
@@ -245,12 +246,12 @@ class AsyncTask:
         with self._lock:
             return self._status in TaskStatus.terminal_statuses()
 
-    def result(self) -> Optional[PipelineResult]:
+    def result(self) -> PipelineResult | None:
         """获取执行结果（非阻塞）。
 
         Returns
         -------
-        Optional[PipelineResult]
+        PipelineResult | None
             成功完成时返回 ``PipelineResult``；未完成或失败时返回 ``None``。
         """
         with self._lock:
@@ -259,7 +260,7 @@ class AsyncTask:
     # ------------------------------------------------------------------
     # 阻塞等待
     # ------------------------------------------------------------------
-    def wait(self, timeout: Optional[float] = None) -> PipelineResult:
+    def wait(self, timeout: float | None = None) -> PipelineResult:
         """阻塞等待任务完成，返回执行结果。
 
         Parameters
@@ -367,12 +368,12 @@ class AsyncTask:
     # ------------------------------------------------------------------
     # 序列化
     # ------------------------------------------------------------------
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """将任务状态序列化为字典。
 
         Returns
         -------
-        Dict[str, Any]
+        dict[str, Any]
             包含任务 ID、状态、进度、时间戳等信息的字典。
         """
         with self._lock:

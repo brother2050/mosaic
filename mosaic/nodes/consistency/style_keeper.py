@@ -28,7 +28,7 @@
 from __future__ import annotations
 
 import time
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from mosaic.core.node import NodeSpec
 from mosaic.core.registry import registry
@@ -40,7 +40,7 @@ __all__ = ["StyleKeeper"]
 
 
 # 支持的风格保持方法
-_SUPPORTED_METHODS: Tuple[str, ...] = (
+_SUPPORTED_METHODS: tuple[str, ...] = (
     "ip-adapter",
     "style-aligned",
     "reference-only",
@@ -80,10 +80,10 @@ class _SharedSelfAttnProcessor2_0:
         self,
         attn: Any,
         hidden_states: Any,
-        encoder_hidden_states: Optional[Any] = None,
-        attention_mask: Optional[Any] = None,
-        temb: Optional[Any] = None,
-        scale: Optional[float] = None,
+        encoder_hidden_states: Any | None = None,
+        attention_mask: Any | None = None,
+        temb: Any | None = None,
+        scale: float | None = None,
         **kwargs: Any,
     ) -> Any:
         import torch  # type: ignore
@@ -241,8 +241,8 @@ class StyleKeeper(BaseConsistencyNode):
         "style_strength controls the degree of style transfer."
     )
     version: str = "0.1.0"
-    input_types: List[str] = ["image", "mosaic"]
-    output_types: List[str] = ["image"]
+    input_types: list[str] = ["image", "mosaic"]
+    output_types: list[str] = ["image"]
 
     def __init__(
         self,
@@ -263,7 +263,7 @@ class StyleKeeper(BaseConsistencyNode):
         # 解析基础模型（不同方法含义不同）
         self._base_model: str = self._resolve_base_model(model, method)
         # 运行时：保存原始注意力处理器以便恢复
-        self._orig_attn_procs: Optional[Dict[str, Any]] = None
+        self._orig_attn_procs: dict[str, Any] | None = None
 
     @staticmethod
     def _resolve_base_model(model: str, method: str) -> str:
@@ -314,7 +314,7 @@ class StyleKeeper(BaseConsistencyNode):
         self._apply_optimizations()
         self._loaded = True
 
-    def _resolve_dtype_and_variant(self) -> Tuple[Any, Optional[str]]:
+    def _resolve_dtype_and_variant(self) -> tuple[Any, str | None]:
         """返回 (torch.dtype, variant) 用于 from_pretrained。"""
         torch_dtype = self._resolve_dtype()
         variant = "fp16" if self._dtype_str in ("float16", "fp16") else None
@@ -425,7 +425,7 @@ class StyleKeeper(BaseConsistencyNode):
         -------
         MosaicData
             包含 ``image`` (PIL.Image)、``reference_image`` (PIL.Image)、
-            ``style`` (Optional[str]，当前为 None)、``seed`` (int)、
+            ``style`` (str | None，当前为 None)、``seed`` (int)、
             ``method`` (str)、``model_name`` (str)。
 
         Raises
@@ -541,7 +541,7 @@ class StyleKeeper(BaseConsistencyNode):
     def _generate_ip_adapter(
         self,
         prompt: str,
-        negative_prompt: Optional[str],
+        negative_prompt: str | None,
         ref_512: Any,
         width: int,
         height: int,
@@ -571,7 +571,7 @@ class StyleKeeper(BaseConsistencyNode):
     def _generate_style_aligned(
         self,
         prompt: str,
-        negative_prompt: Optional[str],
+        negative_prompt: str | None,
         ref_img: Any,
         width: int,
         height: int,
@@ -616,7 +616,7 @@ class StyleKeeper(BaseConsistencyNode):
     def _generate_reference_only(
         self,
         prompt: str,
-        negative_prompt: Optional[str],
+        negative_prompt: str | None,
         ref_img: Any,
         width: int,
         height: int,
@@ -660,7 +660,7 @@ class StyleKeeper(BaseConsistencyNode):
     def _generate_with_shared_attention(
         self,
         prompt: str,
-        negative_prompt: Optional[str],
+        negative_prompt: str | None,
         ref_img: Any,
         width: int,
         height: int,
@@ -735,7 +735,7 @@ class StyleKeeper(BaseConsistencyNode):
         if unet is None or not hasattr(unet, "attn_processors"):
             return
         self._orig_attn_procs = dict(unet.attn_processors)
-        new_procs: Dict[str, Any] = {}
+        new_procs: dict[str, Any] = {}
         for name, proc in self._orig_attn_procs.items():
             if name.endswith("attn1.processor"):
                 new_procs[name] = _SharedSelfAttnProcessor2_0(scale=scale)
@@ -810,7 +810,7 @@ class StyleKeeper(BaseConsistencyNode):
     def _plain_generate(
         self,
         prompt: str,
-        negative_prompt: Optional[str],
+        negative_prompt: str | None,
         width: int,
         height: int,
         num_inference_steps: int,

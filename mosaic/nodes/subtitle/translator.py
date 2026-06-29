@@ -16,7 +16,7 @@
 from __future__ import annotations
 
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from mosaic.core.registry import registry
 from mosaic.core.types import MosaicData, SubtitleData
@@ -65,25 +65,25 @@ class SubtitleTranslator(BaseSubtitleNode):
 
     def __init__(
         self,
-        model: Optional[str] = None,
+        model: str | None = None,
         source_language: str = "auto",
         target_language: str = "en",
-        output_format: Optional[str] = None,
+        output_format: str | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs)
-        self._model_name: Optional[str] = model
+        self._model_name: str | None = model
         self._source_language: str = source_language
         self._target_language: str = target_language
-        self._output_format: Optional[str] = output_format
+        self._output_format: str | None = output_format
         # 内部翻译节点（延迟创建）
-        self._translator_node: Optional[Any] = None
+        self._translator_node: Any | None = None
 
     def _load_model(self) -> None:
         """加载翻译模型（复用文本域 Translator 节点）。"""
         from mosaic.nodes.text.translator import Translator
 
-        translator_kwargs: Dict[str, Any] = {
+        translator_kwargs: dict[str, Any] = {
             "source_language": self._source_language,
             "target_language": self._target_language,
             "scheduler": self._scheduler,
@@ -108,7 +108,7 @@ class SubtitleTranslator(BaseSubtitleNode):
         self._model = None
         self._loaded = False
 
-    def _batch_translate(self, texts: List[str]) -> List[str]:
+    def _batch_translate(self, texts: list[str]) -> list[str]:
         """批量翻译字幕文本。
 
         将所有文本合并为带序号的列表，一次调用翻译模型完成，
@@ -121,7 +121,7 @@ class SubtitleTranslator(BaseSubtitleNode):
 
         Returns
         -------
-        List[str]
+        list[str]
             翻译后的文本列表（与输入一一对应）。
         """
         if not texts:
@@ -147,7 +147,7 @@ class SubtitleTranslator(BaseSubtitleNode):
         # 解析带序号的翻译结果
         import re
 
-        translated_lines: Dict[int, str] = {}
+        translated_lines: dict[int, str] = {}
         for match in re.finditer(
             r"\[(\d+)\]\s*(.+?)(?=\n\[\d+\]|\Z)", translated, re.DOTALL
         ):
@@ -156,7 +156,7 @@ class SubtitleTranslator(BaseSubtitleNode):
             translated_lines[idx] = text
 
         # 按原始顺序组装结果
-        result_texts: List[str] = []
+        result_texts: list[str] = []
         for i in range(len(texts)):
             result_texts.append(translated_lines.get(i + 1, texts[i]))
 
@@ -228,11 +228,11 @@ class SubtitleTranslator(BaseSubtitleNode):
             translated_texts = self._batch_translate(texts)
 
             # 构造翻译后的片段（保持时间轴不变）
-            new_segments: List[Dict[str, Any]] = []
+            new_segments: list[dict[str, Any]] = []
             for i, (seg, trans_text) in enumerate(
                 zip(segments, translated_texts), 1
             ):
-                new_seg: Dict[str, Any] = {
+                new_seg: dict[str, Any] = {
                     "start": seg["start"],
                     "end": seg["end"],
                     "text": trans_text,

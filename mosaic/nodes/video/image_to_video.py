@@ -30,7 +30,7 @@ from __future__ import annotations
 
 import random
 import time
-from typing import Any, Optional
+from typing import Any
 
 from mosaic.core.registry import registry
 from mosaic.core.types import MosaicData, VideoData
@@ -112,12 +112,12 @@ class ImageToVideo(BaseVideoNode):
         device: str = "cuda",
         dtype: str = "float16",
         enable_vae_slicing: bool = True,
-        decode_chunk_size: Optional[int] = None,
+        decode_chunk_size: int | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(model=model, device=device, dtype=dtype, **kwargs)
         self._enable_vae_slicing: bool = enable_vae_slicing
-        self._decode_chunk_size: Optional[int] = decode_chunk_size
+        self._decode_chunk_size: int | None = decode_chunk_size
 
     def _load_model(self) -> None:
         """加载 StableVideoDiffusion Pipeline。"""
@@ -177,11 +177,11 @@ class ImageToVideo(BaseVideoNode):
 
         target_size = _SVD_INPUT_SIZE  # (width, height)
         if image.size != target_size:
-            image = image.resize(target_size, Image.LANCZOS)
+            image = image.resize(target_size, Image.Resampling.LANCZOS)
             self._logger.debug("Resized input image to %dx%d.", *target_size)
         return image
 
-    def _prepare_seed(self, seed: Optional[int]) -> tuple:
+    def _prepare_seed(self, seed: int | None) -> tuple:
         """准备随机种子与 generator。
 
         Parameters
@@ -191,7 +191,7 @@ class ImageToVideo(BaseVideoNode):
 
         Returns
         -------
-        Tuple[int, torch.Generator]
+        tuple[int, torch.Generator]
             实际使用的种子与对应的 ``torch.Generator``。
         """
         import torch  # type: ignore
@@ -214,8 +214,8 @@ class ImageToVideo(BaseVideoNode):
         """从 SVD Pipeline 输出中提取帧列表。
 
         SVD 默认以 ``output_type="pil"`` 返回，``output.frames`` 通常为
-        嵌套列表 ``List[List[PIL.Image]]``（外层为 batch 维度）。本方法
-        取第一个 batch 并展平为 ``List[PIL.Image]``；若返回 tensor，则
+        嵌套列表 ``list[list[PIL.Image]]``（外层为 batch 维度）。本方法
+        取第一个 batch 并展平为 ``list[PIL.Image]``；若返回 tensor，则
         借助 :meth:`BaseVideoNode._tensor_to_frames` 转换。
 
         Parameters
@@ -225,7 +225,7 @@ class ImageToVideo(BaseVideoNode):
 
         Returns
         -------
-        List[PIL.Image]
+        list[PIL.Image]
             帧列表。
         """
         from PIL import Image  # type: ignore
@@ -241,7 +241,7 @@ class ImageToVideo(BaseVideoNode):
         if hasattr(raw, "cpu"):
             return self._tensor_to_frames(raw)
 
-        # 列表路径：List[List[PIL.Image]] 或 List[PIL.Image]
+        # 列表路径：list[list[PIL.Image]] 或 list[PIL.Image]
         if isinstance(raw, list):
             if len(raw) > 0 and isinstance(raw[0], list):
                 raw = raw[0]
@@ -263,7 +263,7 @@ class ImageToVideo(BaseVideoNode):
 
         Returns
         -------
-        List[PIL.Image]
+        list[PIL.Image]
             截断后的帧列表。
         """
         if len(frames) > max_frames:

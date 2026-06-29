@@ -23,7 +23,7 @@ from __future__ import annotations
 import abc
 import logging
 import time
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from mosaic.core.events import EventBus, EventType, get_event_bus
 from mosaic.core.node import Node, NodeSpec
@@ -34,7 +34,7 @@ __all__ = ["BaseTextNode"]
 
 
 # 常见模型的粗略显存估算（fp16，GB），用于 describe() 与调度器
-_VRAM_ESTIMATES: Dict[str, float] = {
+_VRAM_ESTIMATES: dict[str, float] = {
     "Qwen/Qwen2.5-7B-Instruct": 16.0,
     "Qwen/Qwen2.5-14B-Instruct": 30.0,
     "Qwen/Qwen2.5-72B-Instruct": 150.0,
@@ -70,8 +70,8 @@ class BaseTextNode(Node):
     domain: str = "text"
     description: str = "Base text node."
     version: str = "0.1.0"
-    input_types: List[str] = ["text"]
-    output_types: List[str] = ["text"]
+    input_types: list[str] = ["text"]
+    output_types: list[str] = ["text"]
 
     def __init__(
         self,
@@ -79,8 +79,8 @@ class BaseTextNode(Node):
         device_map: str = "auto",
         torch_dtype: str = "fp16",
         trust_remote_code: bool = True,
-        scheduler: Optional[Scheduler] = None,
-        bus: Optional[EventBus] = None,
+        scheduler: Scheduler | None = None,
+        bus: EventBus | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs)
@@ -185,12 +185,12 @@ class BaseTextNode(Node):
     # ------------------------------------------------------------------
     def _generate_from_messages(
         self,
-        messages: List[Dict[str, str]],
+        messages: list[dict[str, str]],
         max_new_tokens: int = 512,
         temperature: float = 0.7,
         top_p: float = 0.9,
         do_sample: bool = True,
-    ) -> Tuple[str, int, int]:
+    ) -> tuple[str, int, int]:
         """从对话消息列表生成文本（公共推理流程）。
 
         使用 ``tokenizer.apply_chat_template`` 构造输入，在
@@ -212,7 +212,7 @@ class BaseTextNode(Node):
 
         Returns
         -------
-        Tuple[str, int, int]
+        tuple[str, int, int]
             ``(generated_text, input_tokens, output_tokens)``。
         """
         import torch  # type: ignore
@@ -241,7 +241,7 @@ class BaseTextNode(Node):
             attention_mask = None
 
         # 生成
-        gen_kwargs: Dict[str, Any] = {
+        gen_kwargs: dict[str, Any] = {
             "max_new_tokens": max_new_tokens,
             "do_sample": do_sample,
             "pad_token_id": self._tokenizer.pad_token_id,
@@ -262,7 +262,7 @@ class BaseTextNode(Node):
 
         return generated_text, int(input_length), output_tokens
 
-    def _apply_chat_template(self, messages: List[Dict[str, str]]) -> Any:
+    def _apply_chat_template(self, messages: list[dict[str, str]]) -> Any:
         """应用 tokenizer 的 chat template 构造输入张量。
 
         使用业界推荐的两步模式（transformers 4.40+ 最佳实践）：
@@ -349,7 +349,7 @@ class BaseTextNode(Node):
             model_info=self._build_model_info(),
         )
 
-    def _build_model_info(self) -> Dict[str, Any]:
+    def _build_model_info(self) -> dict[str, Any]:
         """构造模型信息字典。"""
         vram = _VRAM_ESTIMATES.get(self._model_name, 16.0)
         return {

@@ -12,7 +12,7 @@
 from __future__ import annotations
 
 import time
-from typing import Any, Optional
+from typing import Any
 
 from mosaic.core.registry import registry
 from mosaic.core.types import MosaicData
