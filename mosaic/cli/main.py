@@ -250,6 +250,14 @@ def _build_parser() -> argparse.ArgumentParser:
         prog="mosaic",
         description="Mosaic — 多模态生成式 AI 编排框架",
     )
+    # 全局选项：--version / -V
+    parser.add_argument(
+        "--version",
+        "-V",
+        action="version",
+        version=f"mosaic {__version__}",
+        help="显示版本号并退出",
+    )
     subparsers = parser.add_subparsers(dest="command", help="可用命令")
 
     # list 命令

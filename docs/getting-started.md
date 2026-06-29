@@ -334,16 +334,21 @@ audio = result.get("audio")  # AudioData 对象
 
 ### 2. 显存不足（CUDA OOM）
 
-不同模型的显存需求：
+不同模型的显存需求（FP16 精度估算，量化可降低 40-70%）：
 
-| 模型 | 最低显存 |
-|---|---|
-| ChatTTS | 2GB |
-| SDXL (fp16) | 8GB |
-| LTX-Video | 12GB |
-| Wan2.1-1.3B | 8GB |
-| Wan2.1-14B | 30GB |
-| HunyuanVideo | 60GB |
+| 模型 | 显存需求 | 说明 |
+|---|---|---|
+| ChatTTS | 2GB | 最轻量 TTS |
+| Whisper-large-v3 | 5GB | ASR 语音识别 |
+| SDXL (fp16) | 8GB | 文生图 |
+| Qwen2.5-7B-Instruct | 15GB | 文本生成/对话 |
+| LTX-Video | 12GB | 快速视频生成 |
+| CogVideoX-5B | 18GB | 中等视频生成 |
+| Wan2.1-1.3B | 8GB | 轻量视频生成 |
+| Wan2.1-14B | 30GB | 高质量视频生成 |
+| HunyuanVideo | 60GB | 最高质量视频 |
+
+> 以上为 FP16 精度下的模型权重显存估算。实际推理还需额外 KV cache / 激活内存（约 +10-20%）。使用 INT8 量化可减半，INT4 量化可降至 1/4。
 
 启用 CPU offload 可将显存需求降低约 40%：
 

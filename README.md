@@ -109,6 +109,15 @@ cd mosaic
 pip install -e ".[dev]"
 ```
 
+### 验证安装
+
+```bash
+mosaic --version    # 或 mosaic -V / mosaic version
+# mosaic 0.1.0
+
+mosaic doctor       # 环境诊断
+```
+
 ---
 
 ## 快速开始

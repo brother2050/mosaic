@@ -641,7 +641,7 @@ for text in texts:
 | 声学模型类型 | AR (Llama) | AR (Llama) | AR (GPT2) | Flow Matching |
 | 声码器 | DVAE + Vocos | VQDec + HiFiGAN | Flow + HiFiGAN | HiFiGAN |
 | 模型大小 | ~200M | ~1B | ~300M | ~300M |
-| 显存 (推理) | ~2GB | ~4GB | ~4GB | ~4GB |
+| 显存 (推理) | ~2GB | ~3GB | ~4GB | ~4GB |
 | 显存 (训练) | ~16GB | ~24GB | ~16GB | ~16GB |
 | 采样率 | 24000Hz | 22050Hz | 32000Hz | 24000Hz |
 | 比特深度 | 16-bit | 16-bit | 16-bit | 16-bit |

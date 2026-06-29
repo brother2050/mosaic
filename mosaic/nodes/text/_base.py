@@ -34,12 +34,13 @@ __all__ = ["BaseTextNode"]
 
 
 # 常见模型的粗略显存估算（fp16，GB），用于 describe() 与调度器
+# 数值 = 模型权重大小（FP16/BF16），不含 KV cache 与激活内存
 _VRAM_ESTIMATES: dict[str, float] = {
-    "Qwen/Qwen2.5-7B-Instruct": 16.0,
-    "Qwen/Qwen2.5-14B-Instruct": 30.0,
-    "Qwen/Qwen2.5-72B-Instruct": 150.0,
-    "meta-llama/Llama-3.1-8B-Instruct": 18.0,
-    "meta-llama/Llama-3.1-70B-Instruct": 150.0,
+    "Qwen/Qwen2.5-7B-Instruct": 15.0,
+    "Qwen/Qwen2.5-14B-Instruct": 28.0,
+    "Qwen/Qwen2.5-72B-Instruct": 145.0,
+    "meta-llama/Llama-3.1-8B-Instruct": 16.0,
+    "meta-llama/Llama-3.1-70B-Instruct": 140.0,
 }
 
 

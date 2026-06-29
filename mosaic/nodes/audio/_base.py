@@ -34,11 +34,11 @@ __all__ = ["BaseAudioNode"]
 _VRAM_ESTIMATES: dict[str, float] = {
     # edge-tts 为云端 TTS，不占用本地 GPU 显存
     "edge-tts": 0.0,
-    "openai/whisper-large-v3": 10.0,
-    "openai/whisper-medium": 5.0,
-    "openai/whisper-small": 2.0,
-    "openai/whisper-base": 1.0,
-    "openai/whisper-tiny": 0.5,
+    "openai/whisper-large-v3": 5.0,
+    "openai/whisper-medium": 3.0,
+    "openai/whisper-small": 1.0,
+    "openai/whisper-base": 0.5,
+    "openai/whisper-tiny": 0.3,
     "facebook/mms-tts-eng": 2.0,
     "microsoft/speecht5_tts": 2.0,
     "facebook/musicgen-small": 3.0,
