@@ -309,28 +309,40 @@ class TTS(BaseAudioNode):
     name: str = "tts"
     description: str = (
         "Convert text to speech using edge-tts (default, multi-language, "
-        "emotional neural voices) or a transformers TTS pipeline. "
-        "Supports emotion styles and speed control."
+        "emotional neural voices), a transformers TTS pipeline, or a "
+        "pluggable TTS backend (ChatTTS / Fish Speech / CosyVoice / "
+        "GPT-SoVITS via the tts_backends framework). "
+        "Supports emotion styles, speed control, and streaming output."
     )
-    version: str = "0.2.0"
+    version: str = "0.3.0"
     input_types = ["text", "mosaic"]
     output_types = ["audio"]
 
     def __init__(
         self,
+        backend: str = "auto",
         model: str = "edge-tts",
         voice: str | None = None,
         language: str = "zh",
         emotion: str = "neutral",
         speed: float = 1.0,
+        speaker: str | None = None,
+        stream_chunk_size: int = 4096,
         **kwargs: Any,
     ) -> None:
         super().__init__(model=model, **kwargs)
+        self._backend_name: str = backend
         self._voice: str | None = voice
         self._language: str = language
         self._emotion: str = emotion
         self._speed: float = float(speed)
+        self._speaker: str | None = speaker
+        self._stream_chunk_size: int = stream_chunk_size
+        self._backend_kwargs: dict[str, Any] = {}
+        # 内置后端标识（edge_tts / transformers），与扩展后端区分
         self._backend: str = "edge_tts"
+        # 扩展后端实例（使用 tts_backends 框架时填充）
+        self._tts_backend: Any = None
 
     # ------------------------------------------------------------------
     # 模型加载
@@ -338,54 +350,97 @@ class TTS(BaseAudioNode):
     def _load_model(self) -> None:
         """加载 TTS 模型。
 
-        后端选择逻辑：
+        后端路由逻辑（按优先级）：
 
-        1. 若 ``self._model_name`` 为 ``"edge-tts"`` 或以 ``"edge"`` 开头，
-           使用 edge-tts 云端后端（无需 GPU）。
-        2. 否则尝试使用 ``transformers.pipeline("text-to-speech")`` 加载
-           指定的 HuggingFace TTS 模型。
-        3. 若 transformers 加载失败，回退到 edge-tts。
+        1. 若 ``backend`` 显式指定为内置后端（``"edge_tts"`` /
+           ``"transformers"``），直接使用对应内置实现。
+        2. 若 ``backend`` 指定了扩展后端名称（如 ``"chattts"`` /
+           ``"fish"`` / ``"cosyvoice"`` / ``"sovits"``），从
+           :class:`TTSBackendRegistry` 获取后端类并实例化。
+        3. 若 ``backend="auto"``：
+           a. ``model="edge-tts"`` → edge-tts 云端后端（无需 GPU）。
+           b. ``model`` 指向 HuggingFace 模型 → transformers pipeline。
+           c. 否则调用注册表 ``auto_select`` 自动选择最优扩展后端。
+        4. 任何加载失败均回退到 edge-tts（保证可用性）。
         """
-        if (
-            self._model_name == "edge-tts"
-            or self._model_name.lower().startswith("edge")
-        ):
+        backend_name = self._backend_name
+
+        # ---- auto 模式：推断后端 ----
+        if backend_name == "auto":
+            if (
+                self._model_name == "edge-tts"
+                or self._model_name.lower().startswith("edge")
+            ):
+                backend_name = "edge_tts"
+            else:
+                try:
+                    from mosaic.nodes.audio.tts_backends.registry import (
+                        tts_backend_registry,
+                    )
+                    available = tts_backend_registry.list_backends()
+                    if available:
+                        backend_name = tts_backend_registry.auto_select(
+                            {"language": self._language, "streaming": False, "gpu_memory_gb": 8.0}
+                        )
+                    else:
+                        backend_name = "transformers"
+                except Exception:
+                    backend_name = "transformers"
+
+        # ---- 内置后端 ----
+        if backend_name in ("edge_tts", "edge-tts"):
             self._backend = "edge_tts"
             self._logger.info(
-                "Using edge-tts backend (no GPU required, "
-                "voice=%s, emotion=%s).",
-                self._voice or "<auto>",
-                self._emotion,
+                "Using edge-tts backend (no GPU required, voice=%s, emotion=%s).",
+                self._voice or "<auto>", self._emotion,
             )
             return
 
-        # 非 edge 模型：尝试 transformers pipeline
-        try:
-            from transformers import pipeline  # type: ignore
+        if backend_name == "transformers":
+            try:
+                from transformers import pipeline
+                device = self._resolve_device()
+                self._model = pipeline("text-to-speech", model=self._model_name, device=device)
+                self._backend = "transformers"
+                self._logger.info("Transformers TTS pipeline loaded (model=%s, device=%s).", self._model_name, device)
+                return
+            except Exception as exc:
+                self._logger.warning("Transformers TTS failed for %s: %s. Falling back to edge-tts.", self._model_name, exc)
+                self._backend = "edge_tts"
+                return
 
-            device = self._resolve_device()
-            self._model = pipeline(
-                "text-to-speech",
-                model=self._model_name,
-                device=device,
-            )
-            self._backend = "transformers"
-            self._logger.info(
-                "Transformers TTS pipeline loaded (model=%s, device=%s).",
-                self._model_name,
-                device,
-            )
+        # ---- 扩展后端（tts_backends 框架） ----
+        try:
+            from mosaic.nodes.audio.tts_backends.registry import tts_backend_registry
+            backend_class = tts_backend_registry.get(backend_name)
+            if backend_class is None:
+                self._logger.warning("TTS backend '%s' not registered. Falling back to edge-tts.", backend_name)
+                self._backend = "edge_tts"
+                return
+            self._tts_backend = backend_class(model=self._model_name, device=self._device, **self._backend_kwargs)
+            self._tts_backend.load(device=self._device, dtype=getattr(self, "_dtype", "float16"))
+            self._backend = backend_name
+            self._logger.info("TTS backend '%s' loaded successfully.", backend_name)
             return
         except Exception as exc:
-            # 捕获所有异常（ImportError / ValueError / OSError 等），
-            # 确保能回退到 edge-tts
-            self._logger.warning(
-                "Transformers TTS failed for %s: %s. "
-                "Falling back to edge-tts.",
-                self._model_name,
-                exc,
-            )
+            self._logger.warning("Failed to load TTS backend '%s': %s. Falling back to edge-tts.", backend_name, exc)
             self._backend = "edge_tts"
+
+    # ------------------------------------------------------------------
+    # 后端查询
+    # ------------------------------------------------------------------
+    @classmethod
+    def list_backends(cls) -> list[str]:
+        """列出所有可用的 TTS 后端名称。"""
+        backends = ["edge_tts", "transformers"]
+        try:
+            from mosaic.nodes.audio.tts_backends.registry import tts_backend_registry
+            for spec in tts_backend_registry.list_backends():
+                if spec.name not in backends:
+                    backends.append(spec.name)
+        except Exception:
+            pass
+        return backends
 
     # ------------------------------------------------------------------
     # 语音解析
@@ -437,6 +492,28 @@ class TTS(BaseAudioNode):
             emotion = input_data.get("emotion", self._emotion)
             voice = input_data.get("voice", self._voice)
             speed = float(input_data.get("speed", self._speed))
+
+            speaker = input_data.get("speaker", self._speaker)
+
+            # ---- 扩展后端（tts_backends 框架） ----
+            if self._tts_backend is not None:
+                self._logger.info(
+                    "TTS generating via %s backend (speaker=%s, language=%s, speed=%.2f).",
+                    self._backend, speaker or "<default>", language, speed,
+                )
+                audio = self._tts_backend.synthesize(
+                    text=text, speaker=speaker, language=language, speed=speed,
+                )
+                elapsed = time.perf_counter() - t0
+                duration = audio.metadata.get("duration", 0.0)
+                result = MosaicData(audio=audio, text=text, duration=duration)
+                self._emit_complete(
+                    duration=elapsed,
+                    output_summary={"backend": self._backend, "duration": duration, "language": language},
+                )
+                return result
+
+            # ---- 内置后端 ----
 
             # 分句处理
             sentences = _split_sentences(text)
@@ -543,3 +620,37 @@ class TTS(BaseAudioNode):
             waveform = np.array([])
 
         return waveform, sr
+
+    # ------------------------------------------------------------------
+    # 流式合成与资源释放
+    # ------------------------------------------------------------------
+    def run_stream(self, input_data: MosaicData) -> Any:
+        """流式文本转语音。返回生成器，每次 yield 一小段 AudioData。"""
+        self._scheduler.ensure_loaded(self)
+        text = input_data.get("text")
+        if not isinstance(text, str) or not text.strip():
+            raise ValueError(f"TTS requires 'text' (non-empty str), got {type(text).__name__}.")
+        language = input_data.get("language", self._language)
+        speed = float(input_data.get("speed", self._speed))
+        speaker = input_data.get("speaker", self._speaker)
+
+        if self._tts_backend is not None:
+            yield from self._tts_backend.synthesize_stream(
+                text=text, speaker=speaker, language=language, speed=speed,
+                chunk_size=self._stream_chunk_size,
+            )
+            return
+
+        self._logger.info("TTS streaming via %s backend (non-streaming fallback).", self._backend)
+        result = self.run(input_data)
+        yield result["audio"]
+
+    def unload(self) -> None:
+        """释放 TTS 模型资源。同时释放内置后端模型和扩展后端实例。"""
+        if self._tts_backend is not None:
+            try:
+                self._tts_backend.unload()
+            except Exception:
+                pass
+            self._tts_backend = None
+        super().unload()
