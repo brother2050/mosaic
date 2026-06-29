@@ -3,7 +3,7 @@
 
 将 CosyVoice 的组件组装为统一的 :class:`TTSBackend`，提供阻塞合成与
 分块流式合成能力。CosyVoice 采用「LLM 文本理解 → Flow Matching ODE 求解 →
-HiFi-GAN 声码器」的管线，输出 22050Hz 单声道波形。
+HiFi-GAN 声码器」的管线，输出 24000Hz 单声道波形。
 
 与前三者的根本差异
 ------------------
@@ -12,7 +12,7 @@ HiFi-GAN 声码器」的管线，输出 22050Hz 单声道波形。
 * **生成方式**：非自回归，不逐 token 产出；流式通过 Chunk-aware ODE 实现。
 * **文本前端**：使用预训练 LLM 的 tokenizer（Qwen2.5），而非自定义 BPE
   或音素 G2P。
-* **采样率**：22050Hz（ChatTTS 24000Hz，GPT-SoVITS 32000Hz）。
+* **采样率**：24000Hz（与 cosyvoice2.yaml 一致；ChatTTS 24000Hz，GPT-SoVITS 32000Hz）。
 * **许可证**：Apache-2.0（ChatTTS 为 CC BY-NC 4.0）。
 
 管线
@@ -36,26 +36,30 @@ HiFi-GAN 声码器」的管线，输出 22050Hz 单声道波形。
     Phase 5: HiFi-GAN 声码器
       mel → HiFiGanVocoder → waveform
 
-目录结构约定
-------------
+HuggingFace 仓库布局（FunAudioLLM/CosyVoice2-0.5B）
+--------------------------------------------------
 ::
 
     model_path/
-    ├── llm/                    # LLM 模型（Qwen2.5）
-    │   └── ...
-    ├── flow_matching/
+    ├── CosyVoice-BlankEN/        # LLM tokenizer 模型（Qwen2, 896 dim）
     │   ├── config.json
+    │   ├── merges.txt / vocab.json
+    │   ├── tokenizer_config.json
     │   └── model.safetensors
-    ├── hifi_gan/
-    │   ├── config.json
-    │   └── model.safetensors
-    ├── speech_tokenizer/
-    │   └── model.safetensors
-    ├── speaker_encoder/
-    │   └── model.safetensors
-    └── speaker/
+    ├── campplus.onnx              # 说话人编码器（CAM++，spk_embed_dim=192）
+    ├── cosyvoice2.yaml            # 主配置（sample_rate=24000, spk_embed_dim=192）
+    ├── flow.decoder.estimator.fp32.onnx
+    ├── flow.pt                    # Flow Matching 权重
+    ├── hift.pt                    # HiFi-GAN 声码器权重（HiFTGenerator）
+    ├── llm.pt                     # LLM 权重（Qwen2）
+    ├── speech_tokenizer_v2.onnx   # 语音 tokenizer
+    ├── speech_tokenizer_v2.batch.onnx
+    └── speaker/                   # 预计算说话人嵌入（可选，向后兼容）
         ├── embeddings.json
         └── reference/
+
+旧版目录布局（``model_path/llm``、``model_path/flow_matching`` 等）仍被
+向后兼容地支持：当 HF 布局的文件未找到时，回退到旧目录。
 
 设计要点
 --------
@@ -101,7 +105,9 @@ class CosyVoiceBackend(TTSBackend):
 
     Notes
     -----
-    CosyVoice 模型遵循 **Apache-2.0** 许可。输出采样率为 22050Hz。
+    CosyVoice 模型遵循 **Apache-2.0** 许可。输出采样率为 24000Hz
+    （与 HuggingFace 仓库 ``FunAudioLLM/CosyVoice2-0.5B`` 的
+    ``cosyvoice2.yaml`` 一致）。
     """
 
     name: str = "cosyvoice"
@@ -114,7 +120,7 @@ class CosyVoiceBackend(TTSBackend):
         acoustic_type="flow_matching",
         min_gpu_memory_gb=4.0,
         model_license="Apache-2.0",
-        sample_rate=22050,
+        sample_rate=24000,
         default_params={
             "num_ode_steps": 10,
             "ode_solver": "euler",
@@ -136,21 +142,27 @@ class CosyVoiceBackend(TTSBackend):
         chunk_size_frames: int = 150,
         chunk_overlap_frames: int = 16,
         scheduler: Any = None,
+        repo_id: str | None = None,
     ) -> None:
         """初始化 CosyVoice 后端。
 
         Parameters
         ----------
         model_path : str
-            CosyVoice 模型根路径。
+            CosyVoice 模型根路径。本地不存在时，将通过
+            :class:`HFModelManager` 从 ``repo_id`` / 默认仓库下载。
         llm_model : str
-            文本理解 LLM 模型名称或路径。
+            文本理解 LLM 模型名称或路径（HF 布局未找到 ``CosyVoice-BlankEN``
+            时的回退）。
         speech_tokenizer_model : str | None
-            语音 Tokenizer 路径；``None`` 时使用 ``model_path/speech_tokenizer/``。
+            语音 Tokenizer 权重路径；``None`` 时按 HF 布局查找
+            ``speech_tokenizer_v2.onnx``，找不到再回退到旧目录
+            ``model_path/speech_tokenizer``。
         speaker_encoder_model : str
             说话人编码器类型，默认 ``"campp"``。
         hifi_gan_path : str | None
-            HiFi-GAN 权重路径；``None`` 时使用 ``model_path/hifi_gan/``。
+            HiFi-GAN 权重路径；``None`` 时按 HF 布局查找 ``hift.pt``，
+            找不到再回退到旧目录 ``model_path/hifi_gan``。
         num_ode_steps : int
             ODE 求解步数，默认 ``10``。
         ode_solver : str
@@ -165,19 +177,19 @@ class CosyVoiceBackend(TTSBackend):
             chunk 重叠帧数，默认 ``16``。
         scheduler : Any
             显存调度器实例。
+        repo_id : str | None
+            HuggingFace 仓库 ID（如 ``"FunAudioLLM/CosyVoice2-0.5B"``）。
+            ``None`` 时使用后端默认仓库 ``cosyvoice``。
         """
         super().__init__(scheduler=scheduler)
 
         self._model_path: str = model_path
         self._llm_model_name: str = llm_model
-        self._speech_tokenizer_path: str = (
-            speech_tokenizer_model
-            or os.path.join(model_path, "speech_tokenizer")
-        )
+        # 用户显式提供的路径覆盖；None 表示在 _build_pipeline 中按 HF 布局解析
+        self._speech_tokenizer_path: str | None = speech_tokenizer_model
         self._speaker_encoder_model: str = speaker_encoder_model
-        self._hifi_gan_path: str = hifi_gan_path or os.path.join(
-            model_path, "hifi_gan"
-        )
+        self._hifi_gan_path: str | None = hifi_gan_path
+        self._repo_id: str | None = repo_id
         self._num_ode_steps: int = num_ode_steps
         self._ode_solver: str = ode_solver
         self._language: str = language
@@ -224,6 +236,7 @@ class CosyVoiceBackend(TTSBackend):
         from mosaic.nodes.audio.tts_backends.acoustic_models.speech_tokenizer import (
             SpeechTokenizer,
         )
+        from mosaic.nodes.audio.tts_backends.hf_model_manager import HFModelManager
         from mosaic.nodes.audio.tts_backends.streaming.base import StreamAdapter
         from mosaic.nodes.audio.tts_backends.text_frontends.cosyvoice_tokenizer import (
             CosyVoiceTokenizer,
@@ -233,18 +246,120 @@ class CosyVoiceBackend(TTSBackend):
         )
 
         # ------------------------------------------------------------------
+        # 0. 确保模型已下载 & 读取 cosyvoice2.yaml 配置
+        # ------------------------------------------------------------------
+        model_dir = HFModelManager.ensure_model(
+            self._model_path,
+            repo_id=self._repo_id,
+            backend_name="cosyvoice",
+        )
+        self._logger.info("CosyVoice model directory: %s", model_dir)
+
+        yaml_config = HFModelManager.load_yaml_config(
+            os.path.join(model_dir, "cosyvoice2.yaml")
+        )
+        sample_rate = int(yaml_config.get("sample_rate", self.spec.sample_rate))
+        spk_embed_dim = int(yaml_config.get("spk_embed_dim", 192))
+        llm_input_size = int(yaml_config.get("llm_input_size", 896))
+        speech_token_size = int(yaml_config.get("speech_token_size", 6561))
+        self._logger.info(
+            "CosyVoice yaml config: sample_rate=%d spk_embed_dim=%d "
+            "llm_input_size=%d speech_token_size=%d",
+            sample_rate, spk_embed_dim, llm_input_size, speech_token_size,
+        )
+
+        # ------------------------------------------------------------------
+        # 路径解析：HuggingFace 仓库布局优先，向后兼容旧目录布局
+        # ------------------------------------------------------------------
+        # LLM tokenizer 目录（Qwen2 模型目录，含 config.json/tokenizer）
+        llm_tokenizer_dir = HFModelManager.find_dir(
+            model_dir, ["CosyVoice-BlankEN", "llm", "tokenizer"]
+        )
+        if not llm_tokenizer_dir:
+            # 向后兼容：旧 model_path/llm 目录
+            llm_tokenizer_dir = os.path.join(model_dir, "llm")
+        if not os.path.isdir(llm_tokenizer_dir):
+            llm_tokenizer_dir = self._llm_model_name
+        # LLM 权重（CosyVoice 自有 LLM checkpoint，如 llm.pt）
+        llm_weight_path = HFModelManager.find_file(
+            model_dir, ["llm.pt", "llm.safetensors"]
+        )
+        self._logger.info("LLM tokenizer path: %s", llm_tokenizer_dir)
+        self._logger.info(
+            "LLM weights: %s", llm_weight_path or "(use tokenizer dir)"
+        )
+
+        # Flow Matching 权重
+        flow_weight_path = HFModelManager.find_file(
+            model_dir, ["flow.pt", "flow.safetensors", "flow_matching.safetensors"]
+        )
+        if not flow_weight_path:
+            # 向后兼容：旧 model_path/flow_matching 目录
+            legacy_flow = os.path.join(model_dir, "flow_matching")
+            flow_weight_path = legacy_flow
+        self._logger.info("Flow Matching weights: %s", flow_weight_path)
+
+        # HiFi-GAN 声码器权重（用户显式覆盖优先）
+        if self._hifi_gan_path and (
+            os.path.isfile(self._hifi_gan_path)
+            or os.path.isdir(self._hifi_gan_path)
+        ):
+            hifi_gan_weight_path = self._hifi_gan_path
+        else:
+            hifi_gan_weight_path = HFModelManager.find_file(
+                model_dir, ["hift.pt", "hifi_gan.safetensors", "vocoder.pt"]
+            )
+            if not hifi_gan_weight_path:
+                # 向后兼容：旧 model_path/hifi_gan 目录
+                hifi_gan_weight_path = os.path.join(model_dir, "hifi_gan")
+        self._logger.info("HiFi-GAN vocoder weights: %s", hifi_gan_weight_path)
+
+        # Speech tokenizer（用户显式覆盖优先）
+        if self._speech_tokenizer_path and (
+            os.path.isfile(self._speech_tokenizer_path)
+            or os.path.isdir(self._speech_tokenizer_path)
+        ):
+            speech_tokenizer_weight_path = self._speech_tokenizer_path
+        else:
+            speech_tokenizer_weight_path = HFModelManager.find_file(
+                model_dir,
+                [
+                    "speech_tokenizer_v2.onnx",
+                    "speech_tokenizer_v2.batch.onnx",
+                    "speech_tokenizer.onnx",
+                ],
+            )
+            if not speech_tokenizer_weight_path:
+                # 向后兼容：旧 model_path/speech_tokenizer 目录
+                speech_tokenizer_weight_path = os.path.join(
+                    model_dir, "speech_tokenizer"
+                )
+        self._logger.info(
+            "Speech tokenizer weights: %s", speech_tokenizer_weight_path
+        )
+
+        # Speaker encoder 权重
+        speaker_encoder_weight_path = HFModelManager.find_file(
+            model_dir,
+            ["campplus.onnx", "speaker_encoder.onnx", "speaker_encoder.pt"],
+        )
+        if not speaker_encoder_weight_path:
+            # 向后兼容：旧 model_path/speaker_encoder 目录
+            legacy_spk = os.path.join(model_dir, "speaker_encoder")
+            speaker_encoder_weight_path = legacy_spk
+        self._logger.info(
+            "Speaker encoder weights: %s", speaker_encoder_weight_path
+        )
+
+        # ------------------------------------------------------------------
         # Layer 1: 文本前端 —— CosyVoiceTokenizer + LLM
         # ------------------------------------------------------------------
-        llm_path = os.path.join(self._model_path, "llm")
-        if not os.path.isdir(llm_path):
-            llm_path = self._llm_model_name
-
         self._text_frontend = CosyVoiceTokenizer(
-            llm_model_path=llm_path,
+            llm_model_path=llm_tokenizer_dir,
         )
         try:
             self._text_frontend.load_weights(
-                weights_path=llm_path,
+                weights_path=llm_tokenizer_dir,
                 device=self._device,
                 dtype=self._dtype,
             )
@@ -252,20 +367,19 @@ class CosyVoiceBackend(TTSBackend):
             self._logger.warning(
                 "Failed to load LLM tokenizer from %s: %s. "
                 "Using dummy tokenizer.",
-                llm_path,
+                llm_tokenizer_dir,
                 exc,
             )
 
         # 加载 LLM 模型（文本理解）
-        self._load_llm(llm_path)
+        self._load_llm(llm_tokenizer_dir)
 
         # ------------------------------------------------------------------
         # Layer 2: Flow Matching 声学模型
         # ------------------------------------------------------------------
-        flow_path = os.path.join(self._model_path, "flow_matching")
         self._acoustic_model = FlowMatchingModel(
-            model_path=flow_path,
-            llm_model_path=llm_path,
+            model_path=flow_weight_path,
+            llm_model_path=llm_tokenizer_dir,
             in_channels=80,
             hidden_size=512,
             num_layers=8,
@@ -275,7 +389,7 @@ class CosyVoiceBackend(TTSBackend):
             ode_solver=self._ode_solver,
         )
         self._acoustic_model.load_weights(
-            weights_path=flow_path,
+            weights_path=flow_weight_path,
             device=self._device,
             dtype=self._dtype,
         )
@@ -284,11 +398,11 @@ class CosyVoiceBackend(TTSBackend):
         # Layer 3: HiFi-GAN 声码器（复用已有代码）
         # ------------------------------------------------------------------
         self._vocoder = HiFiGanVocoder(
-            model_path=self._hifi_gan_path,
-            sample_rate=self.spec.sample_rate,
+            model_path=hifi_gan_weight_path,
+            sample_rate=sample_rate,
         )
         self._vocoder.load_weights(
-            weights_path=self._hifi_gan_path,
+            weights_path=hifi_gan_weight_path,
             device=self._device,
             dtype=self._dtype,
         )
@@ -297,11 +411,11 @@ class CosyVoiceBackend(TTSBackend):
         # SpeechTokenizer + SpeakerEncoder
         # ------------------------------------------------------------------
         self._speech_tokenizer = SpeechTokenizer(
-            model_path=self._speech_tokenizer_path,
+            model_path=speech_tokenizer_weight_path,
         )
         try:
             self._speech_tokenizer.load_weights(
-                weights_path=self._speech_tokenizer_path,
+                weights_path=speech_tokenizer_weight_path,
                 device=self._device,
                 dtype=self._dtype,
             )
@@ -314,12 +428,11 @@ class CosyVoiceBackend(TTSBackend):
 
         self._speaker_encoder = SpeakerEncoder(
             model_type=self._speaker_encoder_model,
-            embedding_dim=512,
+            embedding_dim=spk_embed_dim,
         )
         try:
-            spk_path = os.path.join(self._model_path, "speaker_encoder")
             self._speaker_encoder.load_weights(
-                weights_path=spk_path,
+                weights_path=speaker_encoder_weight_path,
                 device=self._device,
                 dtype=self._dtype,
             )
@@ -335,7 +448,7 @@ class CosyVoiceBackend(TTSBackend):
             self._stream_adapter = StreamAdapter(
                 chunk_size=4096,
                 overlap=256,
-                sample_rate=self.spec.sample_rate,
+                sample_rate=sample_rate,
             )
 
         # ------------------------------------------------------------------
@@ -448,7 +561,7 @@ class CosyVoiceBackend(TTSBackend):
         6. mel = FlowMatchingModel.generate(text_feats, speaker_info, ...)
         7. waveform = HiFiGanVocoder.decode(mel)
         8. 如果 speed != 1.0，做时间拉伸
-        9. 返回 AudioData(waveform, sample_rate=22050)
+        9. 返回 AudioData(waveform, sample_rate=24000)
 
         Parameters
         ----------

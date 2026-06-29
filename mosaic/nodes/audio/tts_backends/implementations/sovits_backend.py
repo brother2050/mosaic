@@ -30,7 +30,21 @@ SoVITS 解码器（SemanticEncoder + Normalizing Flow + 条件 HiFi-GAN）」的
 
 目录结构约定
 ------------
-::
+支持两种布局，由 :meth:`_build_pipeline` 通过 :class:`HFModelManager`
+自动识别（优先 HuggingFace 布局，找不到时回退到旧布局）。
+
+**HuggingFace 布局**（``lj1995/GPT-SoVITS``）::
+
+    model_path/
+    ├── chinese-hubert-base/              # SSL 模型 (HuBERT)
+    ├── chinese-roberta-wwm-ext-large/    # 文本编码器 (RoBERTa)
+    ├── gsv-v2final-pretrained/           # v2 预训练 (.ckpt + .pth)
+    ├── sv/                               # 说话人验证模型
+    ├── s1bert25hz-2kh-*.ckpt             # GPT 模型 (根目录)
+    ├── s2G488k.pth, s2D488k.pth          # SoVITS generator/decoder (根目录)
+    └── hifigan_do_03357000               # HiFiGAN 声码器权重
+
+**旧布局**（向后兼容）::
 
     model_path/
     ├── gpt/
@@ -124,13 +138,23 @@ class GPTSoVITSBackend(TTSBackend):
         language: str = "zh",
         streaming_enabled: bool = True,
         scheduler: Any = None,
+        repo_id: str | None = None,
     ) -> None:
         """初始化 GPT-SoVITS 后端。
 
         Parameters
         ----------
         model_path : str
-            GPT-SoVITS 模型根路径（包含 ``gpt/`` 和 ``sovits/`` 子目录）。
+            GPT-SoVITS 模型根路径。支持两种布局：
+
+            * **HuggingFace 布局**（``lj1995/GPT-SoVITS``）：
+              ``s1bert25hz-*.ckpt`` / ``s2G*.pth`` / ``s2D*.pth``
+              / ``chinese-hubert-base/`` / ``chinese-roberta-wwm-ext-large/``
+              / ``sv/`` / ``hifigan_*`` 等文件和目录。
+            * **旧布局**：``gpt/`` 和 ``sovits/`` 子目录。
+
+            若目录不存在或为空且 ``repo_id`` / ``backend_name`` 可用，
+            将自动从 HuggingFace 下载模型。
         gpt_path : str | None
             GPT 模型单独路径；``None`` 时使用 ``model_path/gpt/``。
         sovits_path : str | None
@@ -145,6 +169,9 @@ class GPTSoVITSBackend(TTSBackend):
             是否启用流式合成。
         scheduler : Any
             显存调度器实例。
+        repo_id : str | None
+            HuggingFace 仓库 ID（如 ``"lj1995/GPT-SoVITS"``）。
+            ``None`` 时使用 ``backend_name="sovits"`` 对应的默认仓库。
         """
         super().__init__(scheduler=scheduler)
 
@@ -157,6 +184,8 @@ class GPTSoVITSBackend(TTSBackend):
         self._speaker_encoder_model: str = speaker_encoder_model
         self._language: str = language
         self._streaming_enabled: bool = streaming_enabled
+        # HuggingFace 仓库 ID（用于自动下载模型）
+        self._repo_id: str | None = repo_id
 
         # SSL 模型实例（参考音频编码用）
         self._ssl_encoder: Any = None
@@ -164,6 +193,21 @@ class GPTSoVITSBackend(TTSBackend):
         self._speaker_cache: dict[str, dict[str, Any]] = {}
         # 预计算的说话人嵌入文件路径
         self._speaker_dir: str = os.path.join(model_path, "speaker")
+
+        # HF 模型目录（_build_pipeline 中由 ensure_model 填充）
+        self._model_dir: str = model_path
+        # 各组件路径（_build_pipeline 中按 HF 布局查找填充）
+        # SoVITS generator / decoder 权重文件路径
+        self._sovits_g_path: str = ""
+        self._sovits_d_path: str = ""
+        # SSL 模型目录（chinese-hubert-base/）
+        self._ssl_model_dir: str = ""
+        # 文本编码器目录（chinese-roberta-wwm-ext-large/）
+        self._text_encoder_dir: str = ""
+        # 说话人验证模型文件路径（sv/pretrained_eres2netv2w24s4ep4.ckpt）
+        self._speaker_verifier_path: str = ""
+        # 声码器文件路径（hifigan_do_03357000 等）
+        self._vocoder_path: str = ""
 
     # ==================================================================
     # 生命周期：组装 / 销毁管线
@@ -185,6 +229,7 @@ class GPTSoVITSBackend(TTSBackend):
         from mosaic.nodes.audio.tts_backends.acoustic_models.gpt2_ar import (
             GPT2ARModel,
         )
+        from mosaic.nodes.audio.tts_backends.hf_model_manager import HFModelManager
         from mosaic.nodes.audio.tts_backends.streaming.base import StreamAdapter
         from mosaic.nodes.audio.tts_backends.text_frontends.sovits_tokenizer import (
             SoVITSTokenizer,
@@ -194,11 +239,122 @@ class GPTSoVITSBackend(TTSBackend):
         )
 
         # ------------------------------------------------------------------
+        # 确保 HF 模型已下载到本地
+        # ------------------------------------------------------------------
+        # GPT-SoVITS HF 仓库 (lj1995/GPT-SoVITS) 实际布局：
+        #   chinese-hubert-base/              SSL 模型 (HuBERT)
+        #   chinese-roberta-wwm-ext-large/    文本编码器 (RoBERTa)
+        #   gsv-v2final-pretrained/           v2 final 预训练 (GPT .ckpt + SoVITS .pth)
+        #   gsv-v4-pretrained/                v4 预训练
+        #   v2Pro/                            v2 Pro
+        #   sv/                               说话人验证模型
+        #   s1bert25hz-2kh-*.ckpt             GPT 模型 v2 (根目录)
+        #   s1v3.ckpt                         GPT 模型 v3 (根目录)
+        #   s2G488k.pth, s2D488k.pth          SoVITS v1 (根目录)
+        #   s2Gv3.pth                         SoVITS v3 (根目录)
+        #   hifigan_config.json, hifigan_do_03357000   HiFiGAN 配置与权重
+        #
+        # 若 model_path 已是存在的目录（含手动布置的模型目录），
+        # 直接使用该目录；否则调用 ensure_model 自动从 HuggingFace 下载。
+        if os.path.isdir(self._model_path):
+            model_dir = self._model_path
+        else:
+            try:
+                model_dir = HFModelManager.ensure_model(
+                    self._model_path,
+                    repo_id=self._repo_id,
+                    backend_name="sovits",
+                )
+            except Exception as exc:  # noqa: BLE001
+                self._logger.debug(
+                    "HF model download skipped/failed for %s: %s. "
+                    "Using local path as-is.",
+                    self._model_path,
+                    exc,
+                )
+                model_dir = self._model_path
+        self._model_dir = model_dir
+
+        # ------------------------------------------------------------------
+        # 解析各组件路径（按 HF 仓库实际布局查找，兼容旧 gpt/ sovits/ 布局）
+        # ------------------------------------------------------------------
+        # GPT 模型权重：HF 仓库为 .ckpt 文件（如 s1bert25hz-2kh-*.ckpt）
+        gpt_ckpt_path = HFModelManager.find_file(
+            model_dir,
+            [
+                "s1bert25hz-2kh-longer-epoch=68e-step=50232.ckpt",
+                "s1v3.ckpt",
+                "gsv-v2final-pretrained/s1bert25hz-5kh-longer-epoch=12-step=369668.ckpt",
+            ],
+        )
+        # 回退：未找到 .ckpt 时使用旧 gpt/ 目录（保持兼容）
+        gpt_weights = gpt_ckpt_path or self._gpt_path
+
+        # SoVITS 解码器权重：HF 仓库为 .pth 文件
+        # s2G* 为 generator，s2D* 为 decoder
+        sovits_g_path = HFModelManager.find_file(
+            model_dir,
+            [
+                "s2G488k.pth",
+                "s2Gv3.pth",
+                "gsv-v2final-pretrained/s2G2333k.pth",
+                "v2Pro/s2Gv2Pro.pth",
+            ],
+        )
+        sovits_d_path = HFModelManager.find_file(
+            model_dir,
+            [
+                "s2D488k.pth",
+                "gsv-v2final-pretrained/s2D2333k.pth",
+                "v2Pro/s2Dv2Pro.pth",
+            ],
+        )
+        self._sovits_g_path = sovits_g_path
+        self._sovits_d_path = sovits_d_path
+        # 回退：未找到 .pth 时使用旧 sovits/ 目录（保持兼容）
+        sovits_weights = sovits_g_path or self._sovits_path
+
+        # SSL 模型目录：HF 仓库在 chinese-hubert-base/
+        self._ssl_model_dir = HFModelManager.find_dir(
+            model_dir,
+            ["chinese-hubert-base", "sovits/ssl", "ssl"],
+        )
+
+        # 文本编码器目录：HF 仓库在 chinese-roberta-wwm-ext-large/
+        self._text_encoder_dir = HFModelManager.find_dir(
+            model_dir,
+            ["chinese-roberta-wwm-ext-large", "bert", "text_encoder"],
+        )
+
+        # 说话人验证模型：HF 仓库在 sv/
+        self._speaker_verifier_path = HFModelManager.find_file(
+            model_dir,
+            [
+                "sv/pretrained_eres2netv2w24s4ep4.ckpt",
+                "speaker_encoder/pretrained_eres2netv2w24s4ep4.ckpt",
+            ],
+        )
+
+        # 声码器：HF 仓库为 hifigan_do_03357000 或 gsv-v4-pretrained/vocoder.pth
+        self._vocoder_path = HFModelManager.find_file(
+            model_dir,
+            ["hifigan_do_03357000", "gsv-v4-pretrained/vocoder.pth", "vocoder.pth"],
+        )
+
+        # ------------------------------------------------------------------
         # Layer 1: 文本前端 —— SoVITSTokenizer
         # ------------------------------------------------------------------
+        # 分词器：优先旧 gpt/ 目录，其次按 HF 仓库布局查找
         vocab_path = os.path.join(self._gpt_path, "vocab.json")
-        if not os.path.exists(vocab_path):
-            vocab_path = ""
+        if not os.path.isfile(vocab_path):
+            vocab_path = HFModelManager.find_file(
+                model_dir,
+                [
+                    "chinese-roberta-wwm-ext-large/tokenizer.json",
+                    "gpt/vocab.json",
+                    "vocab.json",
+                ],
+            )
         self._text_frontend = SoVITSTokenizer(
             vocab_path=vocab_path,
             language=self._language,
@@ -207,13 +363,14 @@ class GPTSoVITSBackend(TTSBackend):
         # ------------------------------------------------------------------
         # Layer 2: 声学模型 —— GPT2ARModel
         # ------------------------------------------------------------------
+        # GPT 权重：优先 HF .ckpt 文件，回退到旧 gpt/ 目录
         self._acoustic_model = GPT2ARModel(
             model_path=self._gpt_path,
             vocab_size=self._text_frontend.vocab_size,
             semantic_vocab_size=768,  # SSL 码本大小
         )
         self._acoustic_model.load_weights(
-            weights_path=self._gpt_path,
+            weights_path=gpt_weights,
             device=self._device,
             dtype=self._dtype,
         )
@@ -221,6 +378,7 @@ class GPTSoVITSBackend(TTSBackend):
         # ------------------------------------------------------------------
         # Layer 3: SoVITS 解码器 —— 语义 token → 波形
         # ------------------------------------------------------------------
+        # SoVITS 权重：优先 HF .pth 文件（generator），回退到旧 sovits/ 目录
         self._vocoder = SoVITSDecoder(
             model_path=self._sovits_path,
             ssl_vocab_size=768,
@@ -228,7 +386,7 @@ class GPTSoVITSBackend(TTSBackend):
             sample_rate=self.spec.sample_rate,
         )
         self._vocoder.load_weights(
-            weights_path=self._sovits_path,
+            weights_path=sovits_weights,
             device=self._device,
             dtype=self._dtype,
         )
@@ -275,9 +433,23 @@ class GPTSoVITSBackend(TTSBackend):
 
         尝试通过 transformers 加载 HuBERT/Wav2Vec2 模型。如果加载失败，
         语音克隆功能将不可用（但普通合成不受影响）。
+
+        SSL 模型路径解析优先级：
+
+        1. HF 仓库布局：``chinese-hubert-base/`` 目录（由
+           :meth:`_build_pipeline` 中 ``HFModelManager.find_dir`` 查找）。
+        2. 旧布局：``sovits/ssl/`` 目录。
+        3. ``self._ssl_model_name`` 模型名称（由 transformers 从网络拉取）。
         """
-        ssl_dir = os.path.join(self._sovits_path, "ssl")
-        ssl_path = ssl_dir if os.path.isdir(ssl_dir) else self._ssl_model_name
+        # 优先使用 HF 仓库布局查找到的 SSL 目录
+        if self._ssl_model_dir:
+            ssl_path = self._ssl_model_dir
+        else:
+            # 回退到旧布局：sovits/ssl 目录或模型名称
+            ssl_dir = os.path.join(self._sovits_path, "ssl")
+            ssl_path = (
+                ssl_dir if os.path.isdir(ssl_dir) else self._ssl_model_name
+            )
 
         try:
             import torch  # type: ignore  # noqa: F401

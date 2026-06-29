@@ -22,7 +22,7 @@ Mosaic TTS 子系统提供四个本地后端和一个云端回退后端，覆盖
 |---|---|---|---|---|
 | 声学模型 | LLaMA | LLaMA | GPT-2 | Flow Matching |
 | 生成方式 | 自回归 | 自回归 | 自回归 | ODE 求解 |
-| 采样率 | 24000 | 22050 | 32000 | 22050 |
+| 采样率 | 24000 | 22050 | 32000 | 24000 |
 | 流式延迟 | ~50ms | ~80ms | ~100ms | ~300ms |
 | 显存需求 | ~2GB | ~3GB | ~4GB | ~4GB |
 | 语音克隆 | seed 随机 | ref tokens | ref + SSL | ref + speech tokens |
@@ -54,7 +54,7 @@ TTS Node (路由器)
 │   ├── GPT2ARModel          [GPT2LMHeadModel + ref tokens + spk_emb]
 │   └── SoVITSDecoder        [SemanticEnc + Flow + 条件化HiFiGAN]
 │
-└── backend="cosyvoice"→ CosyVoiceBackend (22050Hz, FlowMatching, 高质量)
+└── backend="cosyvoice"→ CosyVoiceBackend (24000Hz, FlowMatching, 高质量)
     ├── CosyVoiceTokenizer   [LLM tokenizer + LLM 编码]
     ├── FlowMatchingModel    [FlowEstimator Transformer + ODE Solver]
     ├── SpeechTokenizer      [参考音频→语音tokens]
@@ -161,7 +161,7 @@ backend = CosyVoiceBackend(
 )
 backend.load(device="cuda", dtype="float16")
 audio = backend.synthesize("你好，世界", language="zh")
-# sample_rate = 22050
+# sample_rate = 24000
 
 # 流式合成
 for chunk in backend.synthesize_stream("这是一段流式合成的文本。", language="zh"):
@@ -191,7 +191,7 @@ from mosaic.nodes.audio.tts_backends.implementations.fish_backend import FishSpe
 backend = FishSpeechBackend(model_path="/data/fish_speech")
 backend.load(device="cuda", dtype="float16")
 audio = backend.synthesize("Hello, 世界", language="en")
-# sample_rate = 22050
+# sample_rate = 24000
 ```
 
 ### 通过 TTS 节点统一调用
@@ -210,7 +210,7 @@ audio = tts.run({"text": "你好", "language": "zh", "quality": True})
 
 ## 注意事项
 
-1. **采样率差异**：四个后端的采样率不同（24000/22050/32000/22050Hz），混用时需注意重采样。
+1. **采样率差异**：四个后端的采样率不同（24000/22050/32000/24000Hz），混用时需注意重采样。
 2. **显存管理**：同时加载多个后端时，使用 Scheduler 统一管理 GPU 显存，支持 LRU 淘汰。
 3. **许可证**：ChatTTS 为 CC BY-NC 4.0（不可商用），其余三个后端均可商用。
 4. **依赖惰性加载**：所有后端的 torch/transformers/safetensors 均为惰性导入，模块可在无这些依赖时正常 import。

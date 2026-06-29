@@ -567,11 +567,11 @@ cd /workspace/mosaic && python -m pytest tests/tts/ -v --tb=short
 | 用例 ID | 描述 | 预期结果 |
 | --- | --- | --- |
 | test_T_CVBE_01 | 后端创建成功 | 实例非空，name='cosyvoice' |
-| test_T_CVBE_02 | spec 属性正确 | acoustic_type='flow_matching', sample_rate=22050 |
+| test_T_CVBE_02 | spec 属性正确 | acoustic_type='flow_matching', sample_rate=24000 |
 | test_T_CVBE_03 | load 成功 | is_loaded=True |
 | test_T_CVBE_04 | unload 成功 | is_loaded=False |
 | test_T_CVBE_05 | synthesize 基本合成 | 输出 AudioData |
-| test_T_CVBE_06 | synthesize sample_rate | 22050 |
+| test_T_CVBE_06 | synthesize sample_rate | 24000 |
 | test_T_CVBE_07 | synthesize waveform 非空 | len > 0 |
 | test_T_CVBE_08 | 中文输入 | metadata.language='zh' |
 | test_T_CVBE_09 | 英文输入 | metadata.language='en' |
@@ -635,5 +635,5 @@ cd /workspace/mosaic && python -m pytest tests/tts/ -v --tb=short
 | test_T_STRCOMP_01 | AR 后端有 synthesize_stream | ChatTTS/Fish/SoVITS 均有方法 |
 | test_T_STRCOMP_02 | CosyVoice 有 synthesize_stream | 方法存在 |
 | test_T_STRCOMP_03 | 流式输出 AudioData | yield AudioData 对象 |
-| test_T_STRCOMP_04 | 流式与非流式采样率一致 | 均为 22050Hz |
+| test_T_STRCOMP_04 | 流式与非流式采样率一致 | 均为 24000Hz |
 | test_T_STRCOMP_05 | chunk_size 参数被接受 | 不崩溃 |

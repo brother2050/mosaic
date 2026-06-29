@@ -213,18 +213,22 @@ class ChatTTSBackend(TTSBackend):
         use_flash_attention: bool = True,
         streaming_enabled: bool = True,
         scheduler: Any = None,
+        repo_id: str | None = None,
     ) -> None:
         """初始化 ChatTTS 后端。
 
         Parameters
         ----------
         model_path : str
-            ChatTTS 模型权重路径（包含 ``config.json``、``acoustic_model.*``、
-            ``dvae.safetensors``、``vocos.safetensors`` 等文件）。
+            ChatTTS 模型目录路径。若本地目录不存在或为空，将通过
+            :class:`HFModelManager` 从 HuggingFace 仓库下载（默认
+            ``2Noise/ChatTTS``）。HF 仓库布局为 ``config/`` (YAML 配置)
+            + ``asset/`` (权重与 tokenizer)。
         vocos_path : str | None, default None
-            Vocos 权重路径；``None`` 时使用 ``model_path/vocos.safetensors``。
+            Vocos 权重路径；``None`` 时自动从 ``asset/Vocos.safetensors``
+            查找。提供自定义路径时优先使用。
         num_vq : int, default 4
-            VQ 码本组数。
+            VQ 码本组数。若 ``config/gpt.yaml`` 存在，以配置值为准。
         language : str, default "zh"
             默认语言代码。
         use_flash_attention : bool, default True
@@ -234,6 +238,10 @@ class ChatTTSBackend(TTSBackend):
         scheduler : Any
             显存调度器实例，``None`` 使用全局单例。透传给
             :meth:`TTSBackend.__init__`。
+        repo_id : str | None, default None
+            HuggingFace 仓库 ID（如 ``"2Noise/ChatTTS"``）。``None`` 时
+            使用 :attr:`HFModelManager.DEFAULT_REPOS` 中 ``"chattts"`` 对应
+            的默认仓库。
         """
         super().__init__(scheduler=scheduler)
 
@@ -244,6 +252,12 @@ class ChatTTSBackend(TTSBackend):
         self._language: str = language
         self._use_flash_attention: bool = use_flash_attention
         self._streaming_enabled: bool = streaming_enabled
+        self._repo_id: str | None = repo_id
+
+        # 解析后的模型目录（_build_pipeline 中由 HFModelManager 填充）
+        self._model_dir: str = model_path
+        # Embed 权重路径（_build_pipeline 中填充，供说话人嵌入使用）
+        self._embed_path: str = ""
 
         # DVAE / Vocos 实例引用（_build_pipeline 中填充，便于异常清理）
         self._dvae: Any = None
@@ -264,12 +278,18 @@ class ChatTTSBackend(TTSBackend):
         5. Layer 3  — :class:`_CompositeVocoder`（组合 3a + 3b）
         6. Layer 4 — :class:`StreamAdapter`（流式适配，按需构建）
 
+        路径解析遵循 HuggingFace 仓库 ``2Noise/ChatTTS`` 的实际布局：
+        ``config/`` (YAML 配置) + ``asset/`` (权重与 tokenizer)。
+        通过 :class:`HFModelManager` 统一查找文件，兼容多种文件命名
+        (``.safetensors`` / ``.pt``) 与目录结构。
+
         所有组件均在此方法内部延迟导入，避免模块加载阶段的硬依赖。
         """
-        # 延迟导入四层组件，避免模块加载阶段产生硬依赖
+        # 延迟导入四层组件与 HF 模型管理器，避免模块加载阶段产生硬依赖
         from mosaic.nodes.audio.tts_backends.acoustic_models.llama_ar import (
             LlamaARModel,
         )
+        from mosaic.nodes.audio.tts_backends.hf_model_manager import HFModelManager
         from mosaic.nodes.audio.tts_backends.streaming.base import StreamAdapter
         from mosaic.nodes.audio.tts_backends.text_frontends.chat_tokenizer import (
             ChatTokenizer,
@@ -278,12 +298,88 @@ class ChatTTSBackend(TTSBackend):
         from mosaic.nodes.audio.tts_backends.vocoders.vocos import VocosVocoder
 
         # ------------------------------------------------------------------
+        # 确保 HF 模型已下载
+        # ------------------------------------------------------------------
+        # 本地目录已存在时（含空目录，兼容测试与自定义布局）直接使用，
+        # 不触发下载；目录不存在时通过 HFModelManager 从 HF 下载。
+        # 下载失败（离线/无网络）时回退到本地路径，由后续路径解析兜底。
+        if os.path.isdir(self._model_path):
+            model_dir = self._model_path
+        else:
+            try:
+                model_dir = HFModelManager.ensure_model(
+                    self._model_path,
+                    repo_id=self._repo_id,
+                    backend_name="chattts",
+                )
+            except Exception as exc:  # noqa: BLE001
+                self._logger.warning(
+                    "Failed to ensure HF model download (%s); "
+                    "falling back to local path %s",
+                    exc,
+                    self._model_path,
+                )
+                model_dir = self._model_path
+        self._model_dir = model_dir
+
+        # ------------------------------------------------------------------
+        # 读取 YAML 配置获取模型超参数（覆盖默认值）
+        # ------------------------------------------------------------------
+        gpt_config = HFModelManager.load_yaml_config(
+            os.path.join(model_dir, "config", "gpt.yaml")
+        )
+        num_audio_tokens: int = gpt_config.get("num_audio_tokens", 626)
+        num_text_tokens: int = gpt_config.get("num_text_tokens", 21178)
+        num_vq: int = gpt_config.get("num_vq", self._num_vq)
+        # 同步 num_vq 到实例，确保各组件使用一致值
+        self._num_vq = num_vq
+
+        vocos_config = HFModelManager.load_yaml_config(
+            os.path.join(model_dir, "config", "vocos.yaml")
+        )
+        vocos_sample_rate: int = vocos_config.get(
+            "sample_rate", self.spec.sample_rate
+        )
+        vocos_n_mels: int = vocos_config.get("n_mels", 100)
+
+        self._logger.debug(
+            "ChatTTS config: num_audio_tokens=%d num_text_tokens=%d "
+            "num_vq=%d vocos_sample_rate=%d vocos_n_mels=%d",
+            num_audio_tokens,
+            num_text_tokens,
+            num_vq,
+            vocos_sample_rate,
+            vocos_n_mels,
+        )
+
+        # ------------------------------------------------------------------
         # Layer 1: 文本前端 —— ChatTokenizer
         # ------------------------------------------------------------------
-        # vocab.json 存在则加载词表，否则使用空路径退化为字符级分词
-        vocab_path = os.path.join(self._model_path, "vocab.json")
-        if not os.path.exists(vocab_path):
+        # Tokenizer 路径解析（按优先级）：
+        #   1. asset/tokenizer/ 目录 (HuggingFace tokenizer 格式)
+        #   2. asset/tokenizer.pt (PyTorch tokenizer)
+        #   3. vocab.json (兼容旧布局)
+        #   4. 空字符串 → 字符级分词
+        tokenizer_dir = HFModelManager.find_dir(model_dir, ["asset/tokenizer"])
+        tokenizer_pt = HFModelManager.find_file(
+            model_dir, ["asset/tokenizer.pt"]
+        )
+        vocab_json = HFModelManager.find_file(
+            model_dir, ["vocab.json", "asset/vocab.json"]
+        )
+
+        if tokenizer_dir:
+            vocab_path = tokenizer_dir
+        elif tokenizer_pt:
+            vocab_path = tokenizer_pt
+        elif vocab_json:
+            vocab_path = vocab_json
+        else:
             vocab_path = ""  # 字符级分词
+
+        self._logger.debug(
+            "ChatTTS tokenizer path: %s", vocab_path or "(char-level)"
+        )
         self._text_frontend = ChatTokenizer(
             vocab_path=vocab_path,
             num_vq=self._num_vq,
@@ -293,15 +389,38 @@ class ChatTTSBackend(TTSBackend):
         # ------------------------------------------------------------------
         # Layer 2: 声学模型 —— LlamaARModel
         # ------------------------------------------------------------------
+        # GPT model 路径解析（按优先级）：
+        #   1. asset/gpt/ 目录 (config.json + model.safetensors, transformers 格式)
+        #   2. asset/GPT.pt (PyTorch checkpoint)
+        gpt_dir = HFModelManager.find_dir(model_dir, ["asset/gpt"])
+        gpt_pt = HFModelManager.find_weight(
+            model_dir, "GPT", subdirs=["asset", ""]
+        )
+
+        if gpt_dir:
+            gpt_model_path = gpt_dir
+            gpt_weights_path = gpt_dir
+        elif gpt_pt:
+            gpt_model_path = model_dir
+            gpt_weights_path = gpt_pt
+        else:
+            gpt_model_path = model_dir
+            gpt_weights_path = model_dir
+
+        self._logger.debug(
+            "ChatTTS GPT model path: %s | weights: %s",
+            gpt_model_path,
+            gpt_weights_path,
+        )
         self._acoustic_model = LlamaARModel(
-            model_path=self._model_path,
+            model_path=gpt_model_path,
             num_vq=self._num_vq,
-            num_audio_tokens=1024,
-            num_text_tokens=self._text_frontend.vocab_size,
+            num_audio_tokens=num_audio_tokens,
+            num_text_tokens=num_text_tokens,
             use_flash_attention=self._use_flash_attention,
         )
         self._acoustic_model.load_weights(
-            weights_path=self._model_path,
+            weights_path=gpt_weights_path,
             device=self._device,
             dtype=self._dtype,
         )
@@ -309,14 +428,27 @@ class ChatTTSBackend(TTSBackend):
         # ------------------------------------------------------------------
         # Layer 3a: DVAE 解码器 —— VQ token → mel
         # ------------------------------------------------------------------
+        # DVAE 权重查找：优先 DVAE.safetensors / DVAE.pt，
+        # 回退到 Decoder.safetensors / Decoder.pt
+        dvae_path = HFModelManager.find_weight(
+            model_dir, "DVAE", subdirs=["asset", ""]
+        )
+        if not dvae_path:
+            dvae_path = HFModelManager.find_weight(
+                model_dir, "Decoder", subdirs=["asset", ""]
+            )
+
+        self._logger.debug(
+            "ChatTTS DVAE weights path: %s", dvae_path or "(not found)"
+        )
         self._dvae = DVAEDecoder(
             num_vq=self._num_vq,
-            num_audio_tokens=1024,
+            num_audio_tokens=num_audio_tokens,
             hidden_size=512,
-            mel_bins=80,
+            mel_bins=vocos_n_mels,
         )
         self._dvae.load_weights(
-            weights_path=os.path.join(self._model_path, "dvae.safetensors"),
+            weights_path=dvae_path,
             device=self._device,
             dtype=self._dtype,
         )
@@ -324,13 +456,21 @@ class ChatTTSBackend(TTSBackend):
         # ------------------------------------------------------------------
         # Layer 3b: Vocos 声码器 —— mel → waveform
         # ------------------------------------------------------------------
-        vocos_path = self._vocos_path or os.path.join(
-            self._model_path, "vocos.safetensors"
+        # Vocos 权重：优先用户自定义路径 (vocos_path)，否则从 HF 布局查找
+        if self._vocos_path:
+            vocos_path = self._vocos_path
+        else:
+            vocos_path = HFModelManager.find_weight(
+                model_dir, "Vocos", subdirs=["asset", ""]
+            )
+
+        self._logger.debug(
+            "ChatTTS Vocos weights path: %s", vocos_path or "(not found)"
         )
         self._vocos = VocosVocoder(
             model_path=vocos_path,
-            n_mels=80,
-            sample_rate=self.spec.sample_rate,
+            n_mels=vocos_n_mels,
+            sample_rate=vocos_sample_rate,
         )
         self._vocos.load_weights(
             weights_path=vocos_path,
@@ -342,6 +482,16 @@ class ChatTTSBackend(TTSBackend):
         # Layer 3: 复合声码器 —— 组合 DVAE + Vocos
         # ------------------------------------------------------------------
         self._vocoder = _CompositeVocoder(self._dvae, self._vocos)
+
+        # ------------------------------------------------------------------
+        # Embed 权重路径（说话人嵌入，供 sample_random_speaker 等使用）
+        # ------------------------------------------------------------------
+        self._embed_path = HFModelManager.find_weight(
+            model_dir, "Embed", subdirs=["asset", ""]
+        )
+        self._logger.debug(
+            "ChatTTS Embed weights path: %s", self._embed_path or "(not found)"
+        )
 
         # ------------------------------------------------------------------
         # Layer 4: 流式适配器 —— 按需构建
@@ -649,7 +799,7 @@ class ChatTTSBackend(TTSBackend):
         """随机采样一个说话人嵌入并编码为字符串。
 
         采用高斯分布采样：``spk = randn * std + mean``，其中 ``mean`` / ``std``
-        从模型路径下的 ``spk_stat.pt`` 加载（若存在），否则使用默认值。
+        从模型路径下的 ``asset/spk_stat.pt`` 加载（若存在），否则使用默认值。
         采样后经 ``float16`` 量化、LZMA2 压缩、Base16384 编码为字符串，与
         :meth:`ChatTokenizer.encode_speaker` 的解码流程对称。
 
@@ -670,11 +820,16 @@ class ChatTTSBackend(TTSBackend):
         import torch
 
         # 加载 mean / std（若 spk_stat.pt 存在）
+        # spk_stat.pt 在 HF 布局中位于 asset/spk_stat.pt
+        from mosaic.nodes.audio.tts_backends.hf_model_manager import HFModelManager
+
         dim = self._SPK_EMBED_DIM
         mean: Any = torch.zeros(dim)
         std: Any = torch.ones(dim)
-        stat_path = os.path.join(self._model_path, "spk_stat.pt")
-        if os.path.exists(stat_path):
+        stat_path = HFModelManager.find_file(
+            self._model_path, ["asset/spk_stat.pt", "spk_stat.pt"]
+        )
+        if stat_path:
             try:
                 stat = torch.load(stat_path, map_location="cpu")
                 mean = stat.get("mean", mean)

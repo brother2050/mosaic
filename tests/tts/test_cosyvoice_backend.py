@@ -6,7 +6,7 @@ ODE 参数调节与依赖检查等功能。
 
 CosyVoice 与自回归后端的根本差异在于声学模型采用 Flow Matching（非自回归），
 通过 ODE 求解从高斯噪声一次性生成完整 mel spectrogram，再经 HiFi-GAN 解码为
-22050Hz 单声道波形。所有测试使用 mock 对象替代真实管线，避免依赖预训练权重。
+24000Hz 单声道波形。所有测试使用 mock 对象替代真实管线，避免依赖预训练权重。
 """
 from __future__ import annotations
 
@@ -64,8 +64,8 @@ def _make_loaded_backend() -> Any:
     )
 
     backend._vocoder = MagicMock()
-    backend._vocoder.decode.return_value = (torch.randn(22050), 22050)
-    backend._vocoder.decode_chunk.return_value = (torch.randn(4096), 22050)
+    backend._vocoder.decode.return_value = (torch.randn(24000), 24000)
+    backend._vocoder.decode_chunk.return_value = (torch.randn(4096), 24000)
 
     backend._speech_tokenizer = MagicMock()
     backend._speech_tokenizer.encode.return_value = torch.randint(0, 6561, (1, 30))
@@ -93,7 +93,7 @@ def _setup_stream_mocks(backend: Any, num_chunks: int = 3) -> None:
     backend._acoustic_model.generate_stream.return_value = iter(
         [torch.randn(1, 80, 30) for _ in range(num_chunks)]
     )
-    backend._vocoder.decode.return_value = (torch.randn(4096), 22050)
+    backend._vocoder.decode.return_value = (torch.randn(4096), 24000)
 
     def mock_drain(
         session: Any, text: str, speaker: Any, lang: str, speed: float
@@ -101,8 +101,8 @@ def _setup_stream_mocks(backend: Any, num_chunks: int = 3) -> None:
         waveform = torch.randn(4096)
         yield AudioData(
             waveform=waveform,
-            sample_rate=22050,
-            metadata={"streaming": True, "duration": 4096 / 22050},
+            sample_rate=24000,
+            metadata={"streaming": True, "duration": 4096 / 24000},
         )
 
     backend._get_stream_session = MagicMock(return_value=MagicMock())
@@ -128,7 +128,7 @@ class TestCosyVoiceBackendBasic:
         backend = _make_backend()
         assert backend.spec.name == "cosyvoice"
         assert backend.spec.acoustic_type == "flow_matching"
-        assert backend.spec.sample_rate == 22050
+        assert backend.spec.sample_rate == 24000
         assert backend.spec.model_license == "Apache-2.0"
         assert backend.spec.supports_streaming is True
         assert backend.spec.supports_voice_clone is True
@@ -164,10 +164,10 @@ class TestCosyVoiceBackendBasic:
         assert isinstance(result, AudioData)
 
     def test_T_CVBE_06(self) -> None:
-        """T_CVBE_06：synthesize 输出 sample_rate = 22050。"""
+        """T_CVBE_06：synthesize 输出 sample_rate = 24000。"""
         backend = _make_loaded_backend()
         result = backend.synthesize("hello", speaker=None, language="zh")
-        assert result.sample_rate == 22050
+        assert result.sample_rate == 24000
 
 
 # ----------------------------------------------------------------------
@@ -181,8 +181,8 @@ class TestCosyVoiceBackendSynth:
         import torch
 
         backend = _make_loaded_backend()
-        waveform = torch.randn(22050)
-        backend._vocoder.decode.return_value = (waveform, 22050)
+        waveform = torch.randn(24000)
+        backend._vocoder.decode.return_value = (waveform, 24000)
 
         result = backend.synthesize("hello", language="en")
         assert result.waveform is not None
@@ -206,7 +206,7 @@ class TestCosyVoiceBackendSynth:
         backend = _make_loaded_backend()
         result = backend.synthesize("你好hello世界", language="zh")
         assert result is not None
-        assert result.sample_rate == 22050
+        assert result.sample_rate == 24000
 
     def test_T_CVBE_11(self) -> None:
         """T_CVBE_11：synthesize 自定义 num_ode_steps 生效，传至 acoustic_model.generate。"""
@@ -235,7 +235,7 @@ class TestCosyVoiceBackendClone:
         with patch.object(backend, "extract_speaker", return_value=ref_info):
             result = backend.clone_voice("fake_audio", "hello", language="zh")
             assert isinstance(result, AudioData)
-            assert result.sample_rate == 22050
+            assert result.sample_rate == 24000
 
     def test_T_CVBE_13(self) -> None:
         """T_CVBE_13：clone_voice 输出 metadata 含 backend 字段。"""
@@ -298,7 +298,7 @@ class TestCosyVoiceBackendSpeaker:
         from mosaic.core.types import AudioData
 
         backend = _make_loaded_backend()
-        audio = AudioData(waveform=torch.randn(22050), sample_rate=22050)
+        audio = AudioData(waveform=torch.randn(24000), sample_rate=24000)
         result = backend.extract_speaker(audio)
         assert isinstance(result, dict)
         assert "ref_speech_tokens" in result

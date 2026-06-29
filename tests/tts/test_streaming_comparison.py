@@ -6,7 +6,7 @@
 
 - AR 后端（ChatTTS / Fish / GPT-SoVITS）与 Flow Matching 后端
   （CosyVoice）均提供 ``synthesize_stream`` 方法；
-- CosyVoice mock 后端的流式与非流式输出采样率一致（22050Hz）；
+- CosyVoice mock 后端的流式与非流式输出采样率一致（24000Hz）；
 - ``chunk_size`` 参数可被 ``synthesize_stream`` 接受而不报错。
 
 ``torch`` 仅在函数内部局部导入，不在模块级引入。
@@ -52,8 +52,8 @@ def _make_loaded_cosyvoice() -> Any:
     )
 
     backend._vocoder = MagicMock()
-    backend._vocoder.decode.return_value = (torch.randn(22050), 22050)
-    backend._vocoder.decode_chunk.return_value = (torch.randn(4096), 22050)
+    backend._vocoder.decode.return_value = (torch.randn(24000), 24000)
+    backend._vocoder.decode_chunk.return_value = (torch.randn(4096), 24000)
 
     backend._speech_tokenizer = MagicMock()
     backend._speech_tokenizer.encode.return_value = torch.randint(0, 6561, (1, 30))
@@ -81,7 +81,7 @@ def _setup_stream_mocks(backend: Any, num_chunks: int = 3) -> None:
     backend._acoustic_model.generate_stream.return_value = iter(
         [torch.randn(1, 80, 30) for _ in range(num_chunks)]
     )
-    backend._vocoder.decode.return_value = (torch.randn(4096), 22050)
+    backend._vocoder.decode.return_value = (torch.randn(4096), 24000)
 
     def mock_drain(
         session: Any, text: str, speaker: Any, lang: str, speed: float
@@ -89,8 +89,8 @@ def _setup_stream_mocks(backend: Any, num_chunks: int = 3) -> None:
         waveform = torch.randn(4096)
         yield AudioData(
             waveform=waveform,
-            sample_rate=22050,
-            metadata={"streaming": True, "duration": 4096 / 22050},
+            sample_rate=24000,
+            metadata={"streaming": True, "duration": 4096 / 24000},
         )
 
     backend._get_stream_session = MagicMock(return_value=MagicMock())
@@ -148,17 +148,17 @@ class TestStreamingOutput:
         assert all(isinstance(c, AudioData) for c in chunks)
 
     def test_T_STRCOMP_04(self) -> None:
-        """T_STRCOMP_04：流式与非流式输出采样率一致（22050Hz）。"""
+        """T_STRCOMP_04：流式与非流式输出采样率一致（24000Hz）。"""
         backend = _make_loaded_cosyvoice()
         _setup_stream_mocks(backend, num_chunks=3)
 
         non_stream = backend.synthesize("hello", language="zh")
         stream_chunks = list(backend.synthesize_stream("hello", language="zh"))
 
-        assert non_stream.sample_rate == 22050
+        assert non_stream.sample_rate == 24000
         assert len(stream_chunks) > 0
         for chunk in stream_chunks:
-            assert chunk.sample_rate == 22050
+            assert chunk.sample_rate == 24000
 
     def test_T_STRCOMP_05(self) -> None:
         """T_STRCOMP_05：chunk_size 参数被 synthesize_stream 接受（不报错）。"""

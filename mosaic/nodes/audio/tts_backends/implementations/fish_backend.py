@@ -209,17 +209,27 @@ class FishSpeechBackend(TTSBackend):
         use_flash_attention: bool = True,
         streaming_enabled: bool = True,
         scheduler: Any = None,
+        repo_id: str | None = None,
     ) -> None:
         """初始化 Fish Speech 后端。
 
         Parameters
         ----------
         model_path : str
-            Fish Speech 模型权重路径（包含 ``config.json``、
-            ``acoustic_model.*``、``vq_decoder.safetensors`` 等文件）。
+            Fish Speech 模型权重路径。支持两种布局：
+
+            * **HuggingFace 布局**（``fishaudio/fish-speech-1.5``）：
+              ``config.json`` / ``model.pth`` /
+              ``firefly-gan-vq-fsq-8x1024-21hz-generator.pth`` /
+              ``tokenizer.tiktoken`` / ``special_tokens.json``。
+            * **旧布局**：``vocab.json`` / ``acoustic_model.*`` /
+              ``vq_decoder.safetensors`` / ``hifi_gan.safetensors``。
+
+            若目录不存在或为空且 ``repo_id`` / ``backend_name`` 可用，
+            将自动从 HuggingFace 下载模型。
         hifi_gan_path : str | None
-            HiFi-GAN 权重路径；``None`` 时使用
-            ``model_path/hifi_gan.safetensors``。
+            HiFi-GAN 权重路径；``None`` 时按候选列表查找
+            （``firefly-gan-vq-fsq-8x1024-21hz-generator.pth`` 等）。
         audio_encoder_path : str | None
             AudioEncoder 权重路径（语音克隆用）；``None`` 时不加载
             AudioEncoder，语音克隆功能不可用。
@@ -233,6 +243,9 @@ class FishSpeechBackend(TTSBackend):
             是否启用流式合成。
         scheduler : Any
             显存调度器实例。
+        repo_id : str | None
+            HuggingFace 仓库 ID（如 ``"fishaudio/fish-speech-1.5"``）。
+            ``None`` 时使用 ``backend_name="fish"`` 对应的默认仓库。
         """
         super().__init__(scheduler=scheduler)
 
@@ -243,11 +256,24 @@ class FishSpeechBackend(TTSBackend):
         self._language: str = language
         self._use_flash_attention: bool = use_flash_attention
         self._streaming_enabled: bool = streaming_enabled
+        # HuggingFace 仓库 ID（用于自动下载模型）
+        self._repo_id: str | None = repo_id
 
         # VQDecoder / HiFiGanVocoder / AudioEncoder 实例引用
         self._vq_decoder: Any = None
         self._hifi_gan: Any = None
         self._audio_encoder: Any = None
+
+        # 从 config.json 读取的模型超参数（在 _build_pipeline 中填充）
+        # Fish Speech HF 仓库 config.json 包含：model_type="dual_ar",
+        # dim=1024, n_layer=24, codebook_size=1024, num_codebooks=8,
+        # vocab_size=102048 等字段。
+        self._hf_config: dict[str, Any] = {}
+        self._config_codebook_size: int | None = None
+        self._config_num_codebooks: int | None = None
+        self._config_vocab_size: int | None = None
+        self._config_dim: int | None = None
+        self._config_n_layer: int | None = None
 
     # ==================================================================
     # 生命周期：组装 / 销毁管线
@@ -270,6 +296,7 @@ class FishSpeechBackend(TTSBackend):
         from mosaic.nodes.audio.tts_backends.acoustic_models.fish_ar import (
             FishLlamaARModel,
         )
+        from mosaic.nodes.audio.tts_backends.hf_model_manager import HFModelManager
         from mosaic.nodes.audio.tts_backends.streaming.base import StreamAdapter
         from mosaic.nodes.audio.tts_backends.text_frontends.fish_tokenizer import (
             FishTokenizer,
@@ -280,11 +307,88 @@ class FishSpeechBackend(TTSBackend):
         from mosaic.nodes.audio.tts_backends.vocoders.vq_decoder import VQDecoder
 
         # ------------------------------------------------------------------
+        # 确保 HF 模型已下载到本地
+        # ------------------------------------------------------------------
+        # Fish Speech HF 仓库 (fishaudio/fish-speech-1.5) 实际布局：
+        #   config.json                                     模型配置
+        #   model.pth                                       主 AR 模型权重
+        #   firefly-gan-vq-fsq-8x1024-21hz-generator.pth    声码器 (FireflyGAN VQ generator)
+        #   tokenizer.tiktoken                              TikToken 分词器
+        #   special_tokens.json                             特殊 token 映射
+        #
+        # 若 model_path 已是存在的目录（含手动布置的模型目录），
+        # 直接使用该目录；否则调用 ensure_model 自动从 HuggingFace 下载。
+        if os.path.isdir(self._model_path):
+            model_dir = self._model_path
+        else:
+            try:
+                model_dir = HFModelManager.ensure_model(
+                    self._model_path,
+                    repo_id=self._repo_id,
+                    backend_name="fish",
+                )
+            except Exception as exc:  # noqa: BLE001
+                self._logger.debug(
+                    "HF model download skipped/failed for %s: %s. "
+                    "Using local path as-is.",
+                    self._model_path,
+                    exc,
+                )
+                model_dir = self._model_path
+
+        # ------------------------------------------------------------------
+        # 读取 config.json 获取模型超参数
+        # ------------------------------------------------------------------
+        config_path = os.path.join(model_dir, "config.json")
+        hf_config = HFModelManager.load_json_config(config_path)
+        self._hf_config = hf_config
+        self._config_codebook_size = hf_config.get("codebook_size")
+        self._config_num_codebooks = hf_config.get("num_codebooks")
+        self._config_vocab_size = hf_config.get("vocab_size")
+        self._config_dim = hf_config.get("dim")
+        self._config_n_layer = hf_config.get("n_layer")
+        if hf_config:
+            self._logger.info(
+                "Loaded Fish Speech config: codebook_size=%s, "
+                "num_codebooks=%s, vocab_size=%s, dim=%s, n_layer=%s",
+                self._config_codebook_size,
+                self._config_num_codebooks,
+                self._config_vocab_size,
+                self._config_dim,
+                self._config_n_layer,
+            )
+
+        # ------------------------------------------------------------------
+        # 解析各组件权重路径（按 HF 仓库实际布局查找，兼容旧布局）
+        # ------------------------------------------------------------------
+        # 分词器：HF 仓库使用 tokenizer.tiktoken + special_tokens.json
+        vocab_path = HFModelManager.find_file(
+            model_dir,
+            ["tokenizer.tiktoken", "tokenizer.json", "vocab.json"],
+        )
+        # 主模型权重：HF 仓库为单个 model.pth 文件
+        main_model_path = HFModelManager.find_file(
+            model_dir,
+            ["model.pth", "model.safetensors", "pytorch_model.bin"],
+        )
+        # 声码器：HF 仓库为 firefly-gan-vq-fsq-8x1024-21hz-generator.pth
+        if self._hifi_gan_path:
+            vocoder_path = self._hifi_gan_path
+        else:
+            vocoder_path = HFModelManager.find_file(
+                model_dir,
+                [
+                    "firefly-gan-vq-fsq-8x1024-21hz-generator.pth",
+                    "hifi_gan.safetensors",
+                    "vocoder.pth",
+                    "generator.pth",
+                ],
+            )
+
+        # ------------------------------------------------------------------
         # Layer 1: 文本前端 —— FishTokenizer
         # ------------------------------------------------------------------
-        vocab_path = os.path.join(self._model_path, "vocab.json")
-        if not os.path.exists(vocab_path):
-            vocab_path = ""  # 字符级分词
+        # vocab_path 为空字符串时回退到字符级分词
         self._text_frontend = FishTokenizer(
             vocab_path=vocab_path,
             text_vocab_size=self._text_frontend_vocab_size(),
@@ -295,8 +399,10 @@ class FishSpeechBackend(TTSBackend):
         # ------------------------------------------------------------------
         # Layer 2: 声学模型 —— FishLlamaARModel
         # ------------------------------------------------------------------
+        # 主模型权重：优先使用 HF 单文件，回退到目录（兼容旧布局）
+        main_weights = main_model_path or model_dir
         self._acoustic_model = FishLlamaARModel(
-            model_path=self._model_path,
+            model_path=model_dir,
             text_vocab_size=self._text_frontend.vocab_size
             - self._audio_vocab_size(),
             audio_vocab_size=self._audio_vocab_size(),
@@ -304,7 +410,7 @@ class FishSpeechBackend(TTSBackend):
             codec_type=self._codec_type,
         )
         self._acoustic_model.load_weights(
-            weights_path=self._model_path,
+            weights_path=main_weights,
             device=self._device,
             dtype=self._dtype,
         )
@@ -312,15 +418,26 @@ class FishSpeechBackend(TTSBackend):
         # ------------------------------------------------------------------
         # Layer 3a: VQ 解码器 —— codec token → mel
         # ------------------------------------------------------------------
+        # VQ 解码器权重：优先查找单独文件；HF 仓库中 VQ 解码器与声码器合并在
+        # firefly-gan-vq-fsq-8x1024-21hz-generator.pth 中，找不到单独文件时
+        # 回退到主模型文件或声码器文件。
         self._vq_decoder = VQDecoder(
             codec_type=self._codec_type,
             codebook_size=self._audio_vocab_size(),
             codebook_dim=8,
-            num_codebooks=1,
+            num_codebooks=self._num_codebooks(),
             hidden_size=512,
             mel_bins=80,
         )
-        vq_path = os.path.join(self._model_path, "vq_decoder.safetensors")
+        vq_path = HFModelManager.find_file(
+            model_dir,
+            ["vq_decoder.safetensors", "vq_decoder.pth", "vq_decoder.bin"],
+        )
+        if not vq_path:
+            # 回退：从主模型文件或声码器文件中加载 VQ 解码器权重
+            vq_path = main_model_path or vocoder_path or os.path.join(
+                model_dir, "vq_decoder.safetensors"
+            )
         self._vq_decoder.load_weights(
             weights_path=vq_path,
             device=self._device,
@@ -330,8 +447,9 @@ class FishSpeechBackend(TTSBackend):
         # ------------------------------------------------------------------
         # Layer 3b: HiFi-GAN 声码器 —— mel → waveform
         # ------------------------------------------------------------------
-        hifi_path = self._hifi_gan_path or os.path.join(
-            self._model_path, "hifi_gan.safetensors"
+        # 声码器权重：优先 HF firefly-gan 文件，回退到旧布局 hifi_gan.safetensors
+        hifi_path = vocoder_path or os.path.join(
+            model_dir, "hifi_gan.safetensors"
         )
         self._hifi_gan = HiFiGanVocoder(
             model_path=hifi_path,
@@ -409,13 +527,29 @@ class FishSpeechBackend(TTSBackend):
         """返回文本前端词表大小（文本 + 音频）。
 
         Fish Speech 的统一词表 = text_vocab + audio_vocab。
-        此处使用默认值，实际值由 config.json 决定。
+        优先使用 config.json 中的 ``vocab_size``，否则使用默认值。
         """
+        if self._config_vocab_size is not None:
+            return self._config_vocab_size
         return 12000  # 默认：10000 文本 + 2000 音频
 
     def _audio_vocab_size(self) -> int:
-        """返回音频 codec 词表大小。"""
+        """返回音频 codec 词表大小。
+
+        优先使用 config.json 中的 ``codebook_size``，否则使用默认值。
+        """
+        if self._config_codebook_size is not None:
+            return self._config_codebook_size
         return 2000  # 默认值
+
+    def _num_codebooks(self) -> int:
+        """返回 codec codebook 数量。
+
+        优先使用 config.json 中的 ``num_codebooks``，否则使用默认值。
+        """
+        if self._config_num_codebooks is not None:
+            return self._config_num_codebooks
+        return 1  # 默认值
 
     # ==================================================================
     # 核心合成
