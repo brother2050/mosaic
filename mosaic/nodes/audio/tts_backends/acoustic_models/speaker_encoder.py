@@ -293,7 +293,7 @@ def _get_speaker_encoder_class() -> Any:
 
         def __init__(
             self,
-            embedding_dim: int = 512,
+            embedding_dim: int = 192,
             hidden_size: int = 512,
             n_blocks: int = 3,
             scale: int = 8,
@@ -375,7 +375,7 @@ class SpeakerEncoder:
         编码器类型，``"campp"`` / ``"ecapa"`` / ``"xvector"``，仅用于标识，
         不影响内部结构（内部统一使用简化 ECAPA-TDNN）。
     embedding_dim : int
-        输出说话人嵌入维度，默认 ``512``。
+        输出说话人嵌入维度，默认 ``192``。
     sample_rate : int
         期望的音频采样率，默认 ``16000``（说话人编码器通常使用 16 kHz）。
 
@@ -392,7 +392,7 @@ class SpeakerEncoder:
     def __init__(
         self,
         model_type: str = "campp",
-        embedding_dim: int = 512,
+        embedding_dim: int = 192,
         sample_rate: int = 16000,
     ) -> None:
         # 注意：此处不导入 torch；内部 nn.Module 在 load_weights 时创建
@@ -401,7 +401,7 @@ class SpeakerEncoder:
         self.sample_rate = sample_rate
 
         # 主干隐藏维度（与 embedding_dim 解耦，便于承载更宽的特征）
-        self.hidden_size: int = 512
+        self.hidden_size: int = 192
         # SE-Res2Net 残差块数量
         self.n_blocks: int = 3
         # Res2Net 多尺度分组数
@@ -663,7 +663,7 @@ class SpeakerEncoder:
 
                 state_dict = load_file(weights_path)
             elif weights_path.endswith((".pt", ".pth", ".bin")):
-                ckpt = torch.load(weights_path, map_location="cpu")
+                ckpt = torch.load(weights_path, map_location="cpu", weights_only=False)
                 state_dict = _unwrap_ckpt(ckpt)
         elif os.path.isdir(weights_path):
             for fname in (
@@ -687,7 +687,7 @@ class SpeakerEncoder:
                 ):
                     fpath = os.path.join(weights_path, fname)
                     if os.path.isfile(fpath):
-                        ckpt = torch.load(fpath, map_location="cpu")
+                        ckpt = torch.load(fpath, map_location="cpu", weights_only=False)
                         state_dict = _unwrap_ckpt(ckpt)
                         break
         return state_dict

@@ -620,11 +620,20 @@ class MotionGenerator(BaseDigitalHumanNode):
             self._tokenizer = AutoTokenizer.from_pretrained(
                 self._model_name, trust_remote_code=True
             )
-            self._pipeline = AutoModelForCausalLM.from_pretrained(
-                self._model_name,
-                torch_dtype=torch_dtype,
-                trust_remote_code=True,
-            )
+            # 优先使用 dtype 参数（新版 transformers），回退 torch_dtype（旧版兼容）
+            try:
+                self._pipeline = AutoModelForCausalLM.from_pretrained(
+                    self._model_name,
+                    dtype=torch_dtype,
+                    trust_remote_code=True,
+                )
+            except TypeError:
+                # 旧版 transformers 不支持 dtype 参数
+                self._pipeline = AutoModelForCausalLM.from_pretrained(
+                    self._model_name,
+                    torch_dtype=torch_dtype,
+                    trust_remote_code=True,
+                )
         except Exception as exc:  # noqa: BLE001
             raise RuntimeError(
                 f"Failed to load text2motion model {self._model_name!r}: {exc}. "

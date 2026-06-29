@@ -315,7 +315,7 @@ class GPT2ARModel(AcousticModel):
                         {"weight": val}, strict=False
                     )
         elif os.path.exists(pytorch_path):
-            state_dict = torch.load(pytorch_path, map_location="cpu")
+            state_dict = torch.load(pytorch_path, map_location="cpu", weights_only=False)
             model.load_state_dict(state_dict, strict=False)
 
         # 移动到 device/dtype

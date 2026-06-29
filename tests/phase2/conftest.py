@@ -29,6 +29,7 @@ def _mock_torch():
     """
     if "torch" not in sys.modules:
         mt = types.ModuleType("torch")
+        mt.__spec__ = MagicMock()  # 避免 find_spec 报 '__spec__ is None'
         _ctx = MagicMock()
         _ctx.__enter__ = MagicMock(return_value=None)
         _ctx.__exit__ = MagicMock(return_value=None)
@@ -75,6 +76,7 @@ def _inject_mock_diffusers():
     """在 sys.modules 中注入 mock diffusers，防止 import 时报错。"""
     if "diffusers" not in sys.modules:
         dm = types.ModuleType("diffusers")
+        dm.__spec__ = MagicMock()  # 避免 find_spec 报 '__spec__ is None'
         dm.StableDiffusionXLPipeline = MagicMock()
         dm.StableDiffusionXLImg2ImgPipeline = MagicMock()
         dm.StableDiffusionXLInpaintPipeline = MagicMock()
@@ -88,6 +90,7 @@ def _inject_mock_diffusers():
 def _inject_mock_transformers():
     if "transformers" not in sys.modules:
         tm = types.ModuleType("transformers")
+        tm.__spec__ = MagicMock()  # 避免 find_spec 报 '__spec__ is None'
         tm.AutoModelForImageSegmentation = MagicMock()
         tm.AutoModelForImageSegmentation.from_pretrained = MagicMock()
         sys.modules["transformers"] = tm

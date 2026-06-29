@@ -220,7 +220,11 @@ def _get_dvae_class() -> Any:
                 n_vq = min(self.num_vq, token_ids.size(1))
                 emb: Any = None
                 for i in range(n_vq):
-                    e = self.embeddings[i](token_ids[:, i, :].long())
+                    # clamp 防止 AR 模型生成的越界 token id 导致 Embedding 查表报错
+                    safe_ids = token_ids[:, i, :].long().clamp(
+                        min=0, max=self.num_audio_tokens - 1
+                    )
+                    e = self.embeddings[i](safe_ids)
                     emb = e if emb is None else emb + e
                 return emb, squeeze_batch
 
@@ -409,7 +413,7 @@ def _get_dvae_class() -> Any:
 
                         state_dict = load_file(weights_path)
                     elif weights_path.endswith((".pt", ".pth", ".bin")):
-                        ckpt = torch.load(weights_path, map_location="cpu")
+                        ckpt = torch.load(weights_path, map_location="cpu", weights_only=False)
                         state_dict = _unwrap_ckpt(ckpt)
                 elif os.path.isdir(weights_path):
                     for fname in ("dvae.safetensors", "decoder.safetensors"):
@@ -423,7 +427,7 @@ def _get_dvae_class() -> Any:
                         for fname in ("dvae.bin", "decoder.bin"):
                             fpath = os.path.join(weights_path, fname)
                             if os.path.isfile(fpath):
-                                ckpt = torch.load(fpath, map_location="cpu")
+                                ckpt = torch.load(fpath, map_location="cpu", weights_only=False)
                                 state_dict = _unwrap_ckpt(ckpt)
                                 break
                 return state_dict

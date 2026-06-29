@@ -332,7 +332,7 @@ class TestTTSBackendSpecIntegrity:
         self, tts_registry: object, backend_name: str
     ) -> None:
         """T_TTSIF_14: 各后端采样率正确：
-        chattts=24000, fish=22050, sovits=32000, cosyvoice=22050。
+        chattts=24000, fish=22050, sovits=32000, cosyvoice=24000。
         """
         spec = _get_backend_spec(tts_registry, backend_name)
 

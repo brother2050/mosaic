@@ -1212,7 +1212,7 @@ text → SoVITSTokenizer → GPT2ARModel → FlowDecoder → SoVITSDecoder → w
 **推理管线**：
 
 ```
-text → CosyVoiceTokenizer → FlowMatching → HiFiGAN → waveform (22.05kHz)
+text → CosyVoiceTokenizer → FlowMatching → HiFiGAN → waveform (24kHz)
 ```
 
 **构造函数参数**
@@ -1232,7 +1232,7 @@ text → CosyVoiceTokenizer → FlowMatching → HiFiGAN → waveform (22.05kHz)
 | 20 | 优 | 中 |
 | 50 | 最佳 | 慢 |
 
-**采样率**：22050Hz
+**采样率**：24000Hz
 
 **许可证**：Apache-2.0
 

@@ -36,6 +36,7 @@ def _inject_mock_transformers():
     """注入 mock transformers 模块。"""
     if "transformers" not in sys.modules:
         tm = types.ModuleType("transformers")
+        tm.__spec__ = MagicMock()
         tm.AutoModelForCausalLM = MagicMock()
         tm.AutoModelForCausalLM.from_pretrained = MagicMock()
         tm.AutoTokenizer = MagicMock()
@@ -80,6 +81,7 @@ def _mock_torch_phase5():
     """注入/补齐 mock torch 模块。"""
     if "torch" not in sys.modules:
         mt = types.ModuleType("torch")
+        mt.__spec__ = MagicMock()
         _ctx = MagicMock()
         _ctx.__enter__ = MagicMock(return_value=None)
         _ctx.__exit__ = MagicMock(return_value=None)
@@ -97,6 +99,7 @@ def _mock_torch_phase5():
             side_effect=lambda x: _make_mock_tensor(x)
         )
         _mcuda = types.ModuleType("torch.cuda")
+        _mcuda.__spec__ = MagicMock()
         _mcuda.is_available = MagicMock(return_value=False)
         _mcuda.get_device_properties = MagicMock()
         _mcuda.memory_allocated = MagicMock(return_value=0)
@@ -143,6 +146,7 @@ def _inject_mock_sentence_transformers():
     """注入 mock sentence_transformers 模块。"""
     if "sentence_transformers" not in sys.modules:
         st = types.ModuleType("sentence_transformers")
+        st.__spec__ = MagicMock()
         st.SentenceTransformer = _make_mock_sentence_transformer()
         sys.modules["sentence_transformers"] = st
     else:
@@ -205,6 +209,7 @@ def _inject_mock_faiss():
     """注入 mock faiss 模块。"""
     if "faiss" not in sys.modules:
         fm = types.ModuleType("faiss")
+        fm.__spec__ = MagicMock()
         fm.IndexFlatIP = _MockFaissIndex
         fm.IndexFlatL2 = _MockFaissIndex
         fm.read_index = _MockFaissModule.read_index
@@ -272,6 +277,7 @@ def _inject_mock_chromadb():
     """注入 mock chromadb 模块。"""
     if "chromadb" not in sys.modules:
         cm = types.ModuleType("chromadb")
+        cm.__spec__ = MagicMock()
         cm.PersistentClient = _MockChromaClient
         cm.EphemeralClient = _MockChromaClient
         sys.modules["chromadb"] = cm

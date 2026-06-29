@@ -171,6 +171,7 @@ class LlamaARModelBase(AcousticModel):
                 hidden_size=self._hidden_size,
                 num_hidden_layers=self._num_layers,
                 num_attention_heads=self._num_heads,
+                num_key_value_heads=self._num_heads,  # GQA=MHA，兼容 transformers v5 cache
                 max_position_embeddings=self._max_position_embeddings,
                 torch_dtype=torch_dtype,
             )
@@ -198,7 +199,7 @@ class LlamaARModelBase(AcousticModel):
             state_dict = load_file(safetensors_path)
             model.load_state_dict(state_dict, strict=False)
         elif os.path.exists(pytorch_path):
-            state_dict = torch.load(pytorch_path, map_location="cpu")
+            state_dict = torch.load(pytorch_path, map_location="cpu", weights_only=False)
             model.load_state_dict(state_dict, strict=False)
         elif os.path.isdir(weights_path):
             try:
@@ -301,6 +302,10 @@ class LlamaARModelBase(AcousticModel):
 
         for batch_idx in range(logits.size(0)):
             ids = generated_ids[batch_idx].unique().long()
+            # 安全 clamp：过滤超出 logits 维度的 id，防止越界索引
+            ids = ids[(ids >= 0) & (ids < logits.size(-1))]
+            if ids.numel() == 0:
+                continue
             batch_logits = logits[batch_idx]
             gathered = batch_logits[ids]
             gathered = torch.where(
@@ -356,11 +361,16 @@ class DualEmbedding:
                 import torch
 
                 if text_mask is not None:
-                    text_ids = input_ids.long()
+                    # 文本位置：clamp 到 [0, num_text_tokens-1]，防止越界
+                    text_ids = input_ids.long().clamp(min=0, max=num_text_tokens - 1)
                     text_emb = self.emb_text(text_ids)
                     audio_emb = torch.zeros_like(text_emb)
                     for i in range(num_vq):
-                        audio_emb = audio_emb + self.emb_code[i](input_ids[..., i].long())
+                        # 音频位置：减偏移后 clamp 到 [0, num_audio_tokens-1]
+                        audio_ids = (
+                            input_ids[..., i].long() - num_text_tokens - i * num_audio_tokens
+                        ).clamp(min=0, max=num_audio_tokens - 1)
+                        audio_emb = audio_emb + self.emb_code[i](audio_ids)
                     emb = torch.where(text_mask.bool().unsqueeze(-1), text_emb, audio_emb)
                     return emb
 
@@ -372,10 +382,15 @@ class DualEmbedding:
                         dtype=self.emb_text.weight.dtype,
                     )
                     for i in range(num_vq):
-                        emb = emb + self.emb_code[i](input_ids[..., i].long())
+                        # 减去文本 token 偏移量，使音频 token ID 落在 emb_code[i] 的合法范围
+                        audio_ids = input_ids[..., i].long() - num_text_tokens - i * num_audio_tokens
+                        audio_ids = audio_ids.clamp(min=0, max=num_audio_tokens - 1)
+                        emb = emb + self.emb_code[i](audio_ids)
                     return emb
 
-                return self.emb_text(input_ids.long())
+                # 2D 路径：纯文本 token，clamp 防止字符级回退产生的越界 id
+                safe_ids = input_ids.long().clamp(min=0, max=num_text_tokens - 1)
+                return self.emb_text(safe_ids)
 
         impl = _DualEmbeddingImpl()
         impl.__class__ = type(
@@ -579,13 +594,21 @@ class LlamaARModel(LlamaARModelBase):
                 break
 
             with torch.no_grad():
-                outputs = self._model(
-                    inputs_embeds=cur_embeds,
-                    past_key_values=past_key_values,
-                    use_cache=True,
-                )
+                try:
+                    outputs = self._model(
+                        inputs_embeds=cur_embeds,
+                        past_key_values=past_key_values,
+                        use_cache=True,
+                    )
+                except RuntimeError:
+                    # transformers v5 cache 兼容性回退：禁用 KV cache 重试
+                    past_key_values = None
+                    outputs = self._model(
+                        inputs_embeds=cur_embeds,
+                        use_cache=False,
+                    )
             logits = outputs.logits
-            past_key_values = outputs.past_key_values
+            past_key_values = getattr(outputs, "past_key_values", None)
 
             next_logits = logits[:, -1, :]
 
@@ -679,13 +702,21 @@ class LlamaARModel(LlamaARModelBase):
                 break
 
             with torch.no_grad():
-                outputs = self._model(
-                    inputs_embeds=cur_embeds,
-                    past_key_values=past_key_values,
-                    use_cache=True,
-                )
+                try:
+                    outputs = self._model(
+                        inputs_embeds=cur_embeds,
+                        past_key_values=past_key_values,
+                        use_cache=True,
+                    )
+                except RuntimeError:
+                    # transformers v5 cache 兼容性回退：禁用 KV cache 重试
+                    past_key_values = None
+                    outputs = self._model(
+                        inputs_embeds=cur_embeds,
+                        use_cache=False,
+                    )
             logits = outputs.logits
-            past_key_values = outputs.past_key_values
+            past_key_values = getattr(outputs, "past_key_values", None)
 
             next_logits = logits[:, -1, :]
 

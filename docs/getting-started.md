@@ -186,7 +186,7 @@ print(f"已生成音频: {audio.duration:.2f} 秒, {audio.sample_rate} Hz")
 ```python
 pipeline.add(TTS(backend="chattts"))    # 24000Hz, AR 流式
 pipeline.add(TTS(backend="fish"))       # 22050Hz, 多语言
-pipeline.add(TTS(backend="cosyvoice"))  # 22050Hz, 高质量
+pipeline.add(TTS(backend="cosyvoice"))  # 24000Hz, 高质量
 pipeline.add(TTS(backend="sovits"))     # 32000Hz, 极少样本克隆
 ```
 

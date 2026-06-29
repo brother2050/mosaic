@@ -25,9 +25,16 @@ sys.path.insert(0, "/workspace/mosaic")
 from mosaic.nodes.audio.tts_backends.weights.sovits_convert import SoVITSWeightConverter
 
 # 模块级跳过判断：torch / safetensors 缺失时跳过本文件全部用例
-_TORCH_AVAILABLE = importlib.util.find_spec("torch") is not None
-_SAFETENSORS_AVAILABLE = importlib.util.find_spec("safetensors") is not None
-_TRANSFORMERS_AVAILABLE = importlib.util.find_spec("transformers") is not None
+# 注意：find_spec 在模块 __spec__ 为 None 时会抛 ValueError，需捕获
+def _safe_find_spec(name: str):
+    try:
+        return importlib.util.find_spec(name)
+    except (ValueError, ModuleNotFoundError):
+        return None
+
+_TORCH_AVAILABLE = _safe_find_spec("torch") is not None
+_SAFETENSORS_AVAILABLE = _safe_find_spec("safetensors") is not None
+_TRANSFORMERS_AVAILABLE = _safe_find_spec("transformers") is not None
 
 pytestmark = pytest.mark.skipif(
     not (_TORCH_AVAILABLE and _SAFETENSORS_AVAILABLE),

@@ -5,6 +5,8 @@
 """
 from __future__ import annotations
 
+import importlib
+import importlib.util
 import sys
 from typing import Any
 
@@ -13,6 +15,46 @@ from unittest.mock import MagicMock
 
 # 确保能直接 import mosaic 包（与仓库内其它 conftest 行为一致）
 sys.path.insert(0, "/workspace/mosaic")
+
+
+# ----------------------------------------------------------------------
+# 恢复真实 transformers 模块（session 级别，autouse）
+# ----------------------------------------------------------------------
+# 其他 Phase 的 conftest 在模块加载时可能将 transformers 替换为 mock
+# （types.ModuleType("transformers") 无 __spec__）。TTS 测试需要真实的
+# LlamaForCausalLM / GPT2LMHeadModel 等类，因此在此恢复真实模块。
+@pytest.fixture(scope="session", autouse=True)
+def _restore_real_transformers():
+    """恢复真实 transformers 模块，供 TTS 加载测试使用。"""
+    mod = sys.modules.get("transformers")
+    if mod is not None and getattr(mod, "__file__", None) is not None:
+        # 已经是真实模块，无需恢复
+        yield
+        return
+
+    # 检查真实 transformers 是否已安装
+    # 临时移除 mock 以便 find_spec 能找到真实模块
+    saved = {}
+    for key in list(sys.modules.keys()):
+        if key == "transformers" or key.startswith("transformers."):
+            saved[key] = sys.modules.pop(key)
+
+    try:
+        spec = importlib.util.find_spec("transformers")
+    except (ValueError, ModuleNotFoundError):
+        spec = None
+
+    if spec is not None:
+        try:
+            importlib.import_module("transformers")
+        except Exception:
+            # 恢复失败，还原 mock
+            sys.modules.update(saved)
+    else:
+        # 真实模块未安装，还原 mock
+        sys.modules.update(saved)
+
+    yield
 
 
 # ----------------------------------------------------------------------
@@ -389,13 +431,13 @@ def mock_speaker_encoder() -> Any:
     模拟 ECAPA-TDNN 说话人编码器：encode 返回嵌入向量 [1, embedding_dim]。
     """
     encoder = MagicMock()
-    encoder.embedding_dim = 512
+    encoder.embedding_dim = 192
     encoder.sample_rate = 16000
     if _try_import_torch():
         import torch
-        encoder.encode.return_value = torch.randn(1, 512)
+        encoder.encode.return_value = torch.randn(1, 192)
     else:
-        encoder.encode.return_value = [0.0] * 512
+        encoder.encode.return_value = [0.0] * 192
     encoder.unload_weights = MagicMock()
     return encoder
 

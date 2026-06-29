@@ -123,11 +123,13 @@ class ChatTokenizer(TextFrontend):
         merges_path: str | None = None,
         num_vq: int = 4,
         sample_rate: int = 24000,
+        num_text_tokens: int = 21178,
     ) -> None:
         self.vocab_path = vocab_path
         self.merges_path = merges_path
         self.num_vq = num_vq
         self.sample_rate = sample_rate
+        self.text_vocab_size = num_text_tokens
 
         # 词表（token -> id）及其逆映射
         self.vocab: dict[str, int] = {}
@@ -233,8 +235,12 @@ class ChatTokenizer(TextFrontend):
                 i += 1
                 continue
 
-            # 3. 字符级分词
-            ids.append(base + ord(text[i]))
+            # 3. 字符级分词（字符 id = 特殊标记数量 + 字符码点）
+            #    注意：不在此处对越界 id 做截断或取模，以保持 detokenize 的
+            #    往返一致性。越界 id 的安全性由模型端 Embedding 层的 clamp
+            #    机制保障（见 DualEmbedding / UnifiedEmbedding.forward）。
+            cid = base + ord(text[i])
+            ids.append(cid)
             i += 1
 
         return ids

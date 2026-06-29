@@ -24,8 +24,15 @@ import pytest
 sys.path.insert(0, "/workspace/mosaic")
 
 # 检查 torch / transformers 是否可用（不导入，避免污染全局 sys.modules）
-_HAS_TORCH = importlib.util.find_spec("torch") is not None
-_HAS_TRANSFORMERS = importlib.util.find_spec("transformers") is not None
+# 注意：find_spec 在模块 __spec__ 为 None 时会抛 ValueError，需捕获
+def _safe_find_spec(name: str):
+    try:
+        return importlib.util.find_spec(name)
+    except (ValueError, ModuleNotFoundError):
+        return None
+
+_HAS_TORCH = _safe_find_spec("torch") is not None
+_HAS_TRANSFORMERS = _safe_find_spec("transformers") is not None
 
 pytestmark = pytest.mark.skipif(not _HAS_TORCH, reason="torch 未安装")
 

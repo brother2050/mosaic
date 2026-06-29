@@ -71,7 +71,7 @@ def _make_loaded_backend() -> Any:
     backend._speech_tokenizer.encode.return_value = torch.randint(0, 6561, (1, 30))
 
     backend._speaker_encoder = MagicMock()
-    backend._speaker_encoder.encode.return_value = torch.randn(1, 512)
+    backend._speaker_encoder.encode.return_value = torch.randn(1, 192)
 
     backend._stream_adapter = MagicMock()
     backend._llm = None

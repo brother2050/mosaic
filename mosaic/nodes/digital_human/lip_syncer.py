@@ -233,7 +233,7 @@ class LipSyncer(BaseDigitalHumanNode):
                     f"MuseTalk UNet checkpoint not found at {unet_ckpt!r}."
                 )
             self._model = {
-                "unet": torch.load(unet_ckpt, map_location=device),
+                "unet": torch.load(unet_ckpt, map_location=device, weights_only=False),
             }
 
         # wav2vec 音频特征提取器
@@ -296,11 +296,11 @@ class LipSyncer(BaseDigitalHumanNode):
                     f"Wav2Lip generator checkpoint not found at {gen_ckpt!r}."
                 )
             self._model = {
-                "generator": torch.load(gen_ckpt, map_location=device),
+                "generator": torch.load(gen_ckpt, map_location=device, weights_only=False),
             }
             disc_ckpt = os.path.join(self._model_name, "wav2lip-disc.pth")
             if os.path.exists(disc_ckpt):
-                self._discriminator = torch.load(disc_ckpt, map_location=device)
+                self._discriminator = torch.load(disc_ckpt, map_location=device, weights_only=False)
 
     def _load_sadtalker(self) -> None:
         """加载 SadTalker 口型模块。
@@ -338,7 +338,7 @@ class LipSyncer(BaseDigitalHumanNode):
             for name in ("mapping", "generator", "kp_extractor", "renderer"):
                 ckpt = os.path.join(self._model_name, f"{name}.pth")
                 if os.path.exists(ckpt):
-                    components[name] = torch.load(ckpt, map_location=device)
+                    components[name] = torch.load(ckpt, map_location=device, weights_only=False)
             if not components:
                 raise FileNotFoundError(
                     f"No SadTalker checkpoints found under {self._model_name!r}."

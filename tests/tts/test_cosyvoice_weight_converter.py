@@ -61,7 +61,7 @@ def _make_fake_checkpoint(directory: str) -> str:
         "quantizer.codebook": torch.randn(81, 64),
         "encoder.conv.weight": torch.randn(64, 1, 3),
         # speaker_encoder 组件（encoder. 前缀同时被 speaker_encoder 抽取）
-        "speaker_encoder.proj.weight": torch.randn(512, 384),
+        "speaker_encoder.proj.weight": torch.randn(192, 384),
         # vocoder 组件
         "generator.conv_pre.weight": torch.randn(128, 80, 7),
     }

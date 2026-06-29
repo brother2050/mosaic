@@ -19,8 +19,8 @@ from mosaic.nodes.audio import TTS
 
 
 def example_1_basic():
-    """示例 1：基础合成（22.05kHz，高质量）。"""
-    print("\n=== 示例 1：基础合成（22.05kHz）===")
+    """示例 1：基础合成（24kHz，高质量）。"""
+    print("\n=== 示例 1：基础合成（24kHz）===")
 
     tts = TTS(backend="cosyvoice", language="zh")
     result = tts.run(text="CosyVoice 提供最高质量的语音合成。")

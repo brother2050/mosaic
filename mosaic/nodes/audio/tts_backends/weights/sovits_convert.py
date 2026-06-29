@@ -459,7 +459,7 @@ class SoVITSWeightConverter(WeightConverter):
                 elif fname.endswith((".pt", ".pth", ".bin")):
                     import torch  # type: ignore
 
-                    ckpt = torch.load(fpath, map_location="cpu")
+                    ckpt = torch.load(fpath, map_location="cpu", weights_only=False)
                     state_dict.update(_unwrap(ckpt))
         elif os.path.isfile(source_path):
             if source_path.endswith(".safetensors"):
@@ -469,7 +469,7 @@ class SoVITSWeightConverter(WeightConverter):
             elif source_path.endswith((".pt", ".pth", ".bin")):
                 import torch  # type: ignore
 
-                ckpt = torch.load(source_path, map_location="cpu")
+                ckpt = torch.load(source_path, map_location="cpu", weights_only=False)
                 state_dict = _unwrap(ckpt)
             else:
                 raise ValueError(

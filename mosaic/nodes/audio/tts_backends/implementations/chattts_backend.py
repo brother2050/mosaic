@@ -384,6 +384,7 @@ class ChatTTSBackend(TTSBackend):
             vocab_path=vocab_path,
             num_vq=self._num_vq,
             sample_rate=self.spec.sample_rate,
+            num_text_tokens=num_text_tokens,
         )
 
         # ------------------------------------------------------------------
@@ -831,7 +832,7 @@ class ChatTTSBackend(TTSBackend):
         )
         if stat_path:
             try:
-                stat = torch.load(stat_path, map_location="cpu")
+                stat = torch.load(stat_path, map_location="cpu", weights_only=False)
                 mean = stat.get("mean", mean)
                 std = stat.get("std", std)
                 dim = int(mean.shape[-1]) if hasattr(mean, "shape") else dim

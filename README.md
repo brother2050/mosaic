@@ -34,7 +34,7 @@ Mosaic 是一个模块化、可组合的全模态生成式 AI 框架。它将文
 | **ChatTTS** | LlamaForCausalLM | DVAE + Vocos | 24000Hz | ~50ms | 韵律控制丰富，延迟最低 | CC-BY-NC-4.0 |
 | **Fish Speech** | LlamaForCausalLM | VQDec + HiFiGAN | 22050Hz | ~80ms | 多语言，统一词表 | Apache-2.0 |
 | **GPT-SoVITS** | GPT2LMHeadModel | SoVITS(Flow+HiFiGAN) | 32000Hz | ~100ms | 极少样本克隆 | MIT |
-| **CosyVoice** | FlowMatching | HiFiGAN | 22050Hz | ~300ms | 质量最高，非自回归 | Apache-2.0 |
+| **CosyVoice** | FlowMatching | HiFiGAN | 24000Hz | ~300ms | 质量最高，非自回归 | Apache-2.0 |
 
 每个后端均采用统一的四层架构：`TextFrontend → AcousticModel → Vocoder → StreamAdapter`。
 

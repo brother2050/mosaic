@@ -172,7 +172,7 @@ class HunyuanVideo(BaseVideoNode):
         try:
             generator = torch.Generator(device=device)
             generator.manual_seed(seed)
-        except (RuntimeError, ValueError):
+        except (RuntimeError, ValueError, TypeError):
             generator = torch.Generator(device="cpu")
             generator.manual_seed(seed)
 

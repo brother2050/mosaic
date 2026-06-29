@@ -31,8 +31,8 @@ def _preimport_t5_components() -> None:
     """
     try:
         import transformers
-    except ImportError:
-        return  # transformers 不可用，后续 from_pretrained 会自然报错
+    except (ImportError, ValueError):
+        return  # transformers 不可用或 torch.__spec__ 异常，后续 from_pretrained 会自然报错
 
     _missing_deps: list[str] = []
 

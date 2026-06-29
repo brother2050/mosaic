@@ -258,7 +258,7 @@ class AvatarDriver(BaseDigitalHumanNode):
             for name in ("mapping", "generator", "kp_extractor", "renderer"):
                 ckpt = os.path.join(self._model_name, f"{name}.pth")
                 if os.path.exists(ckpt):
-                    components[name] = torch.load(ckpt, map_location=device)
+                    components[name] = torch.load(ckpt, map_location=device, weights_only=False)
             if not components:
                 raise FileNotFoundError(
                     f"No SadTalker checkpoints found under {self._model_name!r}."
@@ -302,7 +302,7 @@ class AvatarDriver(BaseDigitalHumanNode):
                     f"MuseTalk UNet checkpoint not found at {unet_ckpt!r}."
                 )
             self._model = {
-                "unet": torch.load(unet_ckpt, map_location=device),
+                "unet": torch.load(unet_ckpt, map_location=device, weights_only=False),
             }
 
         # wav2vec 音频特征提取器

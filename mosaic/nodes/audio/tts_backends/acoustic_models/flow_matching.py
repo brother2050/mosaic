@@ -775,7 +775,7 @@ class FlowMatchingModel(AcousticModel):
         self._is_loaded: bool = False
 
         # mel 帧率（帧/秒）：hop_length / sample_rate
-        # CosyVoice 默认 22050Hz, hop=256 → ~86 fps
+        # CosyVoice 默认 24000Hz, hop=256 → ~94 fps
         self._mel_fps: float = 86.13
 
     # ------------------------------------------------------------------
@@ -1139,7 +1139,7 @@ class FlowMatchingModel(AcousticModel):
 
                 state_dict = load_file(weights_path)
             elif weights_path.endswith((".pt", ".pth", ".bin")):
-                ckpt = torch.load(weights_path, map_location="cpu")
+                ckpt = torch.load(weights_path, map_location="cpu", weights_only=False)
                 state_dict = _unwrap(ckpt)
         elif os.path.isdir(weights_path):
             for fname in (
@@ -1161,7 +1161,7 @@ class FlowMatchingModel(AcousticModel):
                 ):
                     fpath = os.path.join(weights_path, fname)
                     if os.path.isfile(fpath):
-                        ckpt = torch.load(fpath, map_location="cpu")
+                        ckpt = torch.load(fpath, map_location="cpu", weights_only=False)
                         state_dict = _unwrap(ckpt)
                         break
         return state_dict

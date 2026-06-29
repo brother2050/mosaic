@@ -327,7 +327,7 @@ plugin_manager.discover_directory("/path/to/plugins")
 文本 → CosyVoiceTokenizer → FlowMatching → HiFiGAN → StreamAdapter
        (SFT+指令)         (非自回归)     (mel→wav)
        
-采样率: 22050Hz    流式延迟: ~300ms
+采样率: 24000Hz    流式延迟: ~300ms
 ```
 
 ### 四层组件的统一接口

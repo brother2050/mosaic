@@ -34,6 +34,7 @@ def _mock_torch_phase3():
     """注入/补齐 mock torch 模块，确保无 GPU 环境也可运行 Phase 3 测试。"""
     if "torch" not in sys.modules:
         mt = types.ModuleType("torch")
+        mt.__spec__ = MagicMock()
         _ctx = MagicMock()
         _ctx.__enter__ = MagicMock(return_value=None)
         _ctx.__exit__ = MagicMock(return_value=None)
@@ -48,6 +49,7 @@ def _mock_torch_phase3():
         mt.ones = MagicMock(return_value=MagicMock())
         mt.tensor = MagicMock(return_value=MagicMock())
         _mcuda = types.ModuleType("torch.cuda")
+        _mcuda.__spec__ = MagicMock()
         _mcuda.is_available = MagicMock(return_value=False)
         _mcuda.get_device_properties = MagicMock()
         _mcuda.memory_allocated = MagicMock(return_value=0)
@@ -108,6 +110,7 @@ def _mock_torch_phase3():
 def _inject_mock_diffusers():
     if "diffusers" not in sys.modules:
         dm = types.ModuleType("diffusers")
+        dm.__spec__ = MagicMock()
         dm.AudioLDMPipeline = MagicMock()
         dm.AudioLDMPipeline.from_pretrained = MagicMock()
         dm.StableDiffusionXLPipeline = MagicMock()
@@ -123,6 +126,7 @@ def _inject_mock_diffusers():
 def _inject_mock_transformers():
     if "transformers" not in sys.modules:
         tm = types.ModuleType("transformers")
+        tm.__spec__ = MagicMock()
         tm.AutoProcessor = MagicMock()
         tm.AutoProcessor.from_pretrained = MagicMock()
         tm.AutoModelForSpeechSeq2Seq = MagicMock()
@@ -150,6 +154,7 @@ def _inject_mock_transformers():
 def _inject_mock_soundfile():
     if "soundfile" not in sys.modules:
         sf = types.ModuleType("soundfile")
+        sf.__spec__ = MagicMock()
         sf.read = MagicMock(return_value=(np.zeros(100, dtype=np.float32), 22050))
         sf.write = MagicMock()
         sys.modules["soundfile"] = sf
@@ -163,6 +168,7 @@ def _inject_mock_edge_tts():
     """
     if "edge_tts" not in sys.modules:
         etc = types.ModuleType("edge_tts")
+        etc.__spec__ = MagicMock()
 
         class _Communicate:
             """模拟 edge_tts.Communicate，支持 rate/pitch 等关键字参数。"""

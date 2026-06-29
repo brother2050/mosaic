@@ -295,7 +295,7 @@ class BaseImageNode(Node):
         try:
             generator = torch.Generator(device=device)
             generator.manual_seed(seed)
-        except (RuntimeError, ValueError):
+        except (RuntimeError, ValueError, TypeError):
             # CPU-only 环境可能不支持 cuda generator
             generator = torch.Generator(device="cpu")
             generator.manual_seed(seed)

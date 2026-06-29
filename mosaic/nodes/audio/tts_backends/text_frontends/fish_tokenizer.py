@@ -216,8 +216,12 @@ class FishTokenizer(TextFrontend):
                 i += 1
                 continue
 
-            # 3. 字符级分词
-            ids.append(base + ord(text[i]))
+            # 3. 字符级分词（字符 id = 特殊标记数量 + 字符码点）
+            #    注意：不在此处对越界 id 做截断或取模，以保持 detokenize 的
+            #    往返一致性。越界 id 的安全性由模型端 Embedding 层的 clamp
+            #    机制保障（见 UnifiedEmbedding.forward）。
+            cid = base + ord(text[i])
+            ids.append(cid)
             i += 1
 
         return ids

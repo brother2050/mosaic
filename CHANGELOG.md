@@ -16,7 +16,7 @@ Mosaic 项目的所有重要变更记录。
   - **ChatTTS**（CC-BY-NC-4.0，24kHz，AR 流式 ~50ms）
   - **Fish Speech**（Apache-2.0，22.05kHz，多语言）
   - **GPT-SoVITS**（MIT，32kHz，少样本克隆）
-  - **CosyVoice**（Apache-2.0，22.05kHz，Flow Matching 高质量）
+  - **CosyVoice**（Apache-2.0，24kHz，Flow Matching 高质量）
 - TTS 四层架构：`TextFrontend → AcousticModel → Vocoder → StreamAdapter`
 - 流式 TTS 输出支持（AR 逐 token / Flow Matching 分块流式）
 - 语音克隆支持（GPT-SoVITS / Fish / CosyVoice）

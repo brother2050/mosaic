@@ -37,26 +37,23 @@ classifiers = [
 ]
 
 dependencies = [
-    # PyTorch: 2.x 系列，<3.0 防止未来大版本破坏
-    "torch>=2.0.0,<3.0.0",
-    # Transformers: 4.x 系列。v5.0 有重大破坏性变更
-    # (apply_chat_template 返回类型变更、encode_plus 移除等)，
-    # 项目代码基于 4.x API 编写，暂不兼容 5.x
-    "transformers>=4.36.0,<5.0.0",
-    # Diffusers: 0.27+ 引入所需 Pipeline；<0.41 因为 0.40 废弃了
-    # enable_vae_slicing (已兼容处理)，更高版本可能有更多破坏性变更
-    "diffusers>=0.27.0,<0.41.0",
+    # PyTorch: >=2.2.0 以兼容 numpy 2.x；<3.0 防止未来大版本破坏
+    "torch>=2.2.0,<3.0.0",
+    # Transformers: >=4.36.0 保证所需 API；<6.0.0 因 v6 可能有破坏性变更。
+    # 代码已做 v5 兼容（dtype/torch_dtype 回退），支持 4.x 和 5.x
+    "transformers>=4.36.0,<6.0.0",
+    # Diffusers: >=0.27.0 引入所需 Pipeline；<1.0.0 防止大版本破坏。
+    # enable_vae_slicing 已做防御性回退，兼容 0.40+
+    "diffusers>=0.27.0,<1.0.0",
     # SentencePiece: T5 tokenizer 的必需后端（CogVideoX、AudioLDM2 等
     # 使用 T5 的 Pipeline 缺少此库时，transformers 返回 Placeholder 类
     # 而非抛 ImportError，导致 diffusers 报 "cannot be loaded" 错误）
     "sentencepiece>=0.1.99",
-    # Pillow: 图像处理基础库
-    "Pillow>=10.0.0,<14.0.0",
-    # NumPy: 1.24+ 支持。
-    # <2.0 因为 NumPy 2.0 有破坏性 C-API 变更，
-    # 且 torch<2.2 不兼容 numpy 2.0。
-    # 待 torch 下限提升到 2.2+ 后可放宽到 <3.0
-    "numpy>=1.24.0,<2.0.0",
+    # Pillow: 图像处理基础库，>=10.0.0 保证所需 API
+    "Pillow>=10.0.0,<16.0.0",
+    # NumPy: >=1.24.0 保证所需 API；<3.0.0 防止未来大版本破坏。
+    # torch>=2.2.0 已兼容 numpy 2.x，故允许 numpy 2.x
+    "numpy>=1.24.0,<3.0.0",
     # Accelerate: device_map="auto" 和 enable_model_cpu_offload 所需
     "accelerate>=0.20.0,<2.0.0",
 ]

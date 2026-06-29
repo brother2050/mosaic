@@ -68,12 +68,14 @@ def _mock_torch_module() -> Any:
         _mt.int = "int32"
         _mt.from_numpy = MagicMock(return_value=MagicMock())
         _mcuda = types.ModuleType("torch.cuda")
+        _mcuda.__spec__ = MagicMock()
         _mcuda.is_available = MagicMock(return_value=False)
         _mcuda.get_device_properties = MagicMock()
         _mcuda.memory_allocated = MagicMock(return_value=0)
         _mcuda.empty_cache = MagicMock()
         _mt.cuda = _mcuda
         _mnn = types.ModuleType("torch.nn")
+        _mnn.__spec__ = MagicMock()
         _mnn.Module = MagicMock
         _mnn.Parameter = MagicMock
         _mt.nn = _mnn

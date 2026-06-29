@@ -35,6 +35,7 @@ def _mock_torch_module():
     """注入 mock torch 模块，确保无 GPU 环境也可运行测试。"""
     if "torch" not in sys.modules:
         _mt = types.ModuleType("torch")
+        _mt.__spec__ = MagicMock()
         _ctx = MagicMock()
         _ctx.__enter__ = MagicMock(return_value=None)
         _ctx.__exit__ = MagicMock(return_value=None)
@@ -48,6 +49,7 @@ def _mock_torch_module():
         _mt.ones = MagicMock(return_value=MagicMock())
         _mt.tensor = MagicMock(return_value=MagicMock())
         _mcuda = types.ModuleType("torch.cuda")
+        _mcuda.__spec__ = MagicMock()
         _mcuda.is_available = MagicMock(return_value=False)
         _mcuda.get_device_properties = MagicMock()
         _mcuda.memory_allocated = MagicMock(return_value=0)

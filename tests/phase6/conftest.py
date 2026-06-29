@@ -190,6 +190,7 @@ def _mock_torch():
     """
     if "torch" not in sys.modules:
         mt = types.ModuleType("torch")
+        mt.__spec__ = MagicMock()
         _ctx = MagicMock()
         _ctx.__enter__ = MagicMock(return_value=None)
         _ctx.__exit__ = MagicMock(return_value=None)
@@ -216,6 +217,7 @@ def _mock_torch():
         mt.device = MagicMock(return_value="cpu")
         # torch.cuda 子模块
         _mcuda = types.ModuleType("torch.cuda")
+        _mcuda.__spec__ = MagicMock()
         _mcuda.is_available = MagicMock(return_value=False)
         _mcuda.get_device_properties = MagicMock()
         _mcuda.memory_allocated = MagicMock(return_value=0)
@@ -265,6 +267,7 @@ def _mock_torch():
         cuda = getattr(mt, "cuda", None)
         if cuda is None:
             _mcuda = types.ModuleType("torch.cuda")
+            _mcuda.__spec__ = MagicMock()
             _mcuda.is_available = MagicMock(return_value=False)
             _mcuda.get_device_properties = MagicMock()
             _mcuda.memory_allocated = MagicMock(return_value=0)
@@ -285,6 +288,7 @@ def _mock_diffusers():
     """注入 mock diffusers 模块，提供所有一致性域使用的 Pipeline 类."""
     if "diffusers" not in sys.modules:
         dm = types.ModuleType("diffusers")
+        dm.__spec__ = MagicMock()
     else:
         dm = sys.modules["diffusers"]
 
@@ -321,6 +325,7 @@ def _mock_transformers():
     """注入 mock transformers 模块."""
     if "transformers" not in sys.modules:
         tm = types.ModuleType("transformers")
+        tm.__spec__ = MagicMock()
         tm.AutoModelForCausalLM = MagicMock()
         tm.AutoModelForCausalLM.from_pretrained = MagicMock()
         tm.AutoTokenizer = MagicMock()
@@ -351,7 +356,9 @@ def _mock_insightface():
     """注入 mock insightface 模块，防止人脸检测导入失败."""
     if "insightface" not in sys.modules:
         fi = types.ModuleType("insightface")
+        fi.__spec__ = MagicMock()
         fi_app = types.ModuleType("insightface.app")
+        fi_app.__spec__ = MagicMock()
         fi.app = fi_app
         sys.modules["insightface"] = fi
         sys.modules["insightface.app"] = fi_app

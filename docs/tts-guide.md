@@ -49,7 +49,7 @@ TextFrontend → AcousticModel → Vocoder → StreamAdapter
 | **ChatTTS** | LlamaForCausalLM | DVAE + Vocos | 24000Hz | ~50ms | 实时对话、韵律控制 | CC-BY-NC-4.0 |
 | **Fish Speech** | LlamaForCausalLM | VQDec + HiFiGAN | 22050Hz | ~80ms | 多语言、跨语种 | Apache-2.0 |
 | **GPT-SoVITS** | GPT2LMHeadModel | SoVITS (Flow+HiFiGAN) | 32000Hz | ~100ms | 极少样本克隆 | MIT |
-| **CosyVoice** | FlowMatching | HiFiGAN | 22050Hz | ~300ms | 高质量、非自回归 | Apache-2.0 |
+| **CosyVoice** | FlowMatching | HiFiGAN | 24000Hz | ~300ms | 高质量、非自回归 | Apache-2.0 |
 | **edge_tts** | 云端 Azure | 云端 | 24000Hz | 不可流式 | 默认无 GPU | — |
 
 ### 各后端推理管线
@@ -124,7 +124,7 @@ TextFrontend → AcousticModel → Vocoder → StreamAdapter
   │
   ▼ HiFiGAN (mel → waveform)
   │
-  ▼ 22050Hz 单声道波形
+  ▼ 24000Hz 单声道波形
 ```
 
 ---
@@ -661,7 +661,7 @@ audios = tts.batch_synthesize(texts, language="zh")
 | 模型大小 | ~200M | ~1B | ~300M | ~300M |
 | 显存 (推理) | ~2GB | ~4GB | ~4GB | ~4GB |
 | 显存 (训练) | ~16GB | ~24GB | ~16GB | ~16GB |
-| 采样率 | 24000Hz | 22050Hz | 32000Hz | 22050Hz |
+| 采样率 | 24000Hz | 22050Hz | 32000Hz | 24000Hz |
 | 比特深度 | 16-bit | 16-bit | 16-bit | 16-bit |
 | 流式延迟 (首帧) | ~50ms | ~80ms | ~100ms | ~300ms |
 | 流式延迟 (稳定) | ~20ms/token | ~30ms/token | ~30ms/token | 一次性 |

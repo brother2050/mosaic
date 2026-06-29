@@ -23,6 +23,8 @@ from mosaic.core.types import AudioData, MotionData, MosaicData
 @pytest.fixture(scope="session", autouse=True)
 def _mock_torch() -> None:
     """Mock torch 模块（session 级别，避免加载真实 torch）。"""
+    if "torch" in sys.modules:
+        return  # 真实 torch 已加载，跳过 mock
     mock = MagicMock()
     mock.float16 = type("dtype", (), {"__repr__": lambda s: "torch.float16"})()
     mock.float32 = type("dtype", (), {"__repr__": lambda s: "torch.float32"})()
@@ -53,9 +55,11 @@ def _mock_torch() -> None:
 
 @pytest.fixture(scope="session", autouse=True)
 def _mock_diffusers() -> None:
-    """Mock diffusers 模块（session 级别）。"""
-    mock = MagicMock()
+    """Mock diffusers 模块（session 级别）。
 
+    如果 diffusers 已在 sys.modules 中（可能是其他 Phase 注入的 mock），
+    补齐 Phase 7 所需的 Pipeline 类（如 LivePortraitPipeline）。
+    """
     def _make_pipeline(name: str) -> type:
         """创建模拟 Pipeline 类。"""
 
@@ -93,23 +97,35 @@ def _mock_diffusers() -> None:
         _MockPipeline.__name__ = name
         return _MockPipeline
 
-    mock.StableDiffusionXLPipeline = _make_pipeline("StableDiffusionXLPipeline")
-    mock.StableDiffusionPipeline = _make_pipeline("StableDiffusionPipeline")
-    mock.StableDiffusionXLInstantIDPipeline = _make_pipeline(
-        "StableDiffusionXLInstantIDPipeline"
-    )
-    mock.StableDiffusionXLControlNetPipeline = _make_pipeline(
-        "StableDiffusionXLControlNetPipeline"
-    )
-    mock.ControlNetModel = _make_pipeline("ControlNetModel")
-    mock.PhotoMakerPipeline = _make_pipeline("PhotoMakerPipeline")
-    mock.LivePortraitPipeline = _make_pipeline("LivePortraitPipeline")
-    sys.modules["diffusers"] = mock
+    _pipeline_names = [
+        "StableDiffusionXLPipeline",
+        "StableDiffusionPipeline",
+        "StableDiffusionXLInstantIDPipeline",
+        "StableDiffusionXLControlNetPipeline",
+        "ControlNetModel",
+        "PhotoMakerPipeline",
+        "LivePortraitPipeline",
+    ]
+
+    if "diffusers" not in sys.modules:
+        mock = MagicMock()
+        for name in _pipeline_names:
+            setattr(mock, name, _make_pipeline(name))
+        sys.modules["diffusers"] = mock
+    else:
+        # diffusers 已存在（可能是其他 Phase 注入的 mock 或真实模块）
+        # 补齐缺失的 Pipeline 类
+        dm = sys.modules["diffusers"]
+        for name in _pipeline_names:
+            if not hasattr(dm, name):
+                setattr(dm, name, _make_pipeline(name))
 
 
 @pytest.fixture(scope="session", autouse=True)
 def _mock_transformers() -> None:
     """Mock transformers 模块（session 级别）。"""
+    if "transformers" in sys.modules:
+        return  # 真实 transformers 已加载，跳过 mock
     mock = MagicMock()
     mock.AutoModelForCausalLM.from_pretrained.return_value = MagicMock()
     mock.AutoTokenizer.from_pretrained.return_value = MagicMock()
@@ -125,6 +141,8 @@ def _mock_transformers() -> None:
 @pytest.fixture(scope="session", autouse=True)
 def _mock_insightface() -> None:
     """Mock insightface 模块（session 级别）。"""
+    if "insightface" in sys.modules:
+        return  # 真实 insightface 已加载，跳过 mock
     mock = MagicMock()
     face_app = MagicMock()
     # 模拟检测到一张人脸
@@ -143,6 +161,8 @@ def _mock_insightface() -> None:
 @pytest.fixture(scope="session", autouse=True)
 def _mock_onnxruntime() -> None:
     """Mock onnxruntime 模块（session 级别）。"""
+    if "onnxruntime" in sys.modules:
+        return  # 真实 onnxruntime 已加载，跳过 mock
     mock = MagicMock()
     mock.get_available_providers.return_value = ["CPUExecutionProvider"]
     sys.modules["onnxruntime"] = mock

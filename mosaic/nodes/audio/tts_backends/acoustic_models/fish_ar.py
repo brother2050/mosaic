@@ -72,7 +72,9 @@ class UnifiedEmbedding:
                 torch.Tensor
                     嵌入向量，shape ``[batch, seq_len, hidden_size]``。
                 """
-                return self.emb(input_ids.long())
+                # clamp 防止字符级回退产生的越界 id 导致 Embedding 查表报错
+                safe_ids = input_ids.long().clamp(min=0, max=total_vocab_size - 1)
+                return self.emb(safe_ids)
 
         impl = _UnifiedEmbeddingImpl()
         impl.__class__ = type(
@@ -303,13 +305,21 @@ class FishLlamaARModel(LlamaARModelBase):
                 break
 
             with torch.no_grad():
-                outputs = self._model(
-                    inputs_embeds=cur_embeds,
-                    past_key_values=past_key_values,
-                    use_cache=True,
-                )
+                try:
+                    outputs = self._model(
+                        inputs_embeds=cur_embeds,
+                        past_key_values=past_key_values,
+                        use_cache=True,
+                    )
+                except RuntimeError:
+                    # transformers v5 cache 兼容性回退：禁用 KV cache 重试
+                    past_key_values = None
+                    outputs = self._model(
+                        inputs_embeds=cur_embeds,
+                        use_cache=False,
+                    )
             logits = outputs.logits
-            past_key_values = outputs.past_key_values
+            past_key_values = getattr(outputs, "past_key_values", None)
 
             next_logits = logits[:, -1, :]
 
@@ -324,7 +334,9 @@ class FishLlamaARModel(LlamaARModelBase):
             audio_logits = self._top_p_filtering(audio_logits, top_p)
 
             if repetition_penalty != 1.0 and len(generated_tokens) > 0:
-                generated_ids = torch.cat(generated_tokens, dim=-1)
+                # generated_ids 是统一词表中的绝对 id（含 text_vocab 偏移），
+                # 但 audio_logits 已被切片到音频范围，需减去偏移以匹配索引
+                generated_ids = torch.cat(generated_tokens, dim=-1) - self._text_vocab_size
                 audio_logits = self._apply_repetition_penalty(
                     audio_logits, generated_ids, repetition_penalty
                 )
@@ -349,8 +361,8 @@ class FishLlamaARModel(LlamaARModelBase):
             else:
                 consecutive_text_count = 0
 
-            # 准备下一步输入
-            next_embed = self._embed_layer(unified_id.unsqueeze(1))
+            # 准备下一步输入（unified_id 已为 [batch, 1]，无需额外 unsqueeze）
+            next_embed = self._embed_layer(unified_id)
             cur_embeds = next_embed
 
         if not generated_tokens:
@@ -424,13 +436,21 @@ class FishLlamaARModel(LlamaARModelBase):
                 break
 
             with torch.no_grad():
-                outputs = self._model(
-                    inputs_embeds=cur_embeds,
-                    past_key_values=past_key_values,
-                    use_cache=True,
-                )
+                try:
+                    outputs = self._model(
+                        inputs_embeds=cur_embeds,
+                        past_key_values=past_key_values,
+                        use_cache=True,
+                    )
+                except RuntimeError:
+                    # transformers v5 cache 兼容性回退：禁用 KV cache 重试
+                    past_key_values = None
+                    outputs = self._model(
+                        inputs_embeds=cur_embeds,
+                        use_cache=False,
+                    )
             logits = outputs.logits
-            past_key_values = outputs.past_key_values
+            past_key_values = getattr(outputs, "past_key_values", None)
 
             next_logits = logits[:, -1, :]
 
@@ -444,7 +464,8 @@ class FishLlamaARModel(LlamaARModelBase):
             audio_logits = self._top_p_filtering(audio_logits, top_p)
 
             if repetition_penalty != 1.0 and len(buffer) > 0:
-                generated_ids = torch.cat(buffer, dim=-1)
+                # buffer 中是统一词表绝对 id，需减去偏移匹配切片后的 audio_logits
+                generated_ids = torch.cat(buffer, dim=-1) - self._text_vocab_size
                 audio_logits = self._apply_repetition_penalty(
                     audio_logits, generated_ids, repetition_penalty
                 )
@@ -466,7 +487,8 @@ class FishLlamaARModel(LlamaARModelBase):
             else:
                 consecutive_text_count = 0
 
-            next_embed = self._embed_layer(unified_id.unsqueeze(1))
+            # unified_id 已为 [batch, 1]，无需额外 unsqueeze
+            next_embed = self._embed_layer(unified_id)
             cur_embeds = next_embed
 
             if len(buffer) >= stream_batch:

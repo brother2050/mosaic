@@ -45,6 +45,8 @@ def _mock_torch_phase4():
     """注入/补齐 mock torch 模块，确保无 GPU 环境也可运行 Phase 4 测试。"""
     if "torch" not in sys.modules:
         mt = types.ModuleType("torch")
+        mt.__spec__ = MagicMock()  # 避免 transformers find_spec 报 'torch.__spec__ is None'
+        mt.__version__ = "2.6.0"
         _ctx = MagicMock()
         _ctx.__enter__ = MagicMock(return_value=None)
         _ctx.__exit__ = MagicMock(return_value=None)
@@ -61,7 +63,10 @@ def _mock_torch_phase4():
         mt.from_numpy = MagicMock(
             side_effect=lambda x: _make_mock_tensor(x)
         )
+        mt.LongTensor = MagicMock(side_effect=lambda x: x)
+        mt.FloatTensor = MagicMock(side_effect=lambda x: x)
         _mcuda = types.ModuleType("torch.cuda")
+        _mcuda.__spec__ = MagicMock()
         _mcuda.is_available = MagicMock(return_value=False)
         _mcuda.get_device_properties = MagicMock()
         _mcuda.memory_allocated = MagicMock(return_value=0)
@@ -71,6 +76,11 @@ def _mock_torch_phase4():
         sys.modules["torch.cuda"] = _mcuda
     else:
         mt = sys.modules["torch"]
+        # 确保 __spec__ 不为 None（transformers find_spec 需要）
+        if not hasattr(mt, "__spec__") or mt.__spec__ is None:
+            mt.__spec__ = MagicMock()
+        if not hasattr(mt, "__version__"):
+            mt.__version__ = "2.6.0"
         if not hasattr(mt, "Generator"):
             mt.Generator = MagicMock
         if not hasattr(mt, "Tensor"):
@@ -103,6 +113,7 @@ def _mock_torch_phase4():
 def _inject_mock_diffusers():
     if "diffusers" not in sys.modules:
         dm = types.ModuleType("diffusers")
+        dm.__spec__ = MagicMock()
         dm.CogVideoXPipeline = MagicMock()
         dm.CogVideoXPipeline.from_pretrained = MagicMock()
         dm.StableVideoDiffusionPipeline = MagicMock()
@@ -143,6 +154,7 @@ def _inject_mock_imageio_ffmpeg():
         pass
     if "imageio_ffmpeg" not in sys.modules:
         im = types.ModuleType("imageio_ffmpeg")
+        im.__spec__ = MagicMock()
         im.get_ffmpeg_exe = MagicMock(return_value="/usr/bin/ffmpeg")
         sys.modules["imageio_ffmpeg"] = im
 

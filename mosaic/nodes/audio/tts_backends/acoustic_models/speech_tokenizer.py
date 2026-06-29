@@ -627,7 +627,7 @@ class SpeechTokenizer:
 
                 state_dict = load_file(weights_path)
             elif weights_path.endswith((".pt", ".pth", ".bin")):
-                ckpt = torch.load(weights_path, map_location="cpu")
+                ckpt = torch.load(weights_path, map_location="cpu", weights_only=False)
                 state_dict = _unwrap_ckpt(ckpt)
         elif os.path.isdir(weights_path):
             for fname in (
@@ -651,7 +651,7 @@ class SpeechTokenizer:
                 ):
                     fpath = os.path.join(weights_path, fname)
                     if os.path.isfile(fpath):
-                        ckpt = torch.load(fpath, map_location="cpu")
+                        ckpt = torch.load(fpath, map_location="cpu", weights_only=False)
                         state_dict = _unwrap_ckpt(ckpt)
                         break
         return state_dict
