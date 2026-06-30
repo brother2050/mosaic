@@ -150,7 +150,10 @@ class AsyncTask:
         self._completed_at: float | None = None
 
         # 线程同步
-        self._lock: threading.Lock = threading.Lock()
+        # 使用 RLock（可重入锁）：on_complete/on_error 在持锁状态下同步调用
+        # 回调，若回调内部访问 task.result()/task.status 等同样获取 self._lock
+        # 的属性，普通 Lock 会因不可重入而死锁；RLock 允许同一线程多次获取。
+        self._lock: threading.RLock = threading.RLock()
         self._done_event: threading.Event = threading.Event()
         self._cancel_event: threading.Event = threading.Event()
 
@@ -503,6 +506,24 @@ class AsyncTask:
                 exc,
                 exc_info=True,
             )
+        except BaseException as exc:  # noqa: BLE001 - 兜底 KeyboardInterrupt/SystemExit
+            # 捕获 KeyboardInterrupt/SystemExit 等非 Exception 异常，确保
+            # _done_event 被 set，避免 wait() 永久阻塞。
+            self._logger.warning(
+                "Task %s interrupted: %s", self._task_id, exc, exc_info=True
+            )
+            with self._lock:
+                if self._status not in (
+                    TaskStatus.COMPLETED,
+                    TaskStatus.FAILED,
+                    TaskStatus.CANCELLED,
+                ):
+                    self._status = TaskStatus.FAILED
+                    self._error = exc
+                self._completed_at = time.time()
+            self._done_event.set()
+            self._fire_error_callbacks(exc)
+            raise  # 重新抛出，让线程正确退出
         finally:
             self._unsubscribe_bus_events()
 

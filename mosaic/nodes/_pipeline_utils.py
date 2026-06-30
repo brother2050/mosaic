@@ -13,7 +13,10 @@
 """
 from __future__ import annotations
 
+import logging
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 
 def _preimport_t5_components() -> None:
@@ -37,26 +40,21 @@ def _preimport_t5_components() -> None:
     _missing_deps: list[str] = []
 
     # --- T5Tokenizer ---
-    t5_tok = getattr(transformers, "T5Tokenizer", None)
-    if t5_tok is not None:
-        # 检查是否为 Placeholder/DummyObject（缺少后端库时 transformers
-        # 返回的占位类）。hasattr 可能触发 __getattribute__ 抛出
-        # ImportError，需要捕获。
-        try:
-            is_placeholder = not hasattr(t5_tok, "from_pretrained")
-        except (ImportError, AttributeError):
-            is_placeholder = True
-        if is_placeholder:
+    # 使用 try/import 统一检测，替代脆弱的 getattr + hasattr 组合
+    # （hasattr 会触发 __getattribute__，行为受占位类影响且难以区分真实
+    # 类与 Placeholder）。直接尝试导入并访问 ``from_pretrained``：真实
+    # T5Tokenizer 能正常取到方法；缺 sentencepiece 等 backend 时 transformers
+    # 返回的占位类在访问方法时会抛 ImportError。
+    try:
+        from transformers import T5Tokenizer as _t5_tok  # noqa: F401
+
+        _ = _t5_tok.from_pretrained  # 触发占位类检测
+    except (ImportError, AttributeError):
+        # 导入失败或为占位类（缺少 sentencepiece 等后端库）。
+        # 仅当 transformers 为真实安装时才上报缺失依赖，避免在 mock 环境
+        # 中误报。
+        if hasattr(transformers, "__version__"):
             _missing_deps.append("sentencepiece")
-    else:
-        # T5Tokenizer 不在顶层模块，尝试显式导入
-        try:
-            from transformers import T5Tokenizer as _  # noqa: F401
-        except ImportError:
-            # 在 mock 环境中 T5Tokenizer 可能不存在，这是正常的
-            # 只有当 transformers 是真实安装时才报错
-            if hasattr(transformers, "__version__"):
-                _missing_deps.append("sentencepiece")
 
     # --- T5TokenizerFast ---
     try:
@@ -219,6 +217,7 @@ def safe_load_pipeline(
     )
 
     # 第一次尝试（可能带 variant="fp16"）
+    first_exc: BaseException | None = None
     if use_fp16_variant:
         try:
             return pipeline_class.from_pretrained(
@@ -226,18 +225,36 @@ def safe_load_pipeline(
                 variant="fp16",
                 **kwargs,
             )
-        except (OSError, ValueError, EnvironmentError) as exc:
-            # fp16 variant 不可用，回退到 fp32
-            pass
         except (ImportError, AttributeError) as exc:
             raise RuntimeError(
                 _build_error_message(model_name, exc)
             ) from exc
+        except (OSError, ValueError, RuntimeError) as exc:
+            # fp16 variant 不可用（文件缺失/校验失败/部分版本抛 RuntimeError），
+            # 回退到 fp32。记录第一次失败信息，以便第二次也失败时能定位根因
+            # （见 E1）。EnvironmentError 在 Python 3 中是 OSError 别名，已移除
+            # 冗余；新增 RuntimeError 覆盖更多版本异常（见 E2）。
+            first_exc = exc
+            logger.warning(
+                "fp16 variant load failed for %s: %s; retrying without variant.",
+                model_name,
+                exc,
+            )
 
     # 第二次尝试（不带 variant 或非 fp16 场景）
     try:
         return pipeline_class.from_pretrained(model_name, **kwargs)
-    except (ImportError, AttributeError, ValueError, OSError, EnvironmentError) as exc:
+    except (ImportError, AttributeError, ValueError, OSError, RuntimeError) as exc:
+        if first_exc is not None:
+            # 两次加载均失败：同时记录 fp16 与 fp32 的错误，避免第一次失败
+            # 信息丢失导致根因难以定位（见 E1）。
+            logger.error(
+                "Both fp16 variant and fp32 load failed for %s. "
+                "fp16 error: %s; fp32 error: %s",
+                model_name,
+                first_exc,
+                exc,
+            )
         raise RuntimeError(
             _build_error_message(model_name, exc)
         ) from exc
@@ -311,7 +328,15 @@ def safe_load_model(
     if dtype is not None:
         try:
             return model_class.from_pretrained(model_name, dtype=dtype, **kwargs)
-        except TypeError:
+        except TypeError as exc:
+            # 旧版 transformers 不接受 dtype= 关键字，回退到 torch_dtype=。
+            # 记录警告，避免 TypeError 被静默回退而掩盖真正的加载错误（见 E3）。
+            logger.warning(
+                "TypeError during model load for %s (may be dtype keyword "
+                "issue): %s; retrying with torch_dtype.",
+                model_name,
+                exc,
+            )
             return model_class.from_pretrained(
                 model_name, torch_dtype=dtype, **kwargs
             )

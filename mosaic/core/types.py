@@ -17,8 +17,11 @@ from __future__ import annotations
 
 import base64
 import io
+import logging
 from collections.abc import Iterator
 from typing import Any
+
+_logger = logging.getLogger("mosaic.types")
 
 __all__ = [
     "MosaicData",
@@ -82,7 +85,9 @@ def _b64_to_image(token: str) -> Any:
         raise ValueError("Invalid image token, expected 'b64:<fmt>:<data>'.")
     _, fmt, encoded = token.split(":", 2)
     raw = base64.b64decode(encoded.encode("ascii"))
-    return Image.open(io.BytesIO(raw))
+    img = Image.open(io.BytesIO(raw))
+    img.load()  # 立即加载数据，避免后续访问时延迟或文件句柄悬空
+    return img
 
 
 def _array_to_dict(array: Any) -> dict[str, Any]:
@@ -154,6 +159,55 @@ def _deserialize_value(value: Any) -> Any:
     return value
 
 
+def _safe_eq(v1: Any, v2: Any) -> bool:
+    """安全比较两个值，正确处理 numpy 数组。
+
+    直接对含 numpy 数组的值使用 ``==`` 会得到数组，而 ``bool(array)``
+    会抛出 ``ValueError: The truth value of an array is ambiguous``。
+    本函数对 numpy 数组改用 :func:`numpy.array_equal`，对其余类型回退到
+    普通相等比较，并确保始终返回纯 ``bool``。
+    """
+    # 1) numpy 数组：必须使用 array_equal，避免 bool(array) 抛异常
+    try:
+        import numpy as _np
+
+        v1_is_arr = isinstance(v1, _np.ndarray)
+        v2_is_arr = isinstance(v2, _np.ndarray)
+        if v1_is_arr or v2_is_arr:
+            # 一方为数组、另一方不是数组 => 不相等
+            if not (v1_is_arr and v2_is_arr):
+                return False
+            return bool(_np.array_equal(v1, v2))
+    except ImportError:
+        pass
+
+    # 2) 其余类型：直接 == 比较
+    try:
+        result = v1 == v2
+    except Exception:
+        # 比较本身抛异常（如不可比较类型）视为不相等
+        return False
+
+    # 3) 结果若为纯 Python bool，直接返回
+    if isinstance(result, bool):
+        return result
+
+    # 4) numpy 标量（含 np.bool_/np.float64 等）或元素级比较数组：安全转 bool
+    try:
+        import numpy as _np
+
+        if isinstance(result, _np.generic):
+            return bool(result)
+        if isinstance(result, _np.ndarray):
+            # 仅当形状一致且逐元素相等时为真
+            return result.shape == () and bool(result)
+    except ImportError:
+        pass
+
+    # 5) 其它非布尔结果（如列表）视为不相等，避免误判
+    return False
+
+
 # ---------------------------------------------------------------------------
 # MosaicData — 顶层字典式容器
 # ---------------------------------------------------------------------------
@@ -196,10 +250,18 @@ class MosaicData:
 
     def __eq__(self, other: object) -> bool:
         if isinstance(other, MosaicData):
-            return self._data == other._data
-        if isinstance(other, dict):
-            return self._data == other
-        return NotImplemented
+            other_data = other._data
+        elif isinstance(other, dict):
+            other_data = other
+        else:
+            return NotImplemented
+        # 先比较键集合，避免逐值比较时遇到 numpy 数组触发歧义异常
+        if self._data.keys() != other_data.keys():
+            return False
+        for key in self._data:
+            if not _safe_eq(self._data[key], other_data[key]):
+                return False
+        return True
 
     def keys(self) -> Any:
         """返回所有键的视图。"""
@@ -240,8 +302,18 @@ class MosaicData:
         """从字典反序列化为数据实例。
 
         若字典中包含 ``__data_type__`` 字段，将分发到对应子类。
+        未知类型会回退到基类并记录警告日志；实例构造完成后会调用
+        :meth:`validate` 进行类型校验（仅记录警告，不抛异常）。
         """
         dtype = data.get("__data_type__", cls.data_type)
+        if dtype not in DATA_TYPE_REGISTRY:
+            _logger.warning(
+                "Unknown data_type %r; falling back to %s base class. "
+                "Registered types: %s",
+                dtype,
+                cls.__name__,
+                list(DATA_TYPE_REGISTRY.keys()),
+            )
         target_cls: type[MosaicData] = DATA_TYPE_REGISTRY.get(dtype, cls)
         # 过滤掉元信息键
         clean = {
@@ -249,7 +321,22 @@ class MosaicData:
             for k, v in data.items()
             if k != "__data_type__"
         }
-        return target_cls(**clean)
+        instance = target_cls(**clean)
+        # 在反序列化路径上执行一次校验，使 validate 真正参与管道数据流。
+        # validate 仅做只读检查、不修改数据，重复调用安全。
+        try:
+            if not target_cls.validate(instance):
+                _logger.warning(
+                    "Deserialized %s instance failed validation.",
+                    target_cls.__name__,
+                )
+        except Exception as exc:  # pragma: no cover - 防御性：校验异常不应阻断反序列化
+            _logger.warning(
+                "Validation raised an exception for %s: %r",
+                target_cls.__name__,
+                exc,
+            )
+        return instance
 
     # -- 类型校验 ----------------------------------------------------------
     @classmethod
@@ -347,7 +434,21 @@ class ImageData(MosaicData):
         **kwargs: Any,
     ) -> None:
         if size is None and image is not None:
-            size = image.size  # PIL.Image 自带 .size
+            # PIL.Image 自带 .size -> (width, height)；但 numpy 数组的
+            # .size 是元素总数（整数），需改用 .shape 推断尺寸。
+            try:
+                import numpy as _np
+
+                if isinstance(image, _np.ndarray):
+                    if image.ndim >= 2:
+                        h, w = image.shape[:2]
+                        size = (int(w), int(h))
+                    else:
+                        size = None
+                else:
+                    size = getattr(image, "size", None)
+            except ImportError:
+                size = getattr(image, "size", None)
         super().__init__(
             image=image,
             size=size,
@@ -414,17 +515,26 @@ class AudioData(MosaicData):
         # 模型在 float16 精度下推理时，输出波形可能为 float16，
         # 而 soundfile / librosa 等库只支持 float32/float64/int16/int32。
         # 在此处统一转换，从源头消除 dtype 问题。
+        #
+        # 同时对整数 PCM 类型做振幅归一化到 [-1, 1]：
+        #   uint8:  [0, 255]        -> [-1, 1]
+        #   int16:  [-32768, 32767] -> [-1, 1]
+        #   int32:  [-2^31, 2^31-1] -> [-1, 1]
+        # 避免直接 astype(float32) 产生未归一化的整数值。
         if waveform is not None:
             try:
                 import numpy as np
 
                 if isinstance(waveform, np.ndarray):
-                    if waveform.dtype not in (
-                        np.float32,
-                        np.float64,
-                        np.int16,
-                        np.int32,
-                    ):
+                    if waveform.dtype == np.uint8:
+                        waveform = (waveform.astype(np.float32) - 128.0) / 128.0
+                    elif waveform.dtype == np.int16:
+                        waveform = waveform.astype(np.float32) / 32768.0
+                    elif waveform.dtype == np.int32:
+                        waveform = waveform.astype(np.float32) / 2147483648.0
+                    elif waveform.dtype not in (np.float32, np.float64):
+                        # 其它非标准 dtype（如 float16）：统一转 float32
+                        # （其值通常已在 [-1, 1] 范围内，无需额外缩放）
                         waveform = waveform.astype(np.float32)
             except ImportError:
                 pass
@@ -491,6 +601,36 @@ class VideoData(MosaicData):
             metadata=metadata or {},
             **kwargs,
         )
+
+    # -- 序列化 ------------------------------------------------------------
+    def to_dict(self, include_frames: bool = True) -> dict[str, Any]:
+        """将视频数据序列化为纯字典。
+
+        视频帧（``PIL.Image`` 列表）会被逐帧 base64 编码，帧数较多时
+        序列化开销与产物体积都会显著增大。可通过 ``include_frames=False``
+        跳过帧序列化，仅在 payload 中保留帧数占位符；帧数超过阈值时
+        会记录警告日志。
+        """
+        payload: dict[str, Any] = {
+            "__data_type__": self.data_type,
+        }
+        frames = self._data.get("frames", [])
+        if not include_frames:
+            for key, value in self._data.items():
+                if key == "frames":
+                    payload[key] = f"<{len(frames)} frames, skipped>"
+                else:
+                    payload[key] = _serialize_value(value)
+            return payload
+        if len(frames) > 50:
+            _logger.warning(
+                "Serializing %d video frames to dict; this may be slow "
+                "and produce a large payload. Consider using include_frames=False.",
+                len(frames),
+            )
+        for key, value in self._data.items():
+            payload[key] = _serialize_value(value)
+        return payload
 
     @property
     def frames(self) -> list[Any]:

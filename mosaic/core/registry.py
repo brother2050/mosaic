@@ -19,7 +19,9 @@ from __future__ import annotations
 
 import importlib
 import inspect
+import logging
 import pkgutil
+import threading
 from typing import Any
 
 from mosaic.core.node import Node, NodeSpec
@@ -36,12 +38,16 @@ class NodeRegistry:
         ``name -> Node 子类`` 的映射。
     _instances:
         ``name -> Node 实例`` 的缓存（懒实例化）。
+    _lock:
+        可重入锁，保护所有字典操作，确保线程安全。
     """
 
     def __init__(self) -> None:
         self._nodes: dict[str, type[Node]] = {}
         self._instances: dict[str, Node] = {}
         self._scanned: bool = False
+        self._lock = threading.RLock()
+        self._logger = logging.getLogger("mosaic.core.registry")
 
     # -- 注册 --------------------------------------------------------------
     def register(self, node_class: type[Node]) -> type[Node]:
@@ -82,32 +88,43 @@ class NodeRegistry:
         if inspect.isabstract(node_class):
             return node_class
 
-        name = node_class.name
-        if name in self._nodes and self._nodes[name] is not node_class:
-            raise ValueError(
-                f"Node name {name!r} is already registered to "
-                f"{self._nodes[name].__name__}."
-            )
+        with self._lock:
+            name = node_class.name
+            if name in self._nodes and self._nodes[name] is not node_class:
+                raise ValueError(
+                    f"Node name {name!r} is already registered to "
+                    f"{self._nodes[name].__name__}."
+                )
 
-        self._nodes[name] = node_class
-        # 以类名作为别名也登记一次（若不冲突）
-        class_name = node_class.__name__
-        if class_name not in self._nodes:
-            self._nodes[class_name] = node_class
-        # 清除旧实例缓存
-        self._instances.pop(name, None)
+            self._nodes[name] = node_class
+            # 以类名作为别名也登记一次；冲突时跳过并告警（B5）
+            class_name = node_class.__name__
+            if (
+                class_name in self._nodes
+                and self._nodes[class_name] is not node_class
+            ):
+                self._logger.warning(
+                    "Class name alias %r conflicts with existing node; "
+                    "skipping alias.",
+                    class_name,
+                )
+            else:
+                self._nodes[class_name] = node_class
+            # 清除旧实例缓存
+            self._instances.pop(name, None)
         return node_class
 
     # -- 注销 --------------------------------------------------------------
     def unregister(self, name: str) -> None:
         """按名称注销一个节点。"""
-        node_class = self._nodes.pop(name, None)
-        self._instances.pop(name, None)
-        if node_class is not None:
-            # 同时移除类名别名
-            class_name = node_class.__name__
-            if self._nodes.get(class_name) is node_class:
-                self._nodes.pop(class_name, None)
+        with self._lock:
+            node_class = self._nodes.pop(name, None)
+            self._instances.pop(name, None)
+            if node_class is not None:
+                # 同时移除类名别名（B6：清理已缓存实例的类名别名）
+                class_name = node_class.__name__
+                if self._nodes.get(class_name) is node_class:
+                    self._nodes.pop(class_name, None)
 
     # -- 查询 --------------------------------------------------------------
     def get(self, name: str, **kwargs: Any) -> Node:
@@ -131,26 +148,28 @@ class NodeRegistry:
         KeyError
             名称未注册。
         """
-        if name not in self._nodes:
-            raise KeyError(
-                f"Node {name!r} is not registered. "
-                f"Available: {sorted(self._nodes.keys())}"
-            )
-        # 传入构造参数时跳过缓存，直接新建
-        if kwargs:
-            return self._nodes[name](**kwargs)
-        if name not in self._instances:
-            self._instances[name] = self._nodes[name]()
-        return self._instances[name]
+        with self._lock:
+            if name not in self._nodes:
+                raise KeyError(
+                    f"Node {name!r} is not registered. "
+                    f"Available: {sorted(self._nodes.keys())}"
+                )
+            # 传入构造参数时跳过缓存，直接新建
+            if kwargs:
+                return self._nodes[name](**kwargs)
+            if name not in self._instances:
+                self._instances[name] = self._nodes[name]()
+            return self._instances[name]
 
     def get_class(self, name: str) -> type[Node]:
         """按名称获取节点类（不实例化）。"""
-        if name not in self._nodes:
-            raise KeyError(
-                f"Node {name!r} is not registered. "
-                f"Available: {sorted(self._nodes.keys())}"
-            )
-        return self._nodes[name]
+        with self._lock:
+            if name not in self._nodes:
+                raise KeyError(
+                    f"Node {name!r} is not registered. "
+                    f"Available: {sorted(self._nodes.keys())}"
+                )
+            return self._nodes[name]
 
     # -- 列举 --------------------------------------------------------------
     def list_nodes(self, domain: str | None = None) -> list[NodeSpec]:
@@ -166,13 +185,19 @@ class NodeRegistry:
         list[NodeSpec]
             节点规格说明列表，按名称排序。
         """
+        # 在锁内快照去重后的节点类，锁外再 describe（避免持锁实例化）
+        with self._lock:
+            unique_classes: list[type[Node]] = []
+            seen: set = set()
+            for node_class in self._nodes.values():
+                # 同一类可能因 name + 类名 被登记两次，去重
+                if node_class in seen:
+                    continue
+                seen.add(node_class)
+                unique_classes.append(node_class)
+
         specs: list[NodeSpec] = []
-        seen: set = set()
-        for node_class in self._nodes.values():
-            # 同一类可能因 name + 类名 被登记两次，去重
-            if node_class in seen:
-                continue
-            seen.add(node_class)
+        for node_class in unique_classes:
             spec = self._safe_describe(node_class)
             if domain is not None and spec.domain != domain:
                 continue
@@ -182,24 +207,29 @@ class NodeRegistry:
 
     def list_domains(self) -> list[str]:
         """列出所有已注册节点涉及的域（去重排序）。"""
+        with self._lock:
+            unique_classes = list({c for c in self._nodes.values()})
         domains: set = set()
-        for node_class in self._nodes.values():
+        for node_class in unique_classes:
             spec = self._safe_describe(node_class)
             domains.add(spec.domain)
         return sorted(domains)
 
     def list_names(self) -> list[str]:
         """列出所有已注册节点的名称。"""
-        return sorted(
-            cls.name for cls in {c for c in self._nodes.values()}
-        )
+        with self._lock:
+            return sorted(
+                cls.name for cls in {c for c in self._nodes.values()}
+            )
 
     def __contains__(self, name: object) -> bool:
-        return name in self._nodes
+        with self._lock:
+            return name in self._nodes
 
     def __len__(self) -> int:
         # 去重计数
-        return len({c for c in self._nodes.values()})
+        with self._lock:
+            return len({c for c in self._nodes.values()})
 
     # -- 自动扫描 ----------------------------------------------------------
     def discover(self, package: str = "mosaic.nodes") -> list[type[Node]]:
@@ -225,7 +255,11 @@ class NodeRegistry:
         newly_registered: list[type[Node]] = []
         try:
             pkg = importlib.import_module(package)
-        except ImportError:
+        except ImportError as exc:
+            self._logger.warning(
+                "Failed to import discovery package %s: %s",
+                package, exc, exc_info=True,
+            )
             return newly_registered
 
         pkg_path = getattr(pkg, "__path__", None)
@@ -237,8 +271,12 @@ class NodeRegistry:
         ):
             try:
                 module = importlib.import_module(mod_name)
-            except Exception:
-                # 扫描不应因单个模块导入失败而中断
+            except Exception as exc:
+                # 扫描不应因单个模块导入失败而中断，但需记录以便排查（B3）
+                self._logger.warning(
+                    "Failed to import module %s during discovery: %s",
+                    mod_name, exc, exc_info=True,
+                )
                 continue
             for attr_name, attr_value in inspect.getmembers(
                 module, inspect.isclass
@@ -254,33 +292,57 @@ class NodeRegistry:
                     and not inspect.isabstract(attr_value)
                     and attr_value.__module__ == mod_name
                 ):
-                    if attr_value.name not in self._nodes:
-                        self.register(attr_value)
-                        newly_registered.append(attr_value)
+                    # B2：预检查与注册放入同一锁内，避免 TOCTOU 竞态。
+                    # register 内部也会校验同名冲突，此处预检查仅为避免
+                    # 重复注册同一类时多余地清缓存。
+                    with self._lock:
+                        already = self._nodes.get(attr_value.name)
+                        if already is attr_value:
+                            continue
+                        if already is not None:
+                            # 已被其它类占用，交由 register 抛出 ValueError
+                            pass
+                    self.register(attr_value)
+                    newly_registered.append(attr_value)
         return newly_registered
 
     def reset_discovery(self) -> None:
         """重置扫描标志，允许重新执行自动发现。"""
-        self._scanned = False
+        with self._lock:
+            self._scanned = False
 
     # -- 内部辅助 ----------------------------------------------------------
-    @staticmethod
-    def _safe_describe(node_class: type[Node]) -> NodeSpec:
+    def _safe_describe(self, node_class: type[Node]) -> NodeSpec:
         """安全获取节点规格说明。
 
-        优先调用 ``describe`` 实例方法；若实例化失败则根据类属性构建。
+        优先从类属性获取信息，避免实例化带来的副作用（如 ``__init__``
+        触发 GPU 检测、显存调度等）；仅当类属性缺失时才尝试实例化并
+        调用 ``describe``，实例化失败再退化为最小 NodeSpec。
         """
+        # 优先从类属性构建（绝大多数节点都声明了 name/domain 等类属性）
+        name = getattr(node_class, "name", None)
+        domain = getattr(node_class, "domain", None)
+        if name and domain:
+            return NodeSpec(
+                name=name,
+                domain=domain,
+                description=getattr(node_class, "description", ""),
+                version=getattr(node_class, "version", "0.0.0"),
+                input_types=list(getattr(node_class, "input_types", [])),
+                output_types=list(getattr(node_class, "output_types", [])),
+            )
+        # 仅在必要时才实例化
         try:
             instance = node_class()
             return instance.describe()
         except Exception:
             return NodeSpec(
-                name=node_class.name,
-                domain=node_class.domain,
-                description=node_class.description,
-                version=node_class.version,
-                input_types=list(node_class.input_types),
-                output_types=list(node_class.output_types),
+                name=getattr(node_class, "name", "unknown"),
+                domain=getattr(node_class, "domain", "unknown"),
+                description=getattr(node_class, "description", ""),
+                version=getattr(node_class, "version", "0.0.0"),
+                input_types=list(getattr(node_class, "input_types", [])),
+                output_types=list(getattr(node_class, "output_types", [])),
             )
 
 

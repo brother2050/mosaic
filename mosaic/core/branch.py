@@ -175,8 +175,8 @@ class Merge(Node):
     domain = "core"
     description = "Fan-in: merge multiple upstream outputs into one MosaicData."
     version = "0.1.0"
-    input_types: list[str] = ["mosaic"]
-    output_types: list[str] = ["mosaic"]
+    input_types: tuple[str, ...] = ("mosaic",)
+    output_types: tuple[str, ...] = ("mosaic",)
 
     def __init__(
         self,

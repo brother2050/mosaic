@@ -133,14 +133,27 @@ class Node(abc.ABC):
     domain: str = "core"
     description: str = "Base node, override in subclass."
     version: str = "0.1.0"
-    input_types: list[str] = []
-    output_types: list[str] = []
+    # 使用不可变元组作为默认值，避免可变共享列表问题（所有未覆写的
+    # 子类实例会共享同一个 list 对象，存在被意外修改的风险）。
+    input_types: tuple[str, ...] = ()
+    output_types: tuple[str, ...] = ()
 
     def __init__(self, **kwargs: Any) -> None:
         # 允许实例化时覆写类属性
+        import logging
+
+        _logger = logging.getLogger("mosaic.core.node")
         for key, value in kwargs.items():
             if hasattr(type(self), key):
                 setattr(self, key, value)
+            else:
+                # 未知 kwargs 不抛异常（保持向后兼容），但发出告警以
+                # 帮助用户发现参数名拼写错误。
+                _logger.warning(
+                    "%s received unknown kwarg %r=%r; ignored. "
+                    "Check for typos in parameter names.",
+                    type(self).__name__, key, value,
+                )
         self._loaded: bool = False
 
     # -- 抽象方法（子类必须实现）------------------------------------------

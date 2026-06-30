@@ -28,6 +28,7 @@ import importlib.util
 import inspect
 import logging
 import os
+import re
 import sys
 from dataclasses import dataclass, field
 from typing import Any
@@ -211,6 +212,22 @@ class PluginManager:
         count += self._load_from_dirs()
         return count
 
+    def reload(self) -> int:
+        """重新加载所有插件。
+
+        重置已加载标志与已发现的插件记录，随后重新执行
+        :meth:`load_plugins`。适用于插件目录在运行期发生变化、或需要
+        强制重新扫描的场景。
+
+        Returns
+        -------
+        int
+            本次重新加载后新发现的插件数量。
+        """
+        self._loaded = False
+        self._plugins.clear()
+        return self.load_plugins()
+
     def _load_entry_points(self) -> int:
         """通过 entry_points 发现并加载插件。"""
         count = 0
@@ -280,11 +297,16 @@ class PluginManager:
                 if not fname.endswith(".py") or fname.startswith("_"):
                     continue
                 fpath = os.path.join(root, fname)
+                # 生成模块名：相对路径 -> 点分模块路径。
+                # 跨平台：同时替换 os.sep 与 "/"（Windows 路径可能混用两种分隔符）。
                 mod_name = (
                     os.path.relpath(fpath, directory)
                     .replace(os.sep, ".")
+                    .replace("/", ".")
                     .removesuffix(".py")
                 )
+                # 清理非法字符：合法模块名仅允许字母、数字、下划线与点。
+                mod_name = re.sub(r"[^a-zA-Z0-9_.]", "_", mod_name)
                 try:
                     spec = importlib.util.spec_from_file_location(
                         f"mosaic_plugin_{mod_name.replace('.', '_')}", fpath

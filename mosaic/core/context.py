@@ -20,6 +20,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import time
 from dataclasses import dataclass, field
 from collections.abc import Callable
@@ -188,12 +189,17 @@ class Context:
         self._handlers: list[EventHandler] = []
         # 运行状态
         self._active: bool = False
+        # 日志器（用于记录回调异常等）
+        self._logger: logging.Logger = logging.getLogger("mosaic.context")
 
     # -- 上下文管理器协议 --------------------------------------------------
     def __enter__(self) -> "Context":
         """进入运行：标记为活跃并触发 ``pipeline_start`` 事件。"""
         self._active = True
-        self.emit(Event(event_type="pipeline_start", payload={"config": self.config.__dict__}))
+        # 使用浅拷贝：避免后续 config 被修改时已发出的事件 payload 随之变化
+        self.emit(
+            Event(event_type="pipeline_start", payload={"config": dict(self.config.__dict__)})
+        )
         return self
 
     def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
@@ -229,13 +235,19 @@ class Context:
     def emit(self, event: Event) -> None:
         """触发一个事件，依次调用所有已注册的回调。
 
-        单个回调抛出的异常会被捕获并忽略，避免影响其他回调或管道运行。
+        单个回调抛出的异常会被捕获并记录日志，避免影响其他回调或管道运行。
         """
         for handler in self._handlers:
             try:
                 handler(event)
-            except Exception:
-                # 回调失败不应中断管道
+            except Exception as exc:
+                # 回调失败不应中断管道，但需记录以便排查
+                self._logger.warning(
+                    "Event callback for %r raised: %s",
+                    event.event_type,
+                    exc,
+                    exc_info=True,
+                )
                 continue
 
     # -- 共享数据存储 ------------------------------------------------------
@@ -394,7 +406,8 @@ class Context:
     def load_snapshot(self, path: str) -> None:
         """从 JSON 文件加载中间产物快照。
 
-        清除当前所有中间产物，替换为文件中的内容。
+        清除当前所有中间产物，替换为文件中的内容，并恢复运行配置
+        （与 :meth:`snapshot` 对称）。
 
         Parameters
         ----------
@@ -405,6 +418,17 @@ class Context:
             snap = json.load(f)
         self._artifacts.clear()
         self._artifact_order.clear()
+        # 恢复运行配置（与 snapshot() 对称：snapshot 保存了 config 字段）
+        config_data = snap.get("config")
+        if isinstance(config_data, dict):
+            # 仅取 RunConfig 已知字段，避免多余键导致构造失败
+            _known_fields = {"device", "precision", "batch_size", "seed", "extra"}
+            filtered = {
+                k: v for k, v in config_data.items() if k in _known_fields
+            }
+            self.config = RunConfig(**filtered)
+        elif isinstance(config_data, RunConfig):
+            self.config = config_data
         for name in snap.get("artifact_order", []):
             rec_dict = snap.get("artifacts", {}).get(name)
             if rec_dict is not None:

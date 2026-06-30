@@ -103,10 +103,16 @@ class Scheduler:
         self._loaded_names: set = set()
         # LRU 访问顺序：最近访问的在右端
         self._lru: deque[str] = collections.deque()
-        # 配置
+        # 配置：未显式传入时回退到 MosaicEnv 集中读取的环境变量
+        from mosaic.core.env import MosaicEnv
+
+        if device is None:
+            device = MosaicEnv.get_device()
         self._device: str = device if device is not None else self._detect_device()
         self._is_gpu: bool = self._device.startswith("cuda")
         self._memory_total_gb: float = self._query_total_memory() if self._is_gpu else 0.0
+        if memory_limit_gb is None:
+            memory_limit_gb = MosaicEnv.get_memory_limit()
         self._memory_limit_gb: float = (
             memory_limit_gb
             if memory_limit_gb is not None
@@ -134,6 +140,19 @@ class Scheduler:
             pass
         return "cpu"
 
+    def _device_index(self) -> int:
+        """从 ``self._device`` 解析 GPU 设备索引。
+
+        支持 ``"cuda"`` / ``"cuda:0"`` / ``"cuda:2"`` 等形式；无 GPU 或
+        解析失败时返回 ``0``，避免显存查询硬编码 device 0 而无法支持多 GPU。
+        """
+        if isinstance(self._device, str) and self._device.startswith("cuda:"):
+            try:
+                return int(self._device.split(":", 1)[1])
+            except (IndexError, ValueError):
+                pass
+        return 0
+
     def _query_total_memory(self) -> float:
         """查询 GPU 显存总量（GB）。无 GPU 时返回 0。"""
         if not self._is_gpu:
@@ -141,7 +160,10 @@ class Scheduler:
         try:
             import torch  # type: ignore
 
-            return torch.cuda.get_device_properties(0).total_memory / (1024 ** 3)
+            return (
+                torch.cuda.get_device_properties(self._device_index()).total_memory
+                / (1024 ** 3)
+            )
         except Exception:  # noqa: BLE001
             return 0.0
 
@@ -152,7 +174,7 @@ class Scheduler:
         try:
             import torch  # type: ignore
 
-            return torch.cuda.memory_allocated() / (1024 ** 3)
+            return torch.cuda.memory_allocated(self._device_index()) / (1024 ** 3)
         except Exception:  # noqa: BLE001
             return 0.0
 
@@ -256,14 +278,17 @@ class Scheduler:
 
             needed = self._node_memory.get(name, 0.0)
 
-            # CPU 模式：直接加载，不计量
-            if not self._is_gpu:
-                self._do_load(node, needed)
-                return
+            # GPU 模式：检查并腾出空间（淘汰在锁内完成，保证 LRU 一致）
+            if self._is_gpu:
+                self._ensure_capacity(needed, exclude=name)
 
-            # GPU 模式：检查并腾出空间
-            self._ensure_capacity(needed, exclude=name)
-            self._do_load(node, needed)
+        # 实际加载在锁外执行：``node.load()`` 可能耗时（权重加载/设备迁移），
+        # 持锁会阻塞其他调度操作成为性能瓶颈。加载完成后再重新获取锁更新
+        # 调度器状态（见 :meth:`_do_load`）。
+        # NOTE: 这放弃了“容量检查→加载”的原子性；在多线程并发加载同一节点
+        # 或加载期间该节点被淘汰的极端场景下可能产生状态竞争，但显著降低
+        # 了锁持有时间。当前调用方（Pipeline）按节点串行加载，可安全受益。
+        self._do_load(node, needed)
 
     def _ensure_capacity(self, needed_gb: float, exclude: str) -> None:
         """确保有 ``needed_gb`` 的可用显存，必要时按 LRU 淘汰其他节点。
@@ -281,24 +306,25 @@ class Scheduler:
             腾不出足够空间。
         """
         # 须持锁调用
-        if self._fits(needed_gb):
+        if self._has_capacity(needed_gb):
             return
         # LRU 淘汰：从最久未使用（左端）开始卸载
         evicted: list[str] = []
-        while not self._fits(needed_gb) and self._lru:
-            victim = self._lru[0]
-            if victim == exclude:
-                # 暂时跳过目标，尝试下一个；但目标尚未加载，不应在 LRU 中
-                self._lru.rotate(1)
-                # 防止无限循环：若队列只剩 exclude 则退出
-                if all(n == exclude for n in self._lru):
+        while not self._has_capacity(needed_gb) and self._lru:
+            # 找到第一个不是 exclude 的元素淘汰。
+            # 不使用 rotate(1)——那会把队首元素搬到队尾，破坏 LRU 访问顺序
+            # （见 A1）。exclude 通常是目标节点本身，正常情况下不在 LRU 中。
+            for i, victim in enumerate(self._lru):
+                if victim != exclude:
+                    del self._lru[i]
+                    self._evict(victim)
+                    evicted.append(victim)
                     break
-                continue
-            self._lru.popleft()  # 真正移除
-            self._evict(victim)
-            evicted.append(victim)
+            else:
+                # 队列中全是 exclude，无可淘汰者
+                break
 
-        if not self._fits(needed_gb):
+        if not self._has_capacity(needed_gb):
             total_loaded = sum(
                 self._node_memory.get(n, 0.0) for n in self._loaded_names
             )
@@ -308,6 +334,25 @@ class Scheduler:
                 f"limit={self._memory_limit_gb:.2f}GB. "
                 f"Evicted {len(evicted)} node(s): {evicted}."
             )
+
+    def _has_capacity(self, needed_gb: float) -> bool:
+        """综合静态估算与实际显存查询判断是否有 ``needed_gb`` 的可用空间。
+
+        须持锁调用。优先依据静态估算（节点声明的 ``vram_gb`` 之和，
+        见 :meth:`_fits`）；当能查询到有效的实际显存占用（``> 0``）时，
+        作为辅助判断——即便静态估算认为足够，若实际显存已超限也视为
+        无足够空间，从而在静态估算偏小时仍能触发淘汰（见 A2）。
+        """
+        if not self._fits(needed_gb):
+            return False
+        if self._is_gpu and self._memory_limit_gb > 0:
+            actual_used = self._query_used_memory()
+            # 仅在获取到有效读数时启用辅助判断：查询失败、CPU 模式或
+            # 模拟环境（返回 0）时退化为仅依赖静态估算，避免误判。
+            if actual_used > 0:
+                if actual_used + needed_gb > self._memory_limit_gb + 1e-9:
+                    return False
+        return True
 
     def _fits(self, needed_gb: float) -> bool:
         """判断加入 ``needed_gb`` 后是否仍在显存上限内。须持锁调用。"""
@@ -319,21 +364,35 @@ class Scheduler:
         return current + needed_gb <= self._memory_limit_gb + 1e-9
 
     def _do_load(self, node: Node, memory_gb: float) -> None:
-        """实际加载节点并记录状态、发布事件。须持锁调用。"""
+        """实际加载节点并记录状态、发布事件。
+
+        ``node.load()`` 在锁外执行（见 :meth:`ensure_loaded`）；加载完成后
+        重新获取锁更新调度器状态。加载失败时若节点被部分加载，则卸载以
+        保持状态一致（见 A6），避免 ``node.is_loaded()`` 为真但调度器
+        ``_loaded_names`` 未记录的不一致。
+        """
         name = node.name
         try:
             node.load()
         except Exception:
+            # 加载失败：若 node.load() 部分成功（已置 _loaded=True），卸载
+            # 以保持节点状态与调度器记录一致。
+            try:
+                if node.is_loaded():
+                    node.unload()
+            except Exception:  # noqa: BLE001
+                pass
             raise
-        self._loaded_names.add(name)
-        self._touch_lru(name)
-        used = memory_gb if self._is_gpu else self._query_used_memory()
-        self._bus.emit(
-            EventType.MODEL_LOAD,
-            node_name=name,
-            device=self._device,
-            memory_used=used,
-        )
+        with self._lock:
+            self._loaded_names.add(name)
+            self._touch_lru(name)
+            used = memory_gb if self._is_gpu else self._query_used_memory()
+            self._bus.emit(
+                EventType.MODEL_LOAD,
+                node_name=name,
+                device=self._device,
+                memory_used=used,
+            )
 
     def release(self, node: Node) -> None:
         """主动释放节点显存。
@@ -356,9 +415,7 @@ class Scheduler:
             node.unload()
             self._loaded_names.discard(name)
             self._remove_from_lru(name)
-            if self._is_gpu:
-                freed = freed  # 估算值
-            else:
+            if not self._is_gpu:
                 freed = 0.0
             self._bus.emit(
                 EventType.MODEL_UNLOAD,
@@ -488,3 +545,15 @@ def set_scheduler(scheduler: Scheduler | None) -> None:
     global _default_scheduler
     with _default_scheduler_lock:
         _default_scheduler = scheduler
+
+
+def _reset_scheduler() -> None:
+    """重置全局默认调度器单例（仅供测试使用）。
+
+    将 ``_default_scheduler`` 置为 ``None``，使得下一次 :func:`get_scheduler`
+    调用会重新创建一个全新的默认调度器。用于测试隔离，避免前序用例残留的
+    调度器状态（已加载节点、LRU、显存计量等）影响后续用例。
+    """
+    global _default_scheduler
+    with _default_scheduler_lock:
+        _default_scheduler = None

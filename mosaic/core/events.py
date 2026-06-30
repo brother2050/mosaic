@@ -330,10 +330,13 @@ class EventBus:
                 pass
 
     def shutdown(self) -> None:
-        """关闭后台异步事件循环，释放资源。
+        """关闭事件总线，释放资源。
 
-        通常在程序退出时调用。已注册的同步订阅不受影响。
+        停止后台异步事件循环并清除所有订阅者，避免跨用例（如测试间）
+        的状态泄漏。通常在程序退出或测试 teardown 时调用。
         """
+        with self._lock:
+            self._subscribers.clear()
         with self._async_lock:
             loop = self._async_loop
             if loop is not None and not loop.is_closed():

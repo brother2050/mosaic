@@ -29,6 +29,8 @@
 from __future__ import annotations
 
 import concurrent.futures
+import logging
+import threading
 import time
 from collections import deque
 from dataclasses import dataclass, field
@@ -100,8 +102,8 @@ class _ConditionalNode(Node):
     domain = "core"
     description = "Conditional branch router: select one path at runtime."
     version = "0.1.0"
-    input_types: list[str] = ["mosaic"]
-    output_types: list[str] = ["mosaic"]
+    input_types: tuple[str, ...] = ("mosaic",)
+    output_types: tuple[str, ...] = ("mosaic",)
 
     def __init__(
         self,
@@ -113,9 +115,12 @@ class _ConditionalNode(Node):
         self._condition: Callable[[MosaicData], str] = condition
 
     def load(self) -> None:
-        """加载所有候选路径的子管道。"""
-        for sub in self._paths.values():
-            sub.load()
+        """标记为已加载；实际路径在 run() 时按需加载。
+
+        采用延迟加载策略：仅标记自身为已加载，不预先加载所有候选路径的
+        子管道，避免加载不会被选中的路径而浪费显存。选中的路径会在
+        :meth:`run` 中按需加载。
+        """
         self._loaded = True
 
     def unload(self) -> None:
@@ -125,14 +130,20 @@ class _ConditionalNode(Node):
         self._loaded = False
 
     def run(self, input_data: MosaicData) -> MosaicData:
-        """按条件选择路径并执行。"""
+        """按条件选择路径并执行。
+
+        选中的路径若尚未加载，则在此处按需加载（延迟加载）。
+        """
         key = self._condition(input_data)
         if key not in self._paths:
             raise PipelineError(
                 f"Conditional branch returned {key!r}, "
                 f"expected one of {sorted(self._paths.keys())}."
             )
-        return self._paths[key].run(input_data)
+        sub = self._paths[key]
+        if not sub.is_loaded():
+            sub.load()
+        return sub.run(input_data)
 
     def describe(self) -> NodeSpec:
         """返回节点规格说明。"""
@@ -181,6 +192,9 @@ class _DAGNode:
     input_labels: list[str] = field(default_factory=list)
     successors: list[str] = field(default_factory=list)
     branch_name: str | None = None
+    # 标记该节点为 Branch(input_strategy="distribute") 的首个节点：
+    # 执行时应从（前驱输出/管道输入）中按 branch_name 提取对应字段作为输入。
+    distribute_input: bool = False
 
 
 def _normalize_path(path: PathLike) -> list[Any]:
@@ -238,8 +252,11 @@ class Pipeline(Node):
     domain = "pipeline"
     description = "A composable pipeline of nodes."
     version = "0.1.0"
-    input_types: list[str] = []
-    output_types: list[str] = []
+    # Pipeline 自身不声明固定的输入/输出类型：其实际类型契约由内部 DAG
+    # 的源点与终点动态决定（见 :meth:`describe` / :meth:`accepts` /
+    # :meth:`produces`）。这里保留空元组作为"未声明"占位。
+    input_types: tuple[str, ...] = ()
+    output_types: tuple[str, ...] = ()
 
     def __init__(
         self,
@@ -256,6 +273,7 @@ class Pipeline(Node):
         self._id_counter: dict[str, int] = {}
         self._last_context: Context | None = None
         self._last_result: PipelineResult | None = None
+        self._logger = logging.getLogger("mosaic.core.pipeline")
 
     # -- 元素管理 ----------------------------------------------------------
     @property
@@ -331,9 +349,42 @@ class Pipeline(Node):
             },
         )
 
+    # -- 动态类型契约（覆盖 Node 基类的静态实现）---------------------------
+    def accepts(self, data_type: str) -> bool:
+        """判断管道是否接受给定的数据类型标识。
+
+        动态计算：基于 DAG 源点（无前驱节点）的 ``input_types`` 并集判断，
+        而非使用静态的空 ``input_types`` 类属性。这保证 :meth:`accepts`
+        与 :meth:`describe` 报告的类型契约一致。
+        """
+        self._build_dag_if_needed()
+        for sid in self._sources:
+            if data_type in self._dag[sid].node.input_types:
+                return True
+        return False
+
+    def produces(self) -> list[str]:
+        """返回管道输出的数据类型标识列表。
+
+        动态计算：聚合 DAG 终点的 ``output_types``（去重保序），而非使用
+        静态的空 ``output_types`` 类属性。这保证 :meth:`produces` 与
+        :meth:`describe` 报告的类型契约一致。
+        """
+        self._build_dag_if_needed()
+        output_types: list[str] = []
+        for _label, tid in self._terminals:
+            output_types.extend(self._dag[tid].node.output_types)
+        return list(dict.fromkeys(output_types))
+
     # -- 管道运算符 --------------------------------------------------------
     def __or__(self, other: Any) -> "Pipeline":
-        """支持 ``pipeline | node`` / ``pipeline | pipeline`` 语法（扁平展开）。"""
+        """支持 ``pipeline | node`` / ``pipeline | pipeline`` 语法（扁平展开）。
+
+        .. note::
+            返回的是名为 ``"anonymous"`` 的新管道，其 ``name``、
+            ``description`` 等元信息会丢失原管道的上下文。如需保留命名
+            与描述，请显式构造 ``Pipeline(name, [...])`` 而非使用 ``|``。
+        """
         if isinstance(other, Pipeline):
             return Pipeline("anonymous", [*self._elements, *other._elements])
         if isinstance(other, (Node, Branch)):
@@ -341,7 +392,12 @@ class Pipeline(Node):
         return NotImplemented
 
     def __ror__(self, other: Any) -> "Pipeline":
-        """支持左操作数为非 Node 类型（如 ``Branch``）时的 ``|``。"""
+        """支持左操作数为非 Node 类型（如 ``Branch``）时的 ``|``。
+
+        .. note::
+            与 :meth:`__or__` 一样，返回匿名管道（``name="anonymous"``），
+            会丢失原管道的命名与描述上下文。
+        """
         if isinstance(other, Branch):
             return Pipeline("anonymous", [other, *self._elements])
         return NotImplemented
@@ -416,9 +472,12 @@ class Pipeline(Node):
             return [(cnode.name, nid)]
 
         # fan-out：每条路径作为扁平子链加入父 DAG，标记 branch_name
+        distribute = branch.input_strategy == "distribute"
         new_frontier: list[tuple[str, str]] = []
         for pname, path in branch.paths.items():
-            chain_ids = self._add_chain(path, frontier, branch_name=pname)
+            chain_ids = self._add_chain(
+                path, frontier, branch_name=pname, distribute=distribute
+            )
             new_frontier.append((pname, chain_ids[-1]))
         return new_frontier
 
@@ -427,8 +486,17 @@ class Pipeline(Node):
         path: PathLike,
         source_frontier: list[tuple[str, str]],
         branch_name: str | None = None,
+        distribute: bool = False,
     ) -> list[str]:
-        """将一条路径（单节点或线性子链）加入 DAG，返回节点 id 列表。"""
+        """将一条路径（单节点或线性子链）加入 DAG，返回节点 id 列表。
+
+        Parameters
+        ----------
+        distribute:
+            为 ``True`` 时，链中首个节点（与 frontier 相连的节点）会被标记
+            ``distribute_input=True``，执行时按 ``branch_name`` 从输入中提取
+            对应字段。仅对 ``Branch(input_strategy="distribute")`` 生效。
+        """
         items = _normalize_path(path)
         ids: list[str] = []
         prev_id: str | None = None
@@ -438,6 +506,9 @@ class Pipeline(Node):
                     f"Branch path item must be a Node/Pipeline, got {type(item).__name__}."
                 )
             nid = self._add_node(item, branch_name=branch_name)
+            # 仅链首节点标记 distribute_input
+            if i == 0 and distribute:
+                self._dag[nid].distribute_input = True
             ids.append(nid)
             if i == 0:
                 for label, pid in source_frontier:
@@ -493,7 +564,8 @@ class Pipeline(Node):
         """干跑模式：只校验结构合法性与节点输入/输出类型匹配，不实际执行。
 
         类型匹配规则：若前驱 ``output_types`` 与后继 ``input_types`` 无交集，
-        且二者均非空，则报告不匹配。空类型列表视为"接受任意类型"。
+        且二者均非空，则报告不匹配。空类型列表视为"未声明"（跳过检查），
+        而非"接受任意类型"——这样可以避免把"忘记声明类型"误判为兼容。
         """
         self._build_dag_if_needed()
         issues: list[str] = []
@@ -519,16 +591,20 @@ class Pipeline(Node):
             dn = self._dag[nid]
             if not dn.predecessors:
                 continue
-            succ_in = set(dn.node.input_types)
+            consumer_types = set(dn.node.input_types)
             for pid in dn.predecessors:
-                pred_out = set(self._dag[pid].node.output_types)
-                if not succ_in or not pred_out:
-                    continue  # 任一方为空视为宽松兼容
-                if succ_in.isdisjoint(pred_out):
+                producer_types = set(self._dag[pid].node.output_types)
+                # 空 output_types 视为"未声明"，跳过检查（而非接受任意）
+                if not producer_types:
+                    continue  # 前驱未声明输出类型，跳过检查
+                # 空 input_types 视为"未声明"，跳过检查（而非接受任意）
+                if not consumer_types:
+                    continue  # 后继未声明输入类型，跳过检查
+                if consumer_types.isdisjoint(producer_types):
                     issues.append(
                         f"Type mismatch: '{self._dag[pid].node.name}' outputs "
-                        f"{sorted(pred_out)} but '{dn.node.name}' expects "
-                        f"{sorted(succ_in)}."
+                        f"{sorted(producer_types)} but '{dn.node.name}' expects "
+                        f"{sorted(consumer_types)}."
                     )
 
         return DryRunResult(ok=not issues, issues=issues, steps=steps)
@@ -743,6 +819,9 @@ class Pipeline(Node):
             # 串行执行（兼容模式）
             return self._execute_serial(ctx, input_data, fail_fast=fail_fast)
 
+        # 协作式取消信号：fail_fast 触发时通知尚未启动的工作线程跳过执行
+        cancel_event = threading.Event()
+
         # 并行执行
         executor = concurrent.futures.ThreadPoolExecutor(max_workers=max_workers)
         try:
@@ -764,7 +843,7 @@ class Pipeline(Node):
                     node_input = self._gather_input(dn, outputs, input_data)
                     # 提交节点执行到线程池
                     future = executor.submit(
-                        self._run_single_node, dn, node_input, ctx
+                        self._run_single_node, dn, node_input, ctx, cancel_event
                     )
                     futures[future] = nid
 
@@ -792,6 +871,8 @@ class Pipeline(Node):
                         completed.add(nid)
                     except Exception as exc:
                         if fail_fast:
+                            # 设置取消信号：通知尚未启动的工作线程跳过执行
+                            cancel_event.set()
                             # 取消所有未完成的 future
                             for f in futures:
                                 f.cancel()
@@ -838,8 +919,10 @@ class Pipeline(Node):
             )
             t0 = time.perf_counter()
             try:
-                if not dn.node.is_loaded():
-                    dn.node.load()
+                # 不在此处直接调用 node.load()，交给 scheduler.ensure_loaded() 处理
+                # 以确保显存容量检查和 LRU 淘汰正常工作；无 scheduler 的节点
+                #（旧代码兼容）回退到直接 load。
+                self._ensure_node_loaded(dn.node)
                 out = dn.node.run(node_input)
             except Exception as exc:
                 elapsed = time.perf_counter() - t0
@@ -876,14 +959,34 @@ class Pipeline(Node):
         dn: _DAGNode,
         node_input: MosaicData,
         ctx: Context,
+        cancel_event: threading.Event | None = None,
     ) -> tuple[MosaicData, float]:
         """在并行执行中运行单个节点（工作线程调用）。
+
+        Parameters
+        ----------
+        dn:
+            待执行的 DAG 节点。
+        node_input:
+            已由主线程组装好的节点输入。
+        ctx:
+            运行上下文（用于事件发布与产物存储）。
+        cancel_event:
+            协作式取消信号。若在节点实际执行前已被设置（说明另一分支已
+            失败且 ``fail_fast=True``），则跳过本节点执行并抛出
+            :class:`PipelineError`，避免无谓的计算。
 
         Returns
         -------
         tuple[MosaicData, float]
             ``(节点输出, 耗时秒数)``。
         """
+        # 协作式取消：若 fail_fast 已触发，尚未启动的工作线程跳过执行
+        if cancel_event is not None and cancel_event.is_set():
+            raise PipelineError(
+                f"Node {dn.node_id!r} skipped due to prior failure "
+                f"(cancel signal received before execution)."
+            )
         ctx.emit(
             Event(
                 event_type="node_start",
@@ -892,8 +995,10 @@ class Pipeline(Node):
             )
         )
         t0 = time.perf_counter()
-        if not dn.node.is_loaded():
-            dn.node.load()
+        # 不在此处直接调用 node.load()，交给 scheduler.ensure_loaded() 处理
+        # 以确保显存容量检查和 LRU 淘汰正常工作；无 scheduler 的节点
+        #（旧代码兼容）回退到直接 load。
+        self._ensure_node_loaded(dn.node)
         out = dn.node.run(node_input)
         elapsed = time.perf_counter() - t0
         ctx.store_artifact(dn.node_id, out, duration=elapsed)
@@ -908,6 +1013,26 @@ class Pipeline(Node):
             )
         )
         return out, elapsed
+
+    def _ensure_node_loaded(self, node: Node) -> None:
+        """确保节点已加载（执行路径专用）。
+
+        优先让节点 ``run()`` 方法内部的 ``scheduler.ensure_loaded(self)``
+        负责加载——这样会经过调度器的 ``_ensure_capacity`` 显存容量检查
+        与 LRU 淘汰，避免多个大模型同时加载导致 OOM。
+
+        若节点没有 ``_scheduler`` 属性（旧代码兼容，如纯测试 mock 节点、
+        :class:`Merge`、:class:`_ConditionalNode` 等），则回退到直接调用
+        ``node.load()``，因为这些节点的 ``run()`` 不会自行触发加载。
+        """
+        if node.is_loaded():
+            return
+        # 节点拥有 scheduler 时，由 run() 内部的 ensure_loaded 负责加载，
+        # 此处不直接调用 load()，以避免绕过显存容量检查。
+        if getattr(node, "_scheduler", None) is not None:
+            return
+        # 旧代码兼容：无 scheduler 的节点直接加载
+        node.load()
 
     def _has_parallel_paths(self) -> bool:
         """检测 DAG 中是否存在可并行执行的路径。
@@ -946,6 +1071,26 @@ class Pipeline(Node):
         pipeline_input: MosaicData,
     ) -> MosaicData:
         """为某个 DAG 节点组装输入。"""
+        # distribute 策略：按 branch_name 从输入中提取对应字段
+        if dn.distribute_input and dn.branch_name is not None:
+            if not dn.predecessors:
+                # 源点：从管道输入提取
+                source = pipeline_input
+            elif len(dn.predecessors) == 1:
+                pred_id = dn.predecessors[0]
+                source = outputs.get(pred_id, MosaicData())
+            else:
+                # distribute 节点不应有多前驱；回退到普通合并逻辑
+                source = None
+            if source is not None:
+                value = source.get(dn.branch_name)
+                if isinstance(value, MosaicData):
+                    return value
+                if value is not None:
+                    return MosaicData(**{dn.branch_name: value})
+                # 字段不存在时返回空，避免 KeyError
+                return MosaicData()
+
         if not dn.predecessors:
             # 源点：使用管道输入
             return pipeline_input
@@ -960,6 +1105,12 @@ class Pipeline(Node):
         combined = MosaicData()
         for label, pid in zip(dn.input_labels, dn.predecessors):
             if pid in outputs:
+                if label in combined:
+                    # 标签冲突：后出现的覆盖前者，发出警告以便排查
+                    self._logger.warning(
+                        "Label conflict in fan-in: %r already exists, "
+                        "overwriting previous value.", label
+                    )
                 combined[label] = outputs[pid]
         return combined
 
