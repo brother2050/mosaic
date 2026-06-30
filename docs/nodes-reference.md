@@ -599,7 +599,7 @@ result.get("image").save("high_res.png")
 | 参数 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
 | `model` | str | `briaai/RMBG-2.0` | 背景移除模型 ID |
-| `use_rembg` | bool | `False` | 是否使用 rembg 后端 |
+| `use_rembg` | bool | `False` | 是否使用 rembg 后端；`use_rembg=True` 时使用 rembg 库的 u2net 模型，首次运行自动下载（~176MB） |
 | `**kwargs` | Any | — | 透传给 `BaseImageNode` |
 
 #### run 输入
@@ -1452,6 +1452,11 @@ print(result.get("alignment_score"))
 | `device` | str | `cuda` | 推理设备 |
 | `dtype` | str | `float16` | 推理精度 |
 
+> **method 与模型对应关系**：
+> - `method="instantid"`（默认）→ `InstantX/InstantID`
+> - `method="photomaker"` → `TencentARC/PhotoMaker`
+> - `method="ip_adapter"` → `h94/IP-Adapter`
+
 #### run 输入
 
 | 字段 | 类型 | 必填 | 默认值 | 说明 |
@@ -1691,6 +1696,11 @@ result.get("video").save("avatar.mp4")
 | `method` | str | `musetalk` | 方法 |
 | `device` | str | `cuda` | 推理设备 |
 | `dtype` | str | `float16` | 推理精度 |
+
+> **method 与模型对应关系**：
+> - `method="musetalk"`（默认）→ `KwaiVGI/MuseTalk`
+> - `method="wav2lip"` → 需手动下载 wav2lip 权重（GitHub: MapleVison/wav2lip-release）
+> - `method="sadtalker"` → `cvitkwai/SadTalker`
 
 #### run 输入
 
@@ -2379,7 +2389,7 @@ text → CosyVoiceTokenizer → FlowMatchingModel → HiFiGanVocoder → StreamA
 ```python
 from mosaic.nodes.audio.tts_backends.implementations import CosyVoiceBackend
 
-backend = CosyVoiceBackend(model_path="FunAudioLLM/CosyVoice-300M", num_ode_steps=10)
+backend = CosyVoiceBackend(model_path="FunAudioLLM/CosyVoice2-0.5B", num_ode_steps=10)
 backend.load()
 audio = backend.synthesize(text="你好", language="zh")
 ```

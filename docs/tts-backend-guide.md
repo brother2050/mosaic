@@ -143,6 +143,31 @@ pip install vocos          # ChatTTS 的 Vocos 声码器
 pip install soundfile      # 本地音频读写（edge-tts 解码需要）
 ```
 
+### 模型权重下载
+
+所有 TTS 后端权重均托管在 Hugging Face，首次运行自动下载。也可手动预下载：
+
+| 后端 | Hugging Face 仓库 | 大小 |
+|------|-------------------|------|
+| ChatTTS | `2Noise/ChatTTS` | ~1.2GB |
+| Fish Speech | `fishaudio/fish-speech-1.5` | ~3GB |
+| GPT-SoVITS | `lj1995/GPT-SoVITS` | ~1.5GB |
+| CosyVoice2 | `FunAudioLLM/CosyVoice2-0.5B` | ~2GB |
+
+```bash
+# 批量预下载（可选）
+python -c "
+from huggingface_hub import snapshot_download
+snapshot_download('2Noise/ChatTTS')
+snapshot_download('fishaudio/fish-speech-1.5')
+snapshot_download('lj1995/GPT-SoVITS')
+snapshot_download('FunAudioLLM/CosyVoice2-0.5B')
+snapshot_download('Qwen/Qwen2.5-1.5B-Instruct')  # CosyVoice 的文本 LLM
+"
+```
+
+> 详细配置见 [TTS 完整指南](tts-guide.md#安装与配置)。
+
 ### 使用 ChatTTS（低延迟对话）
 
 ```python

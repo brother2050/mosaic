@@ -170,6 +170,8 @@ pip install "mosaic[audio]" vocos
 ```
 
 > 官方仓库：[2noise/ChatTTS](https://github.com/2noise/ChatTTS) — 代码已集成到 Mosaic，无需单独克隆。
+>
+> **子模型说明**：ChatTTS 使用 Vocos 声码器，已作为 pip 依赖安装（见上方 `pip install vocos`），无需单独下载模型权重。
 
 ### Fish Speech
 
@@ -183,6 +185,8 @@ pip install "mosaic[audio]"
 ```
 
 > 官方仓库：[fishaudio/fish-speech](https://github.com/fishaudio/fish-speech) — Mosaic 复用了 Fish Speech 的模型架构代码，权重遵循 Apache-2.0 许可证。
+>
+> **子模型说明**：Fish Speech 使用 DAC codec，权重已包含在仓库内，无需单独下载。
 
 ### GPT-SoVITS
 
@@ -193,9 +197,13 @@ pip install "mosaic[audio]" chinese-text-splitter pypinyin
 # 预训练权重：从 https://huggingface.co/lj1995/GPT-SoVITS 下载
 # 将下载的文件放到你指定的 model_path 目录即可使用
 # 自训练说话人模型参考 GPT-SoVITS 官方 README
+# from huggingface_hub import snapshot_download
+# snapshot_download("lj1995/GPT-SoVITS", local_dir="weights/gpt-sovits")
 ```
 
 > 官方仓库：[RVC-Boss/GPT-SoVITS](https://github.com/RVC-Boss/GPT-SoVITS) — 代码架构已集成，遵循 MIT 许可证。
+>
+> **子模型说明**：GPT-SoVITS 还需要 `chinese-hubert-base` 作为 SSL 模型，首次运行自动下载。
 
 ### CosyVoice
 
@@ -209,6 +217,14 @@ pip install "mosaic[audio]"
 ```
 
 > 官方仓库：[FunAudioLLM/CosyVoice](https://github.com/FunAudioLLM/CosyVoice) — 代码架构已集成，遵循 Apache-2.0 许可证。
+
+> CosyVoice 内部使用 Qwen/Qwen2.5-1.5B-Instruct 做文本前端，首次运行自动下载。
+> 说话人编码器 (CAM++) 权重已包含在 CosyVoice 仓库内，无需单独下载。
+> 如需预下载 LLM：
+> ```python
+> from huggingface_hub import snapshot_download
+> snapshot_download("Qwen/Qwen2.5-1.5B-Instruct")
+> ```
 
 ### 离线 / 内网环境
 

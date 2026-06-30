@@ -108,22 +108,96 @@ Mosaic 环境诊断
 
 节点运行时自动从 Hugging Face 下载模型权重到 `~/.cache/huggingface/hub/`。**首次运行每个模型都需要下载（几 GB），请确保网络通畅。**
 
+### 模型仓库 ID 速查表
+
+按域分类列出所有默认模型的 Hugging Face 仓库 ID：
+
+**文本域**
+
+| 节点 | 默认模型 | 仓库 ID | 大小 |
+|------|---------|---------|------|
+| TextGenerator / Chat / TextRewriter | Qwen2.5-7B-Instruct | `Qwen/Qwen2.5-7B-Instruct` | ~15GB |
+| Translator / TextSummarizer | Qwen2.5-7B-Instruct | `Qwen/Qwen2.5-7B-Instruct` | ~15GB |
+| TextClassifier | Qwen2.5-7B-Instruct + bart-large-mnli | `Qwen/Qwen2.5-7B-Instruct` / `facebook/bart-large-mnli` | ~15GB / ~1.6GB |
+
+**图像域**
+
+| 节点 | 默认模型 | 仓库 ID | 大小 |
+|------|---------|---------|------|
+| TextToImage / Stylizer | SDXL Base | `stabilityai/stable-diffusion-xl-base-1.0` | ~6.5GB |
+| ImageToImage | SDXL Refiner | `stabilityai/stable-diffusion-xl-refiner-1.0` | ~6.5GB |
+| Inpainting | SDXL Inpainting | `diffusers/stable-diffusion-xl-1.0-inpainting-0.1` | ~6.5GB |
+| Upscaler | SD x4 Upscaler | `stabilityai/stable-diffusion-x4-upscaler` | ~3.5GB |
+| BackgroundRemover | RMBG-2.0 | `briaai/RMBG-2.0` | ~1.4GB |
+
+**视频域**
+
+| 节点 | 默认模型 | 仓库 ID | 大小 |
+|------|---------|---------|------|
+| TextToVideo / VideoContinuation | CogVideoX-5b | `THUDM/CogVideoX-5b` | ~10GB |
+| WanVideo | Wan2.1-T2V-14B | `Wan-AI/Wan2.1-T2V-14B-Diffusers` | ~28GB |
+| HunyuanVideo | HunyuanVideo | `tencent/HunyuanVideo` | ~13GB |
+| LTXVideo | LTX-Video | `Lightricks/LTX-Video` | ~2.5GB |
+| ImageToVideo | SVD img2vid | `stabilityai/stable-video-diffusion-img2vid-xt` | ~5GB |
+
+**音频域**
+
+| 节点 | 默认模型 | 仓库 ID | 大小 |
+|------|---------|---------|------|
+| TTS (edge_tts) | Edge TTS | 云端服务，无需下载 | — |
+| TTS (ChatTTS) | ChatTTS | `2Noise/ChatTTS` | ~1.2GB |
+| TTS (Fish) | Fish Speech | `fishaudio/fish-speech-1.5` | ~3GB |
+| TTS (SoVITS) | GPT-SoVITS | `lj1995/GPT-SoVITS` | ~1.5GB |
+| TTS (CosyVoice) | CosyVoice2 | `FunAudioLLM/CosyVoice2-0.5B` + `Qwen/Qwen2.5-1.5B-Instruct` | ~2GB + ~3GB |
+| ASR / SubtitleGenerator | Whisper | `openai/whisper-large-v3` | ~3GB |
+| MusicGenerator | MusicGen | `facebook/musicgen-small` | ~2GB |
+| SoundEffectGenerator | AudioLDM2 | `cvssp/audioldm2` | ~6GB |
+
+**一致性域**
+
+| 节点 | 默认模型 | 仓库 ID |
+|------|---------|---------|
+| IdentityKeeper | InstantID | `InstantX/InstantID` |
+| StyleKeeper | IP-Adapter | `h94/IP-Adapter` |
+| CrossFrameConsistency | SDXL Base | `stabilityai/stable-diffusion-xl-base-1.0` |
+
+**数字人域**
+
+| 节点 | 默认模型 | 仓库 ID |
+|------|---------|---------|
+| AvatarDriver / RealtimeRenderer | LivePortrait | `KwaiVGI/LivePortrait` |
+| LipSyncer | MuseTalk | `KwaiVGI/MuseTalk` |
+| MotionGenerator | MotionGPT | `PrimeIntellect/MotionGPT` |
+
+**RAG 域**
+
+| 节点 | 默认模型 | 仓库 ID |
+|------|---------|---------|
+| VectorIndexer / Retriever | all-MiniLM-L6-v2 | `sentence-transformers/all-MiniLM-L6-v2` |
+| CitationGenerator | Qwen2.5-7B | `Qwen/Qwen2.5-7B-Instruct` |
+
+### 预下载命令
+
 ```bash
 # 预下载常用模型（可选，加速首次运行）
 python -c "
-from transformers import AutoModelForCausalLM, AutoTokenizer
-from diffusers import AutoPipelineForText2Image
+from huggingface_hub import snapshot_download
 
-# 文本模型 (~1.5GB)
-AutoTokenizer.from_pretrained('Qwen/Qwen2.5-1.5B-Instruct')
-AutoModelForCausalLM.from_pretrained('Qwen/Qwen2.5-1.5B-Instruct')
+# 文本模型
+snapshot_download('Qwen/Qwen2.5-1.5B-Instruct')  # 轻量版，适合快速测试
 
-# 图像模型 (~5GB)
-AutoPipelineForText2Image.from_pretrained('stabilityai/stable-diffusion-xl-base-1.0')
+# 图像模型
+snapshot_download('stabilityai/stable-diffusion-xl-base-1.0')
+
+# ASR 模型
+snapshot_download('openai/whisper-large-v3')
+
+# RAG 嵌入模型
+snapshot_download('sentence-transformers/all-MiniLM-L6-v2')
 "
 ```
 
-> **离线环境**：先在有网机器上完成下载，将 `~/.cache/huggingface/` 复制到离线机器相同路径即可。
+> **离线环境**：先在有网机器上完成下载，将 `~/.cache/huggingface/` 复制到离线机器相同路径即可。TTS 后端模型下载详见 [TTS 完整指南](tts-guide.md)。
 
 ---
 
