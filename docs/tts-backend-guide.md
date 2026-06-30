@@ -14,7 +14,7 @@ Mosaic TTS 子系统提供四个本地后端和一个云端回退后端，覆盖
 | 批量合成（高吞吐） | CosyVoice | 非自回归，可并行处理，无逐 token 串行瓶颈 |
 | 开源商用（许可证友好） | Fish / CosyVoice / SoVITS | Apache-2.0 / MIT，可商用 |
 | 最低显存需求（<2GB） | ChatTTS | 模型最小，~2GB 即可运行 |
-| 无 GPU 环境 | edge-tts | 云端服务，无需本地推理 |
+| 无 GPU 环境 | edge_tts | 云端服务，无需本地推理 |
 
 ## 各后端技术参数对比表
 
@@ -205,13 +205,13 @@ audio = backend.synthesize("Hello, 世界", language="en")
 from mosaic.nodes.audio.tts import TTS
 from mosaic import MosaicData
 
-# 显式指定后端
-tts = TTS(backend="cosyvoice", model="/data/cosyvoice")
+# 显式指定后端（模型路径通过环境变量或后端默认路径配置）
+tts = TTS(backend="cosyvoice")
 audio = tts.run(MosaicData(text="你好，世界", language="zh"))
 
 # 自动选择
 tts = TTS(backend="auto", model="auto")
-audio = tts.run(MosaicData(text="你好", language="zh", quality=True))
+audio = tts.run(MosaicData(text="你好", language="zh"))
 ```
 
 ## 注意事项

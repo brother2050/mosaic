@@ -31,6 +31,7 @@
 | `trust_remote_code` | bool | `True` | 是否信任远程代码 |
 | `scheduler` | Scheduler \| None | `None` | 显存调度器实例，`None` 使用全局单例 |
 | `bus` | EventBus \| None | `None` | 事件总线实例，`None` 使用全局单例 |
+| `**kwargs` | Any | — | 透传给 Node 基类 |
 
 ### TextGenerator — 文本生成
 
@@ -218,7 +219,7 @@ print(result.get("rewritten_text"))
 
 **所属域**：`text`
 **节点 ID**：`translator`
-**一句话描述**：专用翻译节点，将文本翻译为目标语言。
+**一句话描述**：文本翻译节点，支持专用翻译模型（MarianMT/NLLB）与通用生成模式，将文本翻译为目标语言。
 
 #### 构造函数
 
@@ -276,7 +277,7 @@ print(result.get("translated_text"))  # Hello world
 | 字段 | 类型 | 必填 | 默认值 | 说明 |
 |---|---|---|---|---|
 | `text` | str | ✅ | — | 原文 |
-| `max_length` | int | ❌ | 150 | 摘要最大长度（token） |
+| `max_length` | int | ❌ | 150 | 摘要最大长度（字数） |
 | `style` | str | ❌ | `concise` | 摘要风格，可选 `concise` / `detailed` / `bullet_points` |
 | `max_new_tokens` | int | ❌ | 512 | 最大生成 token 数 |
 | `temperature` | float | ❌ | 0.3 | 采样温度 |
@@ -289,6 +290,7 @@ print(result.get("translated_text"))  # Hello world
 | `original_length` | int | 原文长度 |
 | `summary_length` | int | 摘要长度 |
 | `compression_ratio` | float | 压缩比 |
+| `note` | str | 可选，仅原文过短跳过摘要时出现 |
 
 #### 示例
 
@@ -312,7 +314,7 @@ print(result.get("compression_ratio"))
 
 **所属域**：`text`
 **节点 ID**：`text-classifier`
-**一句话描述**：文本分类节点，基于零样本（NLI）模型支持自定义标签。
+**一句话描述**：文本分类节点，支持专用分类模型、LLM 生成选择（≤10 标签）与零样本 NLI（>10 标签）三种模式。
 
 #### 构造函数
 
@@ -1083,6 +1085,7 @@ print(result.get("frame_count"))
 | `speed` | float | 1.0 | 语速 |
 | `speaker` | str \| None | `None` | 说话人 |
 | `stream_chunk_size` | int | 4096 | 流式 chunk 大小 |
+| `max_sentence_length` | int | 200 | 单句最大字符数（超长自动切分） |
 
 #### run 输入
 
@@ -1248,7 +1251,7 @@ result.get("audio").save("rain.wav")
 
 **所属域**：`audio`
 **节点 ID**：`voice-clone`
-**一句话描述**：基于参考音频克隆说话人声音。
+**一句话描述**：基于参考音频特征匹配 edge-tts 预设语音风格（非真实音色克隆）。
 
 #### 构造函数
 
@@ -1285,12 +1288,13 @@ result.get("audio").save("rain.wav")
 from mosaic.core.types import MosaicData
 from mosaic.nodes.audio import VoiceClone
 
-clone = VoiceClone(model="sovits")
+clone = VoiceClone(model="edge-tts")
 result = clone.run(MosaicData(
     reference_audio="reference.wav",
     text="这是克隆的声音",
 ))
 result.get("audio").save("cloned.wav")
+# VoiceClone 仅支持 edge-tts 风格匹配；真实音色克隆请使用 TTS(backend="sovits") + speaker=参考音频路径
 ```
 
 ---
@@ -1846,7 +1850,7 @@ print(len(result.get("frames")))
 | `codec` | str \| None | `None` | 编码器 |
 | `quality` | int | 23 | 质量（CRF） |
 | `preset` | str | `medium` | 编码预设 |
-| `audio_codec` | str | `aac` | 音频编码器 |
+| `audio_codec` | str \| None | `aac` | 音频编码器 |
 | `pixel_format` | str | `yuv420p` | 像素格式 |
 | `bus` | EventBus \| None | `None` | 事件总线实例 |
 
@@ -2240,8 +2244,8 @@ backend = ChatTTSBackend(model_path="2Noise/ChatTTS")
 backend.load()
 audio = backend.synthesize(text="你好", language="zh")
 
-# 流式
-async for chunk in backend.synthesize_stream(text="...", language="zh"):
+# 流式：通过 tts.run_stream(MosaicData(...)) 调用（同步迭代器）
+for chunk in tts.run_stream(MosaicData(text="...", language="zh")):
     play(chunk)
 ```
 

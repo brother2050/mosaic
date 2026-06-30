@@ -37,7 +37,7 @@ ChatTTS 模型遵循 **CC BY-NC 4.0** 许可，仅供非商业用途。
 
 ## 方法
 
-### `__init__(self, model_path: 'str', vocos_path: 'str | None' = None, num_vq: 'int' = 4, language: 'str' = 'zh', use_flash_attention: 'bool' = True, streaming_enabled: 'bool' = True, scheduler: 'Any' = None, repo_id: 'str | None' = None) -> 'None'`
+### `__init__(self, model_path: 'str', vocos_path: 'str | None' = None, num_vq: 'int' = 4, language: 'str' = 'zh', use_flash_attention: 'bool' = True, streaming_enabled: 'bool' = True, stream_batch: 'int' = 24, scheduler: 'Any' = None, repo_id: 'str | None' = None) -> 'None'`
 
 初始化 ChatTTS 后端。
 
@@ -59,6 +59,8 @@ use_flash_attention : bool, default True
     声学模型是否使用 Flash Attention 加速。
 streaming_enabled : bool, default True
     是否启用流式合成（构建 Layer 4 流式适配器）。
+stream_batch : int, default 24
+    流式生成每次 yield 的 token 数。
 scheduler : Any
     显存调度器实例，``None`` 使用全局单例。透传给
     :meth:`TTSBackend.__init__`。

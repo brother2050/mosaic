@@ -229,7 +229,7 @@ ValueError
 分块流式合成。
 
 使用 Chunk-aware ODE 求解策略：
-1. 将目标 mel 分为多个 chunk（每个 ~150 帧 ≈ 1.5 秒）
+1. 将目标 mel 分为多个 chunk（每个 ~150 帧 ≈ 1.74 秒）
 2. 每个 chunk 独立做 ODE 求解
 3. 每个 chunk 完成后经 HiFi-GAN 解码为波形
 4. 通过 StreamAdapter 缓冲输出

@@ -248,7 +248,7 @@ result.get("video").save("animated.mp4")
 | 模型 | num_frames 范围 | 特殊值 |
 |---|---|---|
 | **Wan2.1/2.2** | 任意 (自动调整) | 必须为 `4k+1` (49, 81, 121) |
-| **HunyuanVideo** | 任意 | 无特殊约束 |
+| **HunyuanVideo** | 任意 | 必须为 4k+1（5/9/.../129），非有效值自动调整 |
 | **LTX-Video** | 任意 | 建议 8 的倍数 + 1 |
 | **CogVideoX** | 49 或 85 | 非有效值时自动调整 |
 | **SVD** | 14-25 | 默认 14 (xt: 25) |
@@ -343,9 +343,9 @@ WanVideo(enable_cpu_offload=True)
 WanVideo(enable_vae_tiling=True)
 # 效果: 显存峰值 -50%（仅影响 VAE 解码阶段）
 
-# 策略 3: enable_sequential_cpu_offload
-WanVideo(enable_sequential_cpu_offload=True)
-# 效果: 显存 -40%, 速度 -200%（最慢但显存最少）
+# 策略 3: WanVideo 不支持 enable_sequential_cpu_offload
+# WanVideo 仅支持 enable_cpu_offload（见策略 1）；
+# 如需更激进的显存优化，请使用 TextToVideo 节点
 
 # 策略 4: 减少 num_frames
 WanVideo()
@@ -378,19 +378,17 @@ extended = vc.run(MosaicData(video=chunks[0], num_frames=49))
 ### 7. 与其他节点组合
 
 ```python
-from mosaic import Pipeline
-from mosaic.nodes.video import WanVideo
-from mosaic.nodes.audio import TTS
-from mosaic.nodes.subtitle import SubtitleGenerator
+from mosaic import MosaicData
 from mosaic.nodes.export import VideoEncoder
 
-# 完整视频生成管道：文字 → 视频 → 配音 → 字幕 → 编码
-pipe = (
-    WanVideo(model="Wan-AI/Wan2.1-T2V-14B-Diffusers")
-    | TTS(backend="chattts")
-    | SubtitleGenerator()
-    | VideoEncoder(output_path="final.mp4", fps=16)
-)
+# VideoEncoder 构造时仅指定输出格式；
+# output_path 与 fps 在 run() 中通过 MosaicData 传入
+encoder = VideoEncoder(format="mp4")
+result = encoder.run(MosaicData(
+    frames=frames,
+    fps=16,
+    output_path="final.mp4",
+))
 ```
 
 ---
@@ -438,8 +436,8 @@ result = wan.run(MosaicData(prompt="...", num_frames=49))  # 81 → 49 省 40%
 # 4. 减少分辨率
 result = wan.run(MosaicData(prompt="...", width=832, height=480))  # 1280x720 → 832x480
 
-# 5. 启用顺序 CPU offload（最慢但最省）
-WanVideo(enable_sequential_cpu_offload=True)
+# 5. 使用 enable_cpu_offload（WanVideo 不支持 sequential_cpu_offload）
+WanVideo(enable_cpu_offload=True)
 ```
 
 ### Q4: 生成视频模糊或质量差
