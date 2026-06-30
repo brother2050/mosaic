@@ -363,7 +363,8 @@ class TestCrossFrameConsistencyBasic:
         def handler(event):
             events_received.append(event)
 
-        fresh_bus.on(EventType.NODE_COMPLETE, handler)
+        # _emit_progress 使用 EventType.PROGRESS（已从 NODE_COMPLETE 修正）
+        fresh_bus.on(EventType.PROGRESS, handler)
 
         node = CrossFrameConsistency(
             method="consistory", device="cpu", dtype="float32",
@@ -378,8 +379,7 @@ class TestCrossFrameConsistencyBasic:
             character_description="a young woman with black hair",
         ))
 
-        # 进度事件（每帧 1 个 + 最终 1 个 NODE_COMPLETE = 6 个）
-        # 但 _emit_progress 也使用 NODE_COMPLETE 事件类型
+        # 进度事件（每帧 1 个，至少 5 个 PROGRESS 事件）
         assert len(events_received) >= 5, (
             f"应至少收到 5 个进度事件，实际收到 {len(events_received)}"
         )

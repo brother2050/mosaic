@@ -27,6 +27,7 @@ import logging
 import os
 from typing import Any
 
+from mosaic.core._device_utils import infer_device, resolve_device, resolve_dtype
 from mosaic.core.events import EventBus, EventType, get_event_bus
 from mosaic.core.node import Node, NodeSpec
 from mosaic.core.scheduler import Scheduler, get_scheduler
@@ -115,12 +116,11 @@ class BaseVideoNode(Node):
         bus: EventBus | None = None,
         **kwargs: Any,
     ) -> None:
-        super().__init__(**kwargs)
+        super().__init__(bus=bus, **kwargs)
         self._model_name: str = model
         self._device: str = device
         self._dtype_str: str = dtype
         self._scheduler: Scheduler = scheduler or get_scheduler()
-        self._bus: EventBus = bus or get_event_bus()
         self._logger = logging.getLogger(f"mosaic.nodes.video.{self.name}")
 
         # 运行时持有的 Pipeline / 模型（load 后填充）
@@ -175,45 +175,25 @@ class BaseVideoNode(Node):
         """推断推理设备。"""
         if self._pipeline is None:
             return self._scheduler.device
-        try:
-            import torch  # type: ignore
-
-            # 尝试从 pipeline 的 UNet 参数推断设备
-            unet = getattr(self._pipeline, "unet", None)
-            if unet is not None:
-                return next(unet.parameters()).device.type
-        except Exception:  # noqa: BLE001
-            pass
-        return self._device
+        # 优先从 pipeline 的 UNet 参数推断设备，失败时由工具函数回退到调度器设备
+        unet = getattr(self._pipeline, "unet", None)
+        return infer_device(
+            unet if unet is not None else self._pipeline, self._scheduler
+        )
 
     def _resolve_device(self) -> str:
         """解析实际设备字符串，无 GPU 时降级到 CPU。"""
-        try:
-            import torch  # type: ignore
-
-            if self._device.startswith("cuda") and not torch.cuda.is_available():
-                self._logger.warning(
-                    "CUDA not available, falling back to CPU for %s.",
-                    self.name,
-                )
-                return "cpu"
-        except ImportError:
-            pass
-        return self._device
+        device = resolve_device(self._device)
+        if device != self._device:
+            self._logger.warning(
+                "CUDA not available, falling back to CPU for %s.",
+                self.name,
+            )
+        return device
 
     def _resolve_dtype(self) -> Any:
         """解析 torch dtype 字符串为 torch.dtype 对象。"""
-        import torch  # type: ignore
-
-        dtype_map = {
-            "float16": torch.float16,
-            "fp16": torch.float16,
-            "float32": torch.float32,
-            "fp32": torch.float32,
-            "bfloat16": torch.bfloat16,
-            "bf16": torch.bfloat16,
-        }
-        return dtype_map.get(self._dtype_str, torch.float16)
+        return resolve_dtype(self._dtype_str)
 
     # ------------------------------------------------------------------
     # 视频前后处理工具
@@ -302,6 +282,7 @@ class BaseVideoNode(Node):
         """
         import imageio.v2 as imageio  # type: ignore
         import numpy as np  # type: ignore
+        from PIL import Image  # type: ignore
 
         # 确保目录存在
         dir_path = os.path.dirname(path)
@@ -315,8 +296,6 @@ class BaseVideoNode(Node):
         )
 
         for frame in frames:
-            from PIL import Image  # type: ignore
-
             if isinstance(frame, Image.Image):
                 arr = np.array(frame.convert("RGB"))
             else:
@@ -553,54 +532,6 @@ class BaseVideoNode(Node):
         metadata.update(extra)
 
         return VideoData(frames=frames, fps=fps, metadata=metadata)
-
-    # ------------------------------------------------------------------
-    # 事件发射辅助
-    # ------------------------------------------------------------------
-    def _emit_start(self) -> None:
-        """发出 node_start 事件。"""
-        self._bus.emit(
-            EventType.NODE_START,
-            node_name=self.name,
-            node_domain=self.domain,
-        )
-
-    def _emit_complete(self, duration: float, output_summary: Any) -> None:
-        """发出 node_complete 事件。"""
-        self._bus.emit(
-            EventType.NODE_COMPLETE,
-            node_name=self.name,
-            duration=duration,
-            output_summary=output_summary,
-        )
-
-    def _emit_error(self, error: BaseException) -> None:
-        """发出 node_error 事件。"""
-        self._bus.emit(
-            EventType.NODE_ERROR,
-            node_name=self.name,
-            error=error,
-        )
-
-    def _emit_progress(self, current: int, total: int, message: str = "") -> None:
-        """发出 progress 事件。
-
-        Parameters
-        ----------
-        current:
-            当前进度（已完成数）。
-        total:
-            总数。
-        message:
-            可选的进度描述。
-        """
-        self._bus.emit(
-            EventType.PROGRESS,
-            node_name=self.name,
-            current=current,
-            total=total,
-            message=message,
-        )
 
     # ------------------------------------------------------------------
     # Node 抽象方法

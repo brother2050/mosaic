@@ -28,7 +28,7 @@ Phase 6 测试覆盖一致性域（Consistency Domain），包括 CrossFrameCons
 | T_CF_11 | method 参数切换（consistory / story-diffusion / all-in-one） | 三种方法都能实例化且 describe 正常 |
 | T_CF_12 | describe 返回正确信息 | name/domain/version/model_info 均正确 |
 | T_CF_13 | load/unload 后 is_loaded 状态正确 | 加载前 False，加载后 True，卸载后 False |
-| T_CF_14 | 进度事件在多帧生成中被触发 | 至少收到 5 个 NODE_COMPLETE 事件，含 progress 信息 |
+| T_CF_14 | 进度事件在多帧生成中被触发 | 至少收到 5 个 PROGRESS 事件，含 progress 信息 |
 
 ---
 

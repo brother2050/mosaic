@@ -27,18 +27,26 @@ def _resolve_cache_dir() -> str | None:
 
     优先级与 HuggingFace 库一致：
     1. ``HF_HUB_CACHE`` 环境变量
-    2. ``HF_HOME`` 环境变量下的 ``hub`` 子目录
+    2. ``HF_HOME`` 环境变量下的 ``hub`` 子目录（通过 :class:`MosaicEnv`）
     3. ``None``（让 HF 库使用默认路径）
 
     显式返回 ``cache_dir`` 而非依赖 HF 库隐式读取，确保行为可预测。
     """
+    # 优先使用 HF_HUB_CACHE（最高优先级，与 HF 库行为一致）
     hf_hub_cache = os.environ.get("HF_HUB_CACHE")
     if hf_hub_cache and hf_hub_cache.strip():
         return hf_hub_cache.strip()
 
-    hf_home = os.environ.get("HF_HOME")
-    if hf_home and hf_home.strip():
-        return os.path.join(hf_home.strip(), "hub")
+    # 通过 MosaicEnv 统一读取 HF_HOME（与项目其他模块保持一致）
+    try:
+        from mosaic.core.env import MosaicEnv
+
+        hf_home = MosaicEnv.get_hf_home()
+        default_home = os.path.join(os.path.expanduser("~"), ".cache", "huggingface")
+        if hf_home != default_home:
+            return os.path.join(hf_home, "hub")
+    except Exception:  # noqa: BLE001
+        pass
 
     return None
 
@@ -179,6 +187,25 @@ def _build_error_message(model_name: str, exc: Exception) -> str:
     )
 
 
+def _cache_class_name(cls: Any) -> str:
+    """生成用于模型缓存键的类名字符串。
+
+    优先返回类的 ``__name__``；当传入对象没有可用的 ``__name__``（例如测试
+    环境中 ``diffusers``/``transformers`` 被替换为 ``MagicMock``，而
+    ``MagicMock.__name__`` 会抛出 ``AttributeError``）时，回退到 ``str(cls)``，
+    保证缓存键始终为可哈希的字符串。
+
+    返回字符串而非类对象，可绕过 :meth:`ModelCache._make_key` 对
+    ``__name__`` 的访问，使缓存在 mock 环境下同样可用。
+    """
+    if isinstance(cls, str):
+        return cls
+    name = getattr(cls, "__name__", None)
+    if isinstance(name, str):
+        return name
+    return str(cls)
+
+
 def safe_load_pipeline(
     pipeline_class: Any,
     model_name: str,
@@ -218,6 +245,7 @@ def safe_load_pipeline(
         加载失败时抛出，包含版本诊断信息。
     """
     import torch  # type: ignore
+    from mosaic.core.model_cache import model_cache
 
     # 显式传递 cache_dir，确保 HF_HOME 对所有节点生效
     cache_dir = _resolve_cache_dir()
@@ -245,11 +273,22 @@ def safe_load_pipeline(
         dtype_str is not None and dtype_str in ("float16", "fp16")
     )
 
+    # 查询模型缓存：命中则直接返回，避免同一模型被多个节点实例重复加载。
+    # ``device`` 纳入缓存键以区分加载到不同设备的实例；节点未显式传入时为
+    # ``None``。``dtype_str`` 为 None 时统一记为 "default"，保证键为字符串。
+    cache_dtype = dtype_str or "default"
+    cache_device = kwargs.get("device")
+    cache_cls = _cache_class_name(pipeline_class)
+    cached = model_cache.get(cache_cls, model_name, cache_dtype, cache_device)
+    if cached is not None:
+        return cached
+
     # 第一次尝试（可能带 variant="fp16"）
     first_exc: BaseException | None = None
+    pipe: Any = None
     if use_fp16_variant:
         try:
-            return pipeline_class.from_pretrained(
+            pipe = pipeline_class.from_pretrained(
                 model_name,
                 variant="fp16",
                 **kwargs,
@@ -271,22 +310,27 @@ def safe_load_pipeline(
             )
 
     # 第二次尝试（不带 variant 或非 fp16 场景）
-    try:
-        return pipeline_class.from_pretrained(model_name, **kwargs)
-    except (ImportError, AttributeError, ValueError, OSError, RuntimeError) as exc:
-        if first_exc is not None:
-            # 两次加载均失败：同时记录 fp16 与 fp32 的错误，避免第一次失败
-            # 信息丢失导致根因难以定位（见 E1）。
-            logger.error(
-                "Both fp16 variant and fp32 load failed for %s. "
-                "fp16 error: %s; fp32 error: %s",
-                model_name,
-                first_exc,
-                exc,
-            )
-        raise RuntimeError(
-            _build_error_message(model_name, exc)
-        ) from exc
+    if pipe is None:
+        try:
+            pipe = pipeline_class.from_pretrained(model_name, **kwargs)
+        except (ImportError, AttributeError, ValueError, OSError, RuntimeError) as exc:
+            if first_exc is not None:
+                # 两次加载均失败：同时记录 fp16 与 fp32 的错误，避免第一次失败
+                # 信息丢失导致根因难以定位（见 E1）。
+                logger.error(
+                    "Both fp16 variant and fp32 load failed for %s. "
+                    "fp16 error: %s; fp32 error: %s",
+                    model_name,
+                    first_exc,
+                    exc,
+                )
+            raise RuntimeError(
+                _build_error_message(model_name, exc)
+            ) from exc
+
+    # 加载成功后存入缓存（from_pretrained 抛异常时不会到达此处）
+    model_cache.put(cache_cls, model_name, cache_dtype, pipe, cache_device)
+    return pipe
 
 
 def safe_load_processor(
@@ -315,13 +359,31 @@ def safe_load_processor(
     RuntimeError
         加载失败时抛出，包含版本诊断信息。
     """
+    from mosaic.core.model_cache import model_cache
+
     try:
         # 显式传递 cache_dir，确保 HF_HOME 对所有节点生效
         cache_dir = _resolve_cache_dir()
         if cache_dir is not None and "cache_dir" not in kwargs:
             kwargs["cache_dir"] = cache_dir
-        return processor_class.from_pretrained(model_name, **kwargs)
-    except (ImportError, AttributeError, ValueError, OSError, EnvironmentError) as exc:
+
+        # 查询缓存：processor/tokenizer 通常无 dtype 概念，统一以 "default"
+        # 作为 dtype 维度的键；device 纳入键以区分不同设备实例。
+        cache_device = kwargs.get("device")
+        cache_cls = _cache_class_name(processor_class)
+        cached = model_cache.get(
+            cache_cls, model_name, "default", cache_device
+        )
+        if cached is not None:
+            return cached
+
+        processor = processor_class.from_pretrained(model_name, **kwargs)
+        # 加载成功后存入缓存（from_pretrained 抛异常时不会到达此处）
+        model_cache.put(
+            cache_cls, model_name, "default", processor, cache_device
+        )
+        return processor
+    except (ImportError, AttributeError, ValueError, OSError) as exc:
         raise RuntimeError(
             _build_error_message(model_name, exc)
         ) from exc
@@ -357,15 +419,27 @@ def safe_load_model(
     RuntimeError
         加载失败时抛出，包含版本诊断信息。
     """
+    from mosaic.core.model_cache import model_cache
+
     # 优先使用 dtype=（新版 transformers），回退 torch_dtype=（旧版兼容）
     # 显式传递 cache_dir，确保 HF_HOME 对所有节点生效
     cache_dir = _resolve_cache_dir()
     if cache_dir is not None and "cache_dir" not in kwargs:
         kwargs["cache_dir"] = cache_dir
 
+    # 查询缓存：将 dtype 转为字符串作为缓存键（与 pipeline 的 dtype_str 维度
+    # 对齐），确保同 dtype 实例命中；device 纳入键以区分不同设备实例。
+    cache_dtype = str(dtype) if dtype is not None else "default"
+    cache_device = kwargs.get("device")
+    cache_cls = _cache_class_name(model_class)
+    cached = model_cache.get(cache_cls, model_name, cache_dtype, cache_device)
+    if cached is not None:
+        return cached
+
+    model: Any = None
     if dtype is not None:
         try:
-            return model_class.from_pretrained(model_name, dtype=dtype, **kwargs)
+            model = model_class.from_pretrained(model_name, dtype=dtype, **kwargs)
         except TypeError as exc:
             # 旧版 transformers 不接受 dtype= 关键字，回退到 torch_dtype=。
             # 记录警告，避免 TypeError 被静默回退而掩盖真正的加载错误（见 E3）。
@@ -375,16 +449,21 @@ def safe_load_model(
                 model_name,
                 exc,
             )
-            return model_class.from_pretrained(
+            model = model_class.from_pretrained(
                 model_name, torch_dtype=dtype, **kwargs
             )
-        except (ImportError, AttributeError, ValueError, OSError, EnvironmentError) as exc:
+        except (ImportError, AttributeError, ValueError, OSError) as exc:
             raise RuntimeError(
                 _build_error_message(model_name, exc)
             ) from exc
-    try:
-        return model_class.from_pretrained(model_name, **kwargs)
-    except (ImportError, AttributeError, ValueError, OSError, EnvironmentError) as exc:
-        raise RuntimeError(
-            _build_error_message(model_name, exc)
-        ) from exc
+    else:
+        try:
+            model = model_class.from_pretrained(model_name, **kwargs)
+        except (ImportError, AttributeError, ValueError, OSError) as exc:
+            raise RuntimeError(
+                _build_error_message(model_name, exc)
+            ) from exc
+
+    # 加载成功后存入缓存（from_pretrained 抛异常时不会到达此处）
+    model_cache.put(cache_cls, model_name, cache_dtype, model, cache_device)
+    return model

@@ -22,6 +22,7 @@ import logging
 import os
 from typing import Any
 
+from mosaic.core._device_utils import infer_device, resolve_device
 from mosaic.core.events import EventBus, EventType, get_event_bus
 from mosaic.core.node import Node, NodeSpec
 from mosaic.core.scheduler import Scheduler, get_scheduler
@@ -104,12 +105,11 @@ class BaseAudioNode(Node):
         bus: EventBus | None = None,
         **kwargs: Any,
     ) -> None:
-        super().__init__(**kwargs)
+        super().__init__(bus=bus, **kwargs)
         self._model_name: str = model
         self._device: str = device
         self._target_sample_rate: int | None = sample_rate
         self._scheduler: Scheduler = scheduler or get_scheduler()
-        self._bus: EventBus = bus or get_event_bus()
         self._logger = logging.getLogger(f"mosaic.nodes.audio.{self.name}")
 
         # 运行时持有的模型/管道（load 后填充）
@@ -164,35 +164,17 @@ class BaseAudioNode(Node):
     # ------------------------------------------------------------------
     def _infer_device(self) -> str:
         """推断推理设备。"""
-        if self._model is None:
-            return self._scheduler.device
-        try:
-            # 尝试从模型参数推断设备
-            params = getattr(self._model, "parameters", None)
-            if params is not None:
-                return next(params()).device.type
-        except (StopIteration, AttributeError, RuntimeError):
-            pass
-        # 检查 device 属性
-        device_attr = getattr(self._model, "device", None)
-        if device_attr is not None:
-            return str(device_attr)
-        return self._device
+        return infer_device(self._model, self._scheduler)
 
     def _resolve_device(self) -> str:
         """解析实际设备字符串，无 GPU 时降级到 CPU。"""
-        try:
-            import torch  # type: ignore
-
-            if self._device.startswith("cuda") and not torch.cuda.is_available():
-                self._logger.warning(
-                    "CUDA not available, falling back to CPU for %s.",
-                    self.name,
-                )
-                return "cpu"
-        except ImportError:
-            pass
-        return self._device
+        device = resolve_device(self._device)
+        if device != self._device:
+            self._logger.warning(
+                "CUDA not available, falling back to CPU for %s.",
+                self.name,
+            )
+        return device
 
     # ------------------------------------------------------------------
     # 音频前后处理工具
@@ -444,34 +426,6 @@ class BaseAudioNode(Node):
             waveform=waveform,
             sample_rate=sample_rate,
             metadata=metadata,
-        )
-
-    # ------------------------------------------------------------------
-    # 事件发射辅助
-    # ------------------------------------------------------------------
-    def _emit_start(self) -> None:
-        """发出 node_start 事件。"""
-        self._bus.emit(
-            EventType.NODE_START,
-            node_name=self.name,
-            node_domain=self.domain,
-        )
-
-    def _emit_complete(self, duration: float, output_summary: Any) -> None:
-        """发出 node_complete 事件。"""
-        self._bus.emit(
-            EventType.NODE_COMPLETE,
-            node_name=self.name,
-            duration=duration,
-            output_summary=output_summary,
-        )
-
-    def _emit_error(self, error: BaseException) -> None:
-        """发出 node_error 事件。"""
-        self._bus.emit(
-            EventType.NODE_ERROR,
-            node_name=self.name,
-            error=error,
         )
 
     # ------------------------------------------------------------------

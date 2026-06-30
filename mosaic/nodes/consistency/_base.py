@@ -21,6 +21,13 @@ import logging
 import random
 from typing import Any
 
+from mosaic.core._device_utils import (
+    apply_optimizations,
+    infer_device,
+    resolve_device,
+    resolve_dtype,
+    run_diffusers_pipeline,
+)
 from mosaic.core.events import EventBus, EventType, get_event_bus
 from mosaic.core.node import Node, NodeSpec
 from mosaic.core.scheduler import Scheduler, get_scheduler
@@ -84,11 +91,10 @@ class BaseConsistencyNode(Node):
         bus: EventBus | None = None,
         **kwargs: Any,
     ) -> None:
-        super().__init__(**kwargs)
+        super().__init__(bus=bus, **kwargs)
         self._device: str = device
         self._dtype_str: str = dtype
         self._scheduler: Scheduler = scheduler or get_scheduler()
-        self._bus: EventBus = bus or get_event_bus()
         self._logger = logging.getLogger(
             f"mosaic.nodes.consistency.{self.name}"
         )
@@ -101,31 +107,17 @@ class BaseConsistencyNode(Node):
     # ------------------------------------------------------------------
     def _resolve_dtype(self) -> Any:
         """解析 torch dtype 字符串为 torch.dtype 对象。"""
-        import torch  # type: ignore
-
-        dtype_map = {
-            "float16": torch.float16,
-            "fp16": torch.float16,
-            "float32": torch.float32,
-            "fp32": torch.float32,
-            "bfloat16": torch.bfloat16,
-            "bf16": torch.bfloat16,
-        }
-        return dtype_map.get(self._dtype_str, torch.float16)
+        return resolve_dtype(self._dtype_str)
 
     def _infer_device(self) -> str:
         """推断推理设备。"""
         if self._pipeline is None:
             return self._scheduler.device
-        try:
-            import torch  # type: ignore
-
-            unet = getattr(self._pipeline, "unet", None)
-            if unet is not None:
-                return next(unet.parameters()).device.type
-        except Exception:  # noqa: BLE001
-            pass
-        return self._device
+        # 优先从 pipeline 的 UNet 参数推断设备，失败时由工具函数回退到调度器设备
+        unet = getattr(self._pipeline, "unet", None)
+        return infer_device(
+            unet if unet is not None else self._pipeline, self._scheduler
+        )
 
     def _resolve_device(self) -> str:
         """解析实际推理设备，无 GPU 时从调度器降级。
@@ -134,9 +126,8 @@ class BaseConsistencyNode(Node):
         降级到调度器报告的设备（通常为 ``"cpu"``）并记录日志。所有一致性
         子类应通过本方法解析目标设备，避免各自实现不一致的降级逻辑。
         """
-        device = self._device
-        if device.startswith("cuda") and not self._scheduler.is_gpu:
-            device = self._scheduler.device
+        device = resolve_device(self._device, self._scheduler)
+        if device != self._device:
             self._logger.info(
                 "No GPU available; falling back to device %r.", device
             )
@@ -192,38 +183,15 @@ class BaseConsistencyNode(Node):
 
     def _run_pipeline(self, **kwargs: Any) -> Any:
         """在 torch.inference_mode 下执行 Pipeline 调用。"""
-        import torch  # type: ignore
-
-        with torch.inference_mode():
-            output = self._pipeline(**kwargs)
-        return output
+        return run_diffusers_pipeline(self._pipeline, **kwargs)
 
     def _apply_optimizations(self) -> None:
         """对已加载的 Pipeline 应用显存优化配置。"""
-        pipe = self._pipeline
-        if pipe is None:
-            return
-
-        # Attention slicing
-        try:
-            pipe.enable_attention_slicing()
-            self._logger.debug("Enabled attention slicing.")
-        except Exception:  # noqa: BLE001
-            pass
-
-        # VAE slicing (兼容 diffusers 0.40+)
-        vae = getattr(pipe, "vae", None)
-        if vae is not None and hasattr(vae, "enable_slicing"):
-            try:
-                vae.enable_slicing()
-                self._logger.debug("Enabled VAE slicing.")
-            except Exception:  # noqa: BLE001
-                pass
-        else:
-            try:
-                pipe.enable_vae_slicing()
-            except Exception:  # noqa: BLE001
-                pass
+        apply_optimizations(
+            self._pipeline,
+            enable_attention_slicing=True,
+            enable_vae_slicing=True,
+        )
 
     # ------------------------------------------------------------------
     # 图像前后处理工具
@@ -432,47 +400,6 @@ class BaseConsistencyNode(Node):
         )
         correlation = float(np.dot(arr1_flat, arr2_flat) / denom)
         return max(0.0, min(1.0, (correlation + 1.0) / 2.0))
-
-    # ------------------------------------------------------------------
-    # 事件发射辅助
-    # ------------------------------------------------------------------
-    def _emit_start(self) -> None:
-        """发出 node_start 事件。"""
-        self._bus.emit(
-            EventType.NODE_START,
-            node_name=self.name,
-            node_domain=self.domain,
-        )
-
-    def _emit_complete(self, duration: float, output_summary: Any) -> None:
-        """发出 node_complete 事件。"""
-        self._bus.emit(
-            EventType.NODE_COMPLETE,
-            node_name=self.name,
-            duration=duration,
-            output_summary=output_summary,
-        )
-
-    def _emit_error(self, error: BaseException) -> None:
-        """发出 node_error 事件。"""
-        self._bus.emit(
-            EventType.NODE_ERROR,
-            node_name=self.name,
-            error=error,
-        )
-
-    def _emit_progress(self, current: int, total: int, message: str = "") -> None:
-        """发出进度事件。"""
-        self._bus.emit(
-            EventType.NODE_COMPLETE,
-            node_name=self.name,
-            output_summary={
-                "progress": current / max(1, total),
-                "current": current,
-                "total": total,
-                "message": message,
-            },
-        )
 
     # ------------------------------------------------------------------
     # Node 抽象方法

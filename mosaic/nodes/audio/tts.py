@@ -380,11 +380,11 @@ def _synthesize_edge_tts(
 
     async def _synth(text: str) -> bytes:
         communicate = edge_tts.Communicate(text, voice, rate=rate_str)
-        audio_data = b""
+        audio_data = bytearray()
         async for chunk in communicate.stream():
             if chunk["type"] == "audio":
-                audio_data += chunk["data"]
-        return audio_data
+                audio_data.extend(chunk["data"])
+        return bytes(audio_data)
 
     async def _synthesize_all() -> list[bytes]:
         """并发合成所有句子（单次事件循环，避免反复创建/销毁）。"""

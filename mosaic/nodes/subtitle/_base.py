@@ -55,9 +55,8 @@ class BaseSubtitleNode(Node):
         bus: EventBus | None = None,
         **kwargs: Any,
     ) -> None:
-        super().__init__(**kwargs)
+        super().__init__(bus=bus, **kwargs)
         self._scheduler: Scheduler = scheduler or get_scheduler()
-        self._bus: EventBus = bus or get_event_bus()
         self._logger = logging.getLogger(f"mosaic.nodes.subtitle.{self.name}")
         self._model: Any = None
 
@@ -81,34 +80,6 @@ class BaseSubtitleNode(Node):
         """释放模型。"""
         self._model = None
         self._loaded = False
-
-    # ------------------------------------------------------------------
-    # 事件发射辅助
-    # ------------------------------------------------------------------
-    def _emit_start(self) -> None:
-        """发出 node_start 事件。"""
-        self._bus.emit(
-            EventType.NODE_START,
-            node_name=self.name,
-            node_domain=self.domain,
-        )
-
-    def _emit_complete(self, duration: float, output_summary: Any) -> None:
-        """发出 node_complete 事件。"""
-        self._bus.emit(
-            EventType.NODE_COMPLETE,
-            node_name=self.name,
-            duration=duration,
-            output_summary=output_summary,
-        )
-
-    def _emit_error(self, error: BaseException) -> None:
-        """发出 node_error 事件。"""
-        self._bus.emit(
-            EventType.NODE_ERROR,
-            node_name=self.name,
-            error=error,
-        )
 
     # ------------------------------------------------------------------
     # 字幕格式转换工具

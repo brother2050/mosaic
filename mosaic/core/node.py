@@ -17,9 +17,11 @@
 from __future__ import annotations
 
 import abc
+import logging
 from dataclasses import dataclass, field
 from typing import Any
 
+from mosaic.core.events import EventBus, EventType, get_event_bus
 from mosaic.core.types import MosaicData
 
 __all__ = ["NodeSpec", "Node"]
@@ -138,23 +140,25 @@ class Node(abc.ABC):
     input_types: tuple[str, ...] = ()
     output_types: tuple[str, ...] = ()
 
-    def __init__(self, **kwargs: Any) -> None:
+    def __init__(self, bus: EventBus | None = None, **kwargs: Any) -> None:
+        self._loaded: bool = False
+        # 事件总线与日志器（子类可直接复用，无需重复初始化）
+        self._bus: EventBus = bus or get_event_bus()
+        self._logger: logging.Logger = logging.getLogger(
+            f"mosaic.node.{self.name}"
+        )
         # 允许实例化时覆写类属性
-        import logging
-
-        _logger = logging.getLogger("mosaic.core.node")
         for key, value in kwargs.items():
             if hasattr(type(self), key):
                 setattr(self, key, value)
             else:
                 # 未知 kwargs 不抛异常（保持向后兼容），但发出告警以
                 # 帮助用户发现参数名拼写错误。
-                _logger.warning(
+                self._logger.warning(
                     "%s received unknown kwarg %r=%r; ignored. "
                     "Check for typos in parameter names.",
                     type(self).__name__, key, value,
                 )
-        self._loaded: bool = False
 
     # -- 抽象方法（子类必须实现）------------------------------------------
     @abc.abstractmethod
@@ -224,6 +228,45 @@ class Node(abc.ABC):
     def produces(self) -> list[str]:
         """返回节点输出的数据类型标识列表。"""
         return list(self.output_types)
+
+    # -- 事件发射辅助（子类直接复用，无需重复实现）------------------------
+    def _emit_start(self) -> None:
+        """发出 node_start 事件。"""
+        self._bus.emit(
+            EventType.NODE_START,
+            node_name=self.name,
+            node_domain=self.domain,
+        )
+
+    def _emit_complete(self, duration: float, output_summary: Any) -> None:
+        """发出 node_complete 事件。"""
+        self._bus.emit(
+            EventType.NODE_COMPLETE,
+            node_name=self.name,
+            duration=duration,
+            output_summary=output_summary,
+        )
+
+    def _emit_error(self, error: BaseException) -> None:
+        """发出 node_error 事件。"""
+        self._bus.emit(
+            EventType.NODE_ERROR,
+            node_name=self.name,
+            error=error,
+        )
+
+    def _emit_progress(self, current: int, total: int, message: str = "") -> None:
+        """发出 progress 事件。"""
+        self._bus.emit(
+            EventType.PROGRESS,
+            node_name=self.name,
+            output_summary={
+                "progress": current / max(1, total),
+                "current": current,
+                "total": total,
+                "message": message,
+            },
+        )
 
     # -- 管道运算符 --------------------------------------------------------
     def __or__(self, other: Any) -> Any:

@@ -544,15 +544,3 @@ def set_scheduler(scheduler: Scheduler | None) -> None:
     global _default_scheduler
     with _default_scheduler_lock:
         _default_scheduler = scheduler
-
-
-def _reset_scheduler() -> None:
-    """重置全局默认调度器单例（仅供测试使用）。
-
-    将 ``_default_scheduler`` 置为 ``None``，使得下一次 :func:`get_scheduler`
-    调用会重新创建一个全新的默认调度器。用于测试隔离，避免前序用例残留的
-    调度器状态（已加载节点、LRU、显存计量等）影响后续用例。
-    """
-    global _default_scheduler
-    with _default_scheduler_lock:
-        _default_scheduler = None

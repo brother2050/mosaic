@@ -146,14 +146,13 @@ class VideoEncoder(Node):
         bus: EventBus | None = None,
         **kwargs: Any,
     ) -> None:
-        super().__init__(**kwargs)
+        super().__init__(bus=bus, **kwargs)
         self._format: str = format.lower()
         self._codec: str | None = codec
         self._quality: int = max(0, min(51, quality))
         self._preset: str = preset if preset in _VALID_PRESETS else "medium"
         self._audio_codec: str | None = audio_codec
         self._pixel_format: str = pixel_format
-        self._bus: EventBus = bus or get_event_bus()
         self._logger = logging.getLogger(f"mosaic.nodes.export.{self.name}")
         self._ffmpeg_path: str | None = None
 
@@ -705,44 +704,6 @@ class VideoEncoder(Node):
             type(subtitle).__name__,
         )
         return None
-
-    # ------------------------------------------------------------------
-    # 事件发射辅助
-    # ------------------------------------------------------------------
-    def _emit_start(self) -> None:
-        """发出 node_start 事件。"""
-        self._bus.emit(
-            EventType.NODE_START,
-            node_name=self.name,
-            node_domain=self.domain,
-        )
-
-    def _emit_complete(self, duration: float, output_summary: Any) -> None:
-        """发出 node_complete 事件。"""
-        self._bus.emit(
-            EventType.NODE_COMPLETE,
-            node_name=self.name,
-            duration=duration,
-            output_summary=output_summary,
-        )
-
-    def _emit_error(self, error: BaseException) -> None:
-        """发出 node_error 事件。"""
-        self._bus.emit(
-            EventType.NODE_ERROR,
-            node_name=self.name,
-            error=error,
-        )
-
-    def _emit_progress(self, current: int, total: int, message: str = "") -> None:
-        """发出 progress 事件。"""
-        self._bus.emit(
-            EventType.PROGRESS,
-            node_name=self.name,
-            current=current,
-            total=total,
-            message=message,
-        )
 
     def __repr__(self) -> str:
         status = "loaded" if self._loaded else "unloaded"

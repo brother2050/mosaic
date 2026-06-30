@@ -19,6 +19,7 @@ import re
 import time
 from typing import Any
 
+from mosaic.core._device_utils import infer_device
 from mosaic.core.events import EventBus, EventType, get_event_bus
 from mosaic.core.node import NodeSpec
 from mosaic.core.registry import registry
@@ -368,12 +369,7 @@ class CitationGenerator(BaseRagNode):
 
     def _infer_device(self) -> str:
         """推断模型所在设备。"""
-        if self._model is None:
-            return self._scheduler.device
-        try:
-            return next(self._model.parameters()).device
-        except (StopIteration, AttributeError):
-            return self._scheduler.device
+        return infer_device(self._model, self._scheduler)
 
     # ------------------------------------------------------------------
     # Prompt 构造与引用解析

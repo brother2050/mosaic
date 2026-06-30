@@ -249,6 +249,15 @@ from mosaic.core.events import EventBus
 from mosaic.core.scheduler import Scheduler, set_scheduler
 
 
+@pytest.fixture(autouse=True)
+def _clear_model_cache():
+    """每个测试前后清空 model_cache，避免 mock 对象跨测试污染。"""
+    from mosaic.core.model_cache import model_cache
+    model_cache.clear()
+    yield
+    model_cache.clear()
+
+
 @pytest.fixture
 def fresh_bus():
     """新鲜的事件总线。"""

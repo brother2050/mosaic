@@ -126,13 +126,12 @@ class Livestreamer(Node):
         bus: EventBus | None = None,
         **kwargs: Any,
     ) -> None:
-        super().__init__(**kwargs)
+        super().__init__(bus=bus, **kwargs)
         self._protocol: str = protocol.lower() if protocol.lower() in _VALID_PROTOCOLS else "rtmp"
         self._codec: str = codec
         self._bitrate: str = bitrate
         self._fps: int = max(1, fps)
         self._resolution: tuple[int, int] = self._ensure_even(*resolution)
-        self._bus: EventBus = bus or get_event_bus()
         self._logger = logging.getLogger(f"mosaic.nodes.export.{self.name}")
         self._ffmpeg_path: str | None = None
         self._stream_process: subprocess.Popen | None = None
@@ -596,44 +595,6 @@ class Livestreamer(Node):
             type(audio).__name__,
         )
         return None
-
-    # ------------------------------------------------------------------
-    # 事件发射辅助
-    # ------------------------------------------------------------------
-    def _emit_start(self) -> None:
-        """发出 node_start 事件。"""
-        self._bus.emit(
-            EventType.NODE_START,
-            node_name=self.name,
-            node_domain=self.domain,
-        )
-
-    def _emit_complete(self, duration: float, output_summary: Any) -> None:
-        """发出 node_complete 事件。"""
-        self._bus.emit(
-            EventType.NODE_COMPLETE,
-            node_name=self.name,
-            duration=duration,
-            output_summary=output_summary,
-        )
-
-    def _emit_error(self, error: BaseException) -> None:
-        """发出 node_error 事件。"""
-        self._bus.emit(
-            EventType.NODE_ERROR,
-            node_name=self.name,
-            error=error,
-        )
-
-    def _emit_progress(self, current: int, total: int, message: str = "") -> None:
-        """发出 progress 事件。"""
-        self._bus.emit(
-            EventType.PROGRESS,
-            node_name=self.name,
-            current=current,
-            total=total,
-            message=message,
-        )
 
     def __repr__(self) -> str:
         status = "loaded" if self._loaded else "unloaded"

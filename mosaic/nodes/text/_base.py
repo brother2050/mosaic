@@ -25,6 +25,7 @@ import logging
 import time
 from typing import Any
 
+from mosaic.core._device_utils import infer_device
 from mosaic.core.events import EventBus, EventType, get_event_bus
 from mosaic.core.node import Node, NodeSpec
 from mosaic.core.scheduler import Scheduler, get_scheduler
@@ -84,13 +85,12 @@ class BaseTextNode(Node):
         bus: EventBus | None = None,
         **kwargs: Any,
     ) -> None:
-        super().__init__(**kwargs)
+        super().__init__(bus=bus, **kwargs)
         self._model_name: str = model
         self._device_map: str = device_map
         self._torch_dtype: str = torch_dtype
         self._trust_remote_code: bool = trust_remote_code
         self._scheduler: Scheduler = scheduler or get_scheduler()
-        self._bus: EventBus = bus or get_event_bus()
         self._logger = logging.getLogger(f"mosaic.nodes.text.{self.name}")
 
         # 运行时持有的模型与 tokenizer（load 后填充）
@@ -419,42 +419,12 @@ class BaseTextNode(Node):
         return encoded["input_ids"] if isinstance(encoded, dict) else encoded
 
     def _infer_device(self) -> str:
-        """推断模型所在设备。"""
-        if self._model is None:
-            return self._scheduler.device
-        # device_map="auto" 时模型可能跨设备，取第一个参数的设备
-        try:
-            return next(self._model.parameters()).device
-        except (StopIteration, AttributeError):
-            return self._scheduler.device
+        """推断模型所在设备。
 
-    # ------------------------------------------------------------------
-    # 事件发射辅助
-    # ------------------------------------------------------------------
-    def _emit_start(self) -> None:
-        """发出 node_start 事件。"""
-        self._bus.emit(
-            EventType.NODE_START,
-            node_name=self.name,
-            node_domain=self.domain,
-        )
-
-    def _emit_complete(self, duration: float, output_summary: Any) -> None:
-        """发出 node_complete 事件。"""
-        self._bus.emit(
-            EventType.NODE_COMPLETE,
-            node_name=self.name,
-            duration=duration,
-            output_summary=output_summary,
-        )
-
-    def _emit_error(self, error: BaseException) -> None:
-        """发出 node_error 事件。"""
-        self._bus.emit(
-            EventType.NODE_ERROR,
-            node_name=self.name,
-            error=error,
-        )
+        device_map="auto" 时模型可能跨设备，取第一个参数的设备；失败时回退到
+        调度器设备。
+        """
+        return infer_device(self._model, self._scheduler)
 
     # ------------------------------------------------------------------
     # Node 抽象方法（子类必须实现 run；describe 可由子类覆写）

@@ -25,6 +25,12 @@ import logging
 import random
 from typing import Any
 
+from mosaic.core._device_utils import (
+    apply_optimizations,
+    infer_device,
+    resolve_dtype,
+    run_diffusers_pipeline,
+)
 from mosaic.core.events import EventBus, EventType, get_event_bus
 from mosaic.core.node import Node, NodeSpec
 from mosaic.core.scheduler import Scheduler, get_scheduler
@@ -105,7 +111,7 @@ class BaseImageNode(Node):
         bus: EventBus | None = None,
         **kwargs: Any,
     ) -> None:
-        super().__init__(**kwargs)
+        super().__init__(bus=bus, **kwargs)
         self._model_name: str = model
         self._device: str = device
         self._dtype_str: str = dtype
@@ -114,7 +120,6 @@ class BaseImageNode(Node):
         self._enable_model_cpu_offload: bool = enable_model_cpu_offload
         self._scheduler_name: str | None = scheduler_name
         self._scheduler: Scheduler = scheduler or get_scheduler()
-        self._bus: EventBus = bus or get_event_bus()
         self._logger = logging.getLogger(f"mosaic.nodes.image.{self.name}")
 
         # 运行时持有的 diffusers Pipeline（load 后填充）
@@ -170,87 +175,29 @@ class BaseImageNode(Node):
         """推断推理设备。"""
         if self._pipeline is None:
             return self._scheduler.device
-        try:
-            import torch  # type: ignore
-
-            # 尝试从 pipeline 的 UNet 参数推断设备
-            unet = getattr(self._pipeline, "unet", None)
-            if unet is not None:
-                return next(unet.parameters()).device.type
-        except Exception:  # noqa: BLE001
-            pass
-        return self._device
+        # 优先从 pipeline 的 UNet 参数推断设备，失败时由工具函数回退到调度器设备
+        unet = getattr(self._pipeline, "unet", None)
+        return infer_device(
+            unet if unet is not None else self._pipeline, self._scheduler
+        )
 
     def _resolve_dtype(self) -> Any:
         """解析 torch dtype 字符串为 torch.dtype 对象。"""
-        import torch  # type: ignore
-
-        dtype_map = {
-            "float16": torch.float16,
-            "fp16": torch.float16,
-            "float32": torch.float32,
-            "fp32": torch.float32,
-            "bfloat16": torch.bfloat16,
-            "bf16": torch.bfloat16,
-        }
-        return dtype_map.get(self._dtype_str, torch.float16)
+        return resolve_dtype(self._dtype_str)
 
     def _apply_optimizations(self) -> None:
         """对已加载的 Pipeline 应用显存优化配置。
 
-        兼容 diffusers 0.40+ 的 API 变更：
-        - ``pipe.enable_vae_slicing()`` 已废弃，改用 ``pipe.vae.enable_slicing()``
-        - ``pipe.enable_attention_slicing()`` 仍然有效，但添加容错
+        委托给 :func:`mosaic.core._device_utils.apply_optimizations`，兼容
+        diffusers 0.40+ 的 VAE slicing API 变更（优先 ``pipe.vae.enable_slicing()``，
+        回退 ``pipe.enable_vae_slicing()``）。
         """
-        pipe = self._pipeline
-        if pipe is None:
-            return
-
-        if self._enable_attention_slicing:
-            try:
-                pipe.enable_attention_slicing()
-                self._logger.debug("Enabled attention slicing.")
-            except Exception:  # noqa: BLE001
-                pass
-
-        if self._enable_vae_slicing:
-            self._enable_vae_slicing_safe(pipe)
-
-        if self._enable_model_cpu_offload:
-            try:
-                pipe.enable_model_cpu_offload()
-                self._logger.debug("Enabled model CPU offload.")
-            except Exception:  # noqa: BLE001
-                pass
-
-    def _enable_vae_slicing_safe(self, pipe: Any) -> None:
-        """安全启用 VAE slicing，兼容新旧 diffusers 版本。
-
-        diffusers 0.40+ 废弃了 ``pipe.enable_vae_slicing()``，
-        改用 ``pipe.vae.enable_slicing()``。本方法优先使用新 API，
-        回退到旧 API 以兼容旧版本。
-
-        Parameters
-        ----------
-        pipe:
-            diffusers Pipeline 实例。
-        """
-        # 优先使用新 API：pipe.vae.enable_slicing()
-        vae = getattr(pipe, "vae", None)
-        if vae is not None and hasattr(vae, "enable_slicing"):
-            try:
-                vae.enable_slicing()
-                self._logger.debug("Enabled VAE slicing (via pipe.vae).")
-                return
-            except Exception:  # noqa: BLE001
-                pass
-
-        # 回退到旧 API：pipe.enable_vae_slicing()
-        try:
-            pipe.enable_vae_slicing()
-            self._logger.debug("Enabled VAE slicing (via pipe).")
-        except Exception:  # noqa: BLE001
-            pass
+        apply_optimizations(
+            self._pipeline,
+            enable_cpu_offload=self._enable_model_cpu_offload,
+            enable_attention_slicing=self._enable_attention_slicing,
+            enable_vae_slicing=self._enable_vae_slicing,
+        )
 
     def _switch_scheduler(self) -> None:
         """可选：切换 Pipeline 的调度器。"""
@@ -315,11 +262,7 @@ class BaseImageNode(Node):
         Any
             Pipeline 输出（通常是 ``StableDiffusionPipelineOutput`` 或类似）。
         """
-        import torch  # type: ignore
-
-        with torch.inference_mode():
-            output = self._pipeline(**kwargs)
-        return output
+        return run_diffusers_pipeline(self._pipeline, **kwargs)
 
     # ------------------------------------------------------------------
     # 图像前后处理工具
@@ -415,34 +358,6 @@ class BaseImageNode(Node):
         new_w = max(8, (new_w // 8) * 8)
         new_h = max(8, (new_h // 8) * 8)
         return image.resize((new_w, new_h), Image.Resampling.LANCZOS)
-
-    # ------------------------------------------------------------------
-    # 事件发射辅助
-    # ------------------------------------------------------------------
-    def _emit_start(self) -> None:
-        """发出 node_start 事件。"""
-        self._bus.emit(
-            EventType.NODE_START,
-            node_name=self.name,
-            node_domain=self.domain,
-        )
-
-    def _emit_complete(self, duration: float, output_summary: Any) -> None:
-        """发出 node_complete 事件。"""
-        self._bus.emit(
-            EventType.NODE_COMPLETE,
-            node_name=self.name,
-            duration=duration,
-            output_summary=output_summary,
-        )
-
-    def _emit_error(self, error: BaseException) -> None:
-        """发出 node_error 事件。"""
-        self._bus.emit(
-            EventType.NODE_ERROR,
-            node_name=self.name,
-            error=error,
-        )
 
     # ------------------------------------------------------------------
     # Node 抽象方法

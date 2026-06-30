@@ -32,7 +32,7 @@ import concurrent.futures
 import logging
 import threading
 import time
-from collections import deque
+from collections import Counter, deque
 from dataclasses import dataclass, field
 from collections.abc import Callable
 from typing import Any
@@ -270,6 +270,8 @@ class Pipeline(Node):
         self._dag: dict[str, _DAGNode] | None = None
         self._terminals: list[tuple[str, str]] = []  # (label, node_id)
         self._sources: list[str] = []
+        # 编译期缓存的"是否存在可并行路径"检测结果（由 _build_dag 计算）
+        self._has_parallel: bool = False
         self._id_counter: dict[str, int] = {}
         self._last_context: Context | None = None
         self._last_result: PipelineResult | None = None
@@ -435,6 +437,9 @@ class Pipeline(Node):
             frontier = self._add_element(element, frontier)
         self._terminals = frontier
         self._sources = [nid for nid, dn in self._dag.items() if not dn.predecessors]
+        # 编译期缓存：是否存在可并行执行的路径，供 _has_parallel_paths 复用，
+        # 避免每次 _execute_dag 都重新扫描整个 DAG。
+        self._has_parallel = self._compute_has_parallel()
 
     def _add_node(self, node: Node, branch_name: str | None = None) -> str:
         """注册一个节点，返回唯一 id（重名加 ``#n`` 后缀）。"""
@@ -827,9 +832,8 @@ class Pipeline(Node):
         errors: list[NodeError] = []
         node_durations: dict[str, float] = {}
         completed: set = set()
-        pending: set = set(self._dag.keys())
 
-        # 检测是否有可并行的节点（多前驱的 fan-out）
+        # 检测是否有可并行的节点（多前驱的 fan-out）—— 使用 _build_dag 编译期缓存
         has_parallel = self._has_parallel_paths()
 
         if not has_parallel or max_workers <= 1:
@@ -848,17 +852,22 @@ class Pipeline(Node):
         try:
             futures: dict[concurrent.futures.Future, str] = {}
 
-            while pending or futures:
-                # 找出就绪节点（所有前驱已完成）
-                ready: list[str] = []
-                for nid in list(pending):
-                    preds = self._dag[nid].predecessors
-                    if all(p in completed for p in preds):
-                        ready.append(nid)
+            # Kahn 增量入度计数：为每个节点维护"尚未完成的前驱数量"。
+            # 节点完成时将其所有后继的入度减 1，入度降为 0 即加入就绪队列。
+            # 这样每轮只需从就绪队列取出节点，无需遍历全部 pending 节点，
+            # 将就绪扫描从 O(N²) 降为 O(N)（每条边仅被访问一次）。
+            indegree: dict[str, int] = {
+                nid: len(dn.predecessors) for nid, dn in self._dag.items()
+            }
+            # 就绪队列：初始包含所有入度为 0 的节点（源点）
+            ready_queue: deque[str] = deque(
+                nid for nid, deg in indegree.items() if deg == 0
+            )
 
-                # 提交就绪节点
-                for nid in ready:
-                    pending.discard(nid)
+            while ready_queue or futures:
+                # 提交就绪队列中的全部节点
+                while ready_queue:
+                    nid = ready_queue.popleft()
                     dn = self._dag[nid]
                     # 在主线程组装输入（线程安全读取 outputs）
                     node_input = self._gather_input(dn, outputs, input_data)
@@ -867,15 +876,6 @@ class Pipeline(Node):
                         self._run_single_node, dn, node_input, ctx, cancel_event
                     )
                     futures[future] = nid
-
-                if not futures:
-                    if pending:
-                        # 死锁：有待执行节点但无就绪节点
-                        raise PipelineError(
-                            f"Deadlock in DAG execution. Pending: {sorted(pending)}, "
-                            f"Completed: {sorted(completed)}"
-                        )
-                    break
 
                 # 等待至少一个完成
                 done, _not_done = concurrent.futures.wait(
@@ -890,6 +890,11 @@ class Pipeline(Node):
                         outputs[nid] = out
                         node_durations[nid] = duration
                         completed.add(nid)
+                        # 入度推进：将该节点后继的入度减 1，降为 0 则入就绪队列
+                        for succ in dn.successors:
+                            indegree[succ] -= 1
+                            if indegree[succ] == 0:
+                                ready_queue.append(succ)
                     except Exception as exc:  # noqa: BLE001
                         if fail_fast:
                             # 设置取消信号：通知尚未启动的工作线程跳过执行
@@ -906,6 +911,20 @@ class Pipeline(Node):
                             branch_name=dn.branch_name,
                         ))
                         completed.add(nid)
+                        # 失败节点仍需推进后继入度，否则后继会永远等待
+                        for succ in dn.successors:
+                            indegree[succ] -= 1
+                            if indegree[succ] == 0:
+                                ready_queue.append(succ)
+
+            # 循环结束后：若有节点未完成，说明存在死锁
+            # （理论上 validate 已排除环，此处为防御性检查）
+            if len(completed) != len(self._dag):
+                pending_nodes = set(self._dag) - completed
+                raise PipelineError(
+                    f"Deadlock in DAG execution. Pending: {sorted(pending_nodes)}, "
+                    f"Completed: {sorted(completed)}"
+                )
         finally:
             if owns_executor:
                 executor.shutdown(wait=True)
@@ -1057,12 +1076,23 @@ class Pipeline(Node):
         node.load()
 
     def _has_parallel_paths(self) -> bool:
-        """检测 DAG 中是否存在可并行执行的路径。
+        """检测 DAG 中是否存在可并行执行的路径（返回编译期缓存的值）。
 
-        以下任一条件成立时返回 True：
+        结果在 :meth:`_build_dag` 编译期由 :meth:`_compute_has_parallel` 计算
+        并缓存到 ``self._has_parallel``，此处直接返回缓存值，避免每次
+        :meth:`_execute_dag` 都重新扫描整个 DAG。
+
+        以下任一条件成立时缓存为 ``True``：
         1. 某个节点有多个后继（fan-out）。
         2. 多个源节点（无前驱）同时存在（它们天然可并行）。
-        3. 多个节点同时就绪（共享前驱集，且前驱已完成）。
+        3. 多个节点共享同一前驱集（同一层可并行）。
+        """
+        return bool(self._has_parallel)
+
+    def _compute_has_parallel(self) -> bool:
+        """计算 DAG 中是否存在可并行执行的路径（编译期由 _build_dag 调用）。
+
+        检测条件见 :meth:`_has_parallel_paths` 的文档说明。
         """
         if self._dag is None:
             return False
@@ -1075,8 +1105,7 @@ class Pipeline(Node):
         if len(sources) > 1:
             return True
         # 条件 3：多个节点共享同一前驱集（同一层可并行）
-        from collections import Counter
-        pred_sig_count: Counter = Counter()
+        pred_sig_count: Counter[tuple[str, ...]] = Counter()
         for dn in self._dag.values():
             if dn.predecessors:
                 sig = tuple(sorted(dn.predecessors))

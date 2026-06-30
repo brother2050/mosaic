@@ -42,12 +42,30 @@ __all__ = [
 # ---------------------------------------------------------------------------
 # 内部辅助：惰性导入 PIL / numpy，避免硬依赖
 # ---------------------------------------------------------------------------
+# 模块级缓存：首次探测后记住可用性，避免每次序列化/比较都走 try/except
+_NUMPY_AVAILABLE: bool | None = None
+_PIL_AVAILABLE: bool | None = None
+_NUMPY_MODULE: Any = None
+_PIL_IMAGE_CLASS: Any = None
+
+
 def _import_pil() -> Any:
     """惰性导入 PIL.Image，缺失时抛出带提示的 ImportError。"""
+    global _PIL_AVAILABLE, _PIL_IMAGE_CLASS
+    if _PIL_AVAILABLE is True:
+        return _PIL_IMAGE_CLASS
+    if _PIL_AVAILABLE is False:
+        raise ImportError(
+            "Pillow is required for image serialization. "
+            "Install it via `pip install Pillow`."
+        )
     try:
         from PIL import Image  # type: ignore
+        _PIL_AVAILABLE = True
+        _PIL_IMAGE_CLASS = Image
         return Image
     except ImportError as exc:  # pragma: no cover - 依赖缺失路径
+        _PIL_AVAILABLE = False
         raise ImportError(
             "Pillow is required for image serialization. "
             "Install it via `pip install Pillow`."
@@ -56,10 +74,21 @@ def _import_pil() -> Any:
 
 def _import_numpy() -> Any:
     """惰性导入 numpy，缺失时抛出带提示的 ImportError。"""
+    global _NUMPY_AVAILABLE, _NUMPY_MODULE
+    if _NUMPY_AVAILABLE is True:
+        return _NUMPY_MODULE
+    if _NUMPY_AVAILABLE is False:
+        raise ImportError(
+            "numpy is required for array serialization. "
+            "Install it via `pip install numpy`."
+        )
     try:
         import numpy  # type: ignore
+        _NUMPY_AVAILABLE = True
+        _NUMPY_MODULE = numpy
         return numpy
     except ImportError as exc:  # pragma: no cover - 依赖缺失路径
+        _NUMPY_AVAILABLE = False
         raise ImportError(
             "numpy is required for array serialization. "
             "Install it via `pip install numpy`."
@@ -114,20 +143,28 @@ def _dict_to_array(payload: dict[str, Any]) -> Any:
 def _serialize_value(value: Any) -> Any:
     """递归序列化单个值，处理 PIL/numpy 等特殊类型。"""
     # PIL.Image
-    try:
-        Image = _import_pil()
-        if isinstance(value, Image.Image):
+    if _PIL_AVAILABLE is True:
+        if isinstance(value, _PIL_IMAGE_CLASS.Image):
             return {"__pil_image__": True, "encoded": _image_to_b64(value)}
-    except ImportError:
-        pass
+    elif _PIL_AVAILABLE is None:
+        try:
+            Image = _import_pil()
+            if isinstance(value, Image.Image):
+                return {"__pil_image__": True, "encoded": _image_to_b64(value)}
+        except ImportError:
+            pass
 
     # numpy.ndarray
-    try:
-        np = _import_numpy()
-        if isinstance(value, np.ndarray):
+    if _NUMPY_AVAILABLE is True:
+        if isinstance(value, _NUMPY_MODULE.ndarray):
             return _array_to_dict(value)
-    except ImportError:
-        pass
+    elif _NUMPY_AVAILABLE is None:
+        try:
+            np = _import_numpy()
+            if isinstance(value, np.ndarray):
+                return _array_to_dict(value)
+        except ImportError:
+            pass
 
     # 元组：用标记保留元组语义（JSON 不区分 list/tuple）
     if isinstance(value, tuple):
@@ -167,10 +204,10 @@ def _safe_eq(v1: Any, v2: Any) -> bool:
     本函数对 numpy 数组改用 :func:`numpy.array_equal`，对其余类型回退到
     普通相等比较，并确保始终返回纯 ``bool``。
     """
+    global _NUMPY_AVAILABLE, _NUMPY_MODULE  # noqa: PLW0603
     # 1) numpy 数组：必须使用 array_equal，避免 bool(array) 抛异常
-    try:
-        import numpy as _np
-
+    if _NUMPY_AVAILABLE is True:
+        _np = _NUMPY_MODULE
         v1_is_arr = isinstance(v1, _np.ndarray)
         v2_is_arr = isinstance(v2, _np.ndarray)
         if v1_is_arr or v2_is_arr:
@@ -178,8 +215,20 @@ def _safe_eq(v1: Any, v2: Any) -> bool:
             if not (v1_is_arr and v2_is_arr):
                 return False
             return bool(_np.array_equal(v1, v2))
-    except ImportError:
-        pass
+    elif _NUMPY_AVAILABLE is None:
+        try:
+            import numpy as _np  # noqa: F811
+            _NUMPY_AVAILABLE = True
+            _NUMPY_MODULE = _np
+
+            v1_is_arr = isinstance(v1, _np.ndarray)
+            v2_is_arr = isinstance(v2, _np.ndarray)
+            if v1_is_arr or v2_is_arr:
+                if not (v1_is_arr and v2_is_arr):
+                    return False
+                return bool(_np.array_equal(v1, v2))
+        except ImportError:
+            _NUMPY_AVAILABLE = False  # type: ignore[global-statement]
 
     # 2) 其余类型：直接 == 比较
     try:
@@ -193,16 +242,13 @@ def _safe_eq(v1: Any, v2: Any) -> bool:
         return result
 
     # 4) numpy 标量（含 np.bool_/np.float64 等）或元素级比较数组：安全转 bool
-    try:
-        import numpy as _np
-
+    if _NUMPY_AVAILABLE is True:
+        _np = _NUMPY_MODULE
         if isinstance(result, _np.generic):
             return bool(result)
         if isinstance(result, _np.ndarray):
             # 仅当形状一致且逐元素相等时为真
             return result.shape == () and bool(result)
-    except ImportError:
-        pass
 
     # 5) 其它非布尔结果（如列表）视为不相等，避免误判
     return False
