@@ -148,7 +148,30 @@ class BaseImageNode(Node):
 
         self._logger.info("Loading pipeline for model %s ...", self._model_name)
         self._load_pipeline()
+        # SD 1.5 等 VAE 在 float16 下会产生 NaN → 黑图（diffusers 已知问题 #2520）。
+        # 将 VAE 上转为 float32 不影响推理速度（VAE 只在最后 decode 调用一次），
+        # 但彻底消除黑图风险。SDXL 的 VAE 已兼容 float16，upcast 为幂等操作。
+        self._upcast_vae_fp32()
         self._loaded = True
+
+    def _upcast_vae_fp32(self) -> None:
+        """将 Pipeline 的 VAE 上转为 float32，防止 SD 1.5 等模型在 float16 下产生黑图。
+
+        ``torch.float16`` 下 VAE decoder 的数值精度不足，可能在反量化/解码阶段
+        产生 NaN，导致输出全黑图像。将 VAE 独立保持为 float32 可避免此问题，
+        且不会显著增加显存占用（VAE 参数量远小于 UNet）。
+        """
+        if self._pipeline is None:
+            return
+        vae = getattr(self._pipeline, "vae", None)
+        if vae is not None:
+            try:
+                import torch  # type: ignore
+
+                vae.to(torch.float32)
+                self._logger.debug("VAE upcasted to float32 (black-image prevention).")
+            except Exception as exc:  # noqa: BLE001
+                self._logger.debug("VAE upcast skipped: %s", exc)
 
     @abc.abstractmethod
     def _load_pipeline(self) -> None:

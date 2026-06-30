@@ -152,7 +152,23 @@ class BaseVideoNode(Node):
 
         self._logger.info("Loading video model %s ...", self._model_name)
         self._load_model()
+        # VAE 在 float16 下可能产生 NaN → 黑图（同 image 域修复）
+        self._upcast_vae_fp32()
         self._loaded = True
+
+    def _upcast_vae_fp32(self) -> None:
+        """将 Pipeline 的 VAE 上转为 float32，防止 float16 下产生黑图。"""
+        if self._pipeline is None:
+            return
+        vae = getattr(self._pipeline, "vae", None)
+        if vae is not None:
+            try:
+                import torch  # type: ignore
+
+                vae.to(torch.float32)
+                self._logger.debug("VAE upcasted to float32 (black-image prevention).")
+            except Exception as exc:  # noqa: BLE001
+                self._logger.debug("VAE upcast skipped: %s", exc)
 
     @abc.abstractmethod
     def _load_model(self) -> None:
