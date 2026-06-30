@@ -162,8 +162,9 @@ class AsyncTask:
         self._error_callbacks: list[ErrorCallback] = []
         self._progress_callbacks: list[ProgressCallback] = []
 
-        # 工作线程
+        # 工作线程 / 线程池 Future（二选一）
         self._thread: threading.Thread | None = None
+        self._future: Any = None  # concurrent.futures.Future | None
 
         # EventBus 订阅记录（用于完成后取消订阅）
         self._bus_subscriptions: list[tuple] = []
@@ -401,8 +402,25 @@ class AsyncTask:
     # ------------------------------------------------------------------
     # 内部方法（由 async_pipeline 模块调用）
     # ------------------------------------------------------------------
-    def _start(self) -> None:
-        """启动工作线程（由创建者调用）。"""
+    def _start(self, executor: Any = None) -> None:
+        """启动工作线程（由创建者调用）。
+
+        Parameters
+        ----------
+        executor:
+            可选的 :class:`ThreadPoolExecutor` 实例。如果提供，
+            任务将提交到线程池执行（线程复用、并发受控、超限排队）；
+            如果为 ``None``，则创建独立裸线程（向后兼容）。
+        """
+        # 防止重复启动：如果已有活跃的线程或 Future，直接返回
+        with self._lock:
+            if self._thread is not None or self._future is not None:
+                self._logger.warning(
+                    "Task %s already started, skip duplicate _start().",
+                    self._task_id,
+                )
+                return
+
         # 收集管道节点名（用于 EventBus 事件过滤）
         try:
             for spec in self._pipeline.node_specs:
@@ -413,13 +431,18 @@ class AsyncTask:
         # 订阅 EventBus 事件
         self._subscribe_bus_events()
 
-        # 启动工作线程
-        self._thread = threading.Thread(
-            target=self._run,
-            name=f"mosaic-task-{self._task_id[:8]}",
-            daemon=True,
-        )
-        self._thread.start()
+        if executor is not None:
+            # 通过线程池执行（复用线程、并发受控）
+            self._future = executor.submit(self._run)
+        else:
+            # 向后兼容：创建独立裸线程
+            self._future = None
+            self._thread = threading.Thread(
+                target=self._run,
+                name=f"mosaic-task-{self._task_id[:8]}",
+                daemon=True,
+            )
+            self._thread.start()
 
     def _run(self) -> None:
         """工作线程目标函数：执行管道并更新状态。"""

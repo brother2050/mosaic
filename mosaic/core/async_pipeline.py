@@ -28,9 +28,10 @@ def create_async_task(
     input_data: Any,
     task_id: str | None = None,
     bus: EventBus | None = None,
+    start: bool = True,
     **kwargs: Any,
 ) -> AsyncTask:
-    """创建并启动异步管道执行任务。
+    """创建（并可选启动）异步管道执行任务。
 
     Parameters
     ----------
@@ -42,6 +43,12 @@ def create_async_task(
         任务 ID，``None`` 自动生成。
     bus:
         事件总线实例，``None`` 使用全局单例。
+    start:
+        是否立即启动任务。``True``（默认）时创建独立裸线程启动，
+        适用于 ``Pipeline.run_async()`` 等独立执行场景。
+        ``False`` 时仅创建任务实例，由调用者（如
+        :class:`~mosaic.core.task_manager.TaskManager`）通过
+        ``task._start(executor=...)`` 注入共享线程池后再启动。
     **kwargs:
         透传给 ``pipeline.execute_result()`` 的额外参数
         （如 ``config``、``fail_fast``、``max_workers``）。
@@ -49,8 +56,7 @@ def create_async_task(
     Returns
     -------
     AsyncTask
-        已启动的异步任务实例。调用者可通过返回值查询状态、
-        等待结果或注册回调。
+        异步任务实例。``start=True`` 时已启动，``start=False`` 时尚未启动。
 
     Examples
     --------
@@ -72,5 +78,6 @@ def create_async_task(
     )
 
     # 启动任务（在新线程中执行）
-    task._start()
+    if start:
+        task._start()
     return task

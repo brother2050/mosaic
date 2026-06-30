@@ -8,7 +8,8 @@
 --------
 * 使用 Python 标准库 ``threading`` 实现线程安全。
 * 所有方法线程安全（内部 ``threading.Lock`` 保护）。
-* ``submit()`` 创建并启动 ``AsyncTask``，同时注册到内部字典。
+* ``submit()`` 通过共享 :class:`ThreadPoolExecutor` 提交任务，
+  线程复用、并发受控（``max_workers`` 限制）、超限自动排队。
 * ``cleanup()`` 清理已完成的过期任务，防止内存泄漏。
 * ``status_summary()`` 返回各状态的任务数量统计。
 """
@@ -18,6 +19,7 @@ from __future__ import annotations
 import logging
 import threading
 import time
+from concurrent.futures import Future, ThreadPoolExecutor
 from typing import Any
 
 from mosaic.core.events import EventBus, get_event_bus
@@ -25,21 +27,27 @@ from mosaic.core.task import AsyncTask, TaskStatus
 
 __all__ = ["TaskManager"]
 
+# 默认最大并发任务数
+_DEFAULT_MAX_WORKERS = 4
+
 
 class TaskManager:
     """异步任务管理器。
 
     管理所有 ``AsyncTask`` 的生命周期，提供统一的提交、查询、
-    取消和清理接口。
+    取消和清理接口。内部使用共享线程池，线程复用且并发受控。
 
     Parameters
     ----------
     bus:
         事件总线实例，``None`` 使用全局单例。
+    max_workers:
+        线程池最大并发数，默认 4。超过此数的任务自动排队等待。
+        设为 ``None`` 使用默认值。
 
     Examples
     --------
-    >>> manager = TaskManager()
+    >>> manager = TaskManager(max_workers=8)
     >>> task = manager.submit(pipeline, input_data)
     >>> task_id = task.task_id
     >>> # 查询状态
@@ -59,11 +67,23 @@ class TaskManager:
     def __init__(
         self,
         bus: EventBus | None = None,
+        max_workers: int | None = None,
     ) -> None:
         self._bus: EventBus = bus or get_event_bus()
         self._tasks: dict[str, AsyncTask] = {}
         self._lock: threading.Lock = threading.Lock()
         self._logger: logging.Logger = logging.getLogger("mosaic.task_manager")
+
+        # 共享线程池：线程复用、并发受控、超限排队
+        workers = max_workers or _DEFAULT_MAX_WORKERS
+        self._executor: ThreadPoolExecutor = ThreadPoolExecutor(
+            max_workers=workers,
+            thread_name_prefix="mosaic-task",
+        )
+        self._max_workers: int = workers
+        self._logger.info(
+            "TaskManager initialized with max_workers=%d.", workers,
+        )
 
     # ------------------------------------------------------------------
     # 提交任务
@@ -92,15 +112,21 @@ class TaskManager:
         """
         from mosaic.core.async_pipeline import create_async_task
 
+        # start=False：不在 create_async_task 内部启动（裸线程），
+        # 由下方 _start(executor=...) 注入共享线程池后统一启动。
         task = create_async_task(
             pipeline=pipeline,
             input_data=input_data,
             bus=self._bus,
+            start=False,
             **kwargs,
         )
 
         with self._lock:
             self._tasks[task.task_id] = task
+
+        # 通过共享线程池启动任务（复用线程、并发受控、超限排队）
+        task._start(executor=self._executor)
 
         self._logger.info(
             "Submitted task %s (pipeline=%s).",
@@ -265,9 +291,40 @@ class TaskManager:
         return summary
 
     # ------------------------------------------------------------------
+    # 生命周期
+    # ------------------------------------------------------------------
+    def shutdown(self, wait: bool = True) -> None:
+        """关闭线程池，释放资源。
+
+        Parameters
+        ----------
+        wait:
+            是否等待所有运行中的任务完成。
+        """
+        self._executor.shutdown(wait=wait)
+        self._logger.info("TaskManager executor shutdown (wait=%s).", wait)
+
+    def __enter__(self) -> "TaskManager":
+        """上下文管理器入口。"""
+        return self
+
+    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
+        """上下文管理器出口：自动关闭线程池。"""
+        self.shutdown(wait=False)
+
+    def __del__(self) -> None:
+        """析构时安全关闭线程池（兜底，不保证调用时机）。"""
+        try:
+            executor = getattr(self, "_executor", None)
+            if executor is not None:
+                executor.shutdown(wait=False)
+        except Exception:  # noqa: BLE001
+            pass
+
+    # ------------------------------------------------------------------
     # 表示
     # ------------------------------------------------------------------
     def __repr__(self) -> str:
         with self._lock:
             n = len(self._tasks)
-        return f"<TaskManager tasks={n}>"
+        return f"<TaskManager tasks={n} max_workers={self._max_workers}>"

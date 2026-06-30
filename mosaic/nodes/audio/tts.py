@@ -386,11 +386,12 @@ def _synthesize_edge_tts(
                 audio_data += chunk["data"]
         return audio_data
 
-    # 逐句合成并合并
-    all_audio: list[bytes] = []
-    for sent in sentences:
-        audio_bytes = asyncio.run(_synth(sent))
-        all_audio.append(audio_bytes)
+    async def _synthesize_all() -> list[bytes]:
+        """并发合成所有句子（单次事件循环，避免反复创建/销毁）。"""
+        return await asyncio.gather(*[_synth(s) for s in sentences])
+
+    # 单次事件循环并发合成全部句子
+    all_audio: list[bytes] = asyncio.run(_synthesize_all())
 
     combined_bytes = b"".join(all_audio)
 

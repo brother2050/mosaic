@@ -275,11 +275,28 @@ class Pipeline(Node):
         self._last_result: PipelineResult | None = None
         self._logger = logging.getLogger("mosaic.core.pipeline")
 
+        # 可复用的线程池（跨多次 execute 复用，避免反复创建/销毁）
+        # 用户可通过 ``pipeline.executor = ThreadPoolExecutor(...)`` 注入自定义池
+        self._executor: concurrent.futures.ThreadPoolExecutor | None = None
+
     # -- 元素管理 ----------------------------------------------------------
     @property
     def elements(self) -> list[Any]:
         """返回编排元素列表的副本（用于 ``|`` 展开等）。"""
         return list(self._elements)
+
+    @property
+    def executor(self) -> concurrent.futures.ThreadPoolExecutor | None:
+        """获取当前线程池实例（可能为 ``None``）。"""
+        return self._executor
+
+    @executor.setter
+    def executor(self, value: concurrent.futures.ThreadPoolExecutor | None) -> None:
+        """注入自定义线程池。设为 ``None`` 恢复默认行为（按需创建）。"""
+        # 如果已有自管理的池，先关闭
+        if self._executor is not None:
+            self._executor.shutdown(wait=False)
+        self._executor = value
 
     def add(self, element: Any) -> "Pipeline":
         """追加一个编排元素，返回 ``self`` 以支持链式调用。
@@ -822,8 +839,12 @@ class Pipeline(Node):
         # 协作式取消信号：fail_fast 触发时通知尚未启动的工作线程跳过执行
         cancel_event = threading.Event()
 
-        # 并行执行
-        executor = concurrent.futures.ThreadPoolExecutor(max_workers=max_workers)
+        # 并行执行：复用 Pipeline 级线程池，避免反复创建/销毁
+        owns_executor = self._executor is None
+        if owns_executor:
+            executor = concurrent.futures.ThreadPoolExecutor(max_workers=max_workers)
+        else:
+            executor = self._executor
         try:
             futures: dict[concurrent.futures.Future, str] = {}
 
@@ -886,7 +907,8 @@ class Pipeline(Node):
                         ))
                         completed.add(nid)
         finally:
-            executor.shutdown(wait=True)
+            if owns_executor:
+                executor.shutdown(wait=True)
 
         return outputs, errors, node_durations
 
