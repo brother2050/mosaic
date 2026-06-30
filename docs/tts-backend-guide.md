@@ -135,9 +135,12 @@ results = backend.benchmark_ode_steps("你好世界", steps_list=[5, 10, 20, 50]
 ### 安装依赖
 
 ```bash
+# Mosaic 已集成所有后端代码，只需安装基础依赖
 pip install torch transformers safetensors
-# 可选：特定后端的额外依赖
-pip install vocos  # ChatTTS 的 Vocos 声码器
+
+# 按后端安装额外依赖
+pip install vocos          # ChatTTS 的 Vocos 声码器
+pip install soundfile      # 本地音频读写（edge-tts 解码需要）
 ```
 
 ### 使用 ChatTTS（低延迟对话）

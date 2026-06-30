@@ -104,10 +104,33 @@ Mosaic 环境诊断
 
 ---
 
+## 模型下载
+
+节点运行时自动从 Hugging Face 下载模型权重到 `~/.cache/huggingface/hub/`。**首次运行每个模型都需要下载（几 GB），请确保网络通畅。**
+
+```bash
+# 预下载常用模型（可选，加速首次运行）
+python -c "
+from transformers import AutoModelForCausalLM, AutoTokenizer
+from diffusers import AutoPipelineForText2Image
+
+# 文本模型 (~1.5GB)
+AutoTokenizer.from_pretrained('Qwen/Qwen2.5-1.5B-Instruct')
+AutoModelForCausalLM.from_pretrained('Qwen/Qwen2.5-1.5B-Instruct')
+
+# 图像模型 (~5GB)
+AutoPipelineForText2Image.from_pretrained('stabilityai/stable-diffusion-xl-base-1.0')
+"
+```
+
+> **离线环境**：先在有网机器上完成下载，将 `~/.cache/huggingface/` 复制到离线机器相同路径即可。
+
+---
+
 ## 第一个示例：文字生成图片
 
 ```bash
-pip install "mosaic[video]"  # TextToImage 用到 diffusers
+pip install mosaic
 ```
 
 `text_to_image.py`：
@@ -191,6 +214,32 @@ pipeline.add(TTS(backend="sovits"))     # 32000Hz, 极少样本克隆
 ```
 
 详见 [TTS 完整指南](tts-guide.md)。
+
+---
+
+## 流式文本生成
+
+`Chat` 和 `TextGenerator` 支持流式输出，逐 token 实时打印，延迟低至 100ms：
+
+```python
+from mosaic import Pipeline
+from mosaic.nodes.text import Chat
+
+pipeline = Pipeline()
+pipeline.add(Chat(
+    model="Qwen/Qwen2.5-1.5B-Instruct",
+    stream=True,  # 启用流式
+))
+
+# 流式运行，逐 token 打印
+for chunk in pipeline.stream(MosaicData(
+    messages=[{"role": "user", "content": "用 Python 写一首诗"}],
+    temperature=0.8,
+)):
+    print(chunk, end="", flush=True)
+```
+
+> `stream=True` 时 `pipeline.stream()` 返回生成器，逐个 yield token。`stream=False` 时 `pipeline.run()` 返回完整结果。
 
 ---
 

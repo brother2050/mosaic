@@ -75,6 +75,10 @@ print(result.get("generated_text"))
 
 因模型而异，参考 HF 模型页面。
 
+#### stream 方法
+
+支持流式生成，逐 token yield 输出。参数同 `run` 输入，用法见下方"流式生成"小节。
+
 ---
 
 ### Chat — 对话
@@ -128,6 +132,39 @@ messages.append({"role": "user", "content": "推荐一本 Python 入门书"})
 result = chat.run(MosaicData(messages=messages))
 print(result.get("reply"))
 ```
+
+#### 流式生成
+
+`Chat` 和 `TextGenerator` 均支持流式生成，逐 token yield 输出，适合实时显示场景：
+
+```python
+from mosaic.nodes.text import Chat
+
+chat = Chat()
+
+# 流式对话
+for chunk in chat.stream(MosaicData(
+    messages=[{"role": "user", "content": "写一首五言绝句"}],
+    temperature=0.7,
+)):
+    print(chunk, end="", flush=True)  # 逐 token 实时打印
+```
+
+```python
+from mosaic.nodes.text import TextGenerator
+
+gen = TextGenerator()
+
+# 流式文本生成
+for chunk in gen.stream(MosaicData(
+    prompt="写一篇关于 AI 的短文",
+    max_new_tokens=512,
+    temperature=0.8,
+)):
+    print(chunk, end="", flush=True)
+```
+
+> **原理**：流式生成通过 `transformers.TextIteratorStreamer` 实现，在后台线程中运行模型推理，主线程中逐 token yield 输出。首批延迟通常 < 100ms。
 
 ---
 

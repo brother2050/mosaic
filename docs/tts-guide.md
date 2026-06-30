@@ -161,38 +161,54 @@ pip install "mosaic[audio]"
 ### ChatTTS
 
 ```bash
-pip install chattts
-# 权重：首次运行自动下载（约 1.2GB）到 ~/.cache/huggingface/hub/
-# 也可手动指定：
-#   export CHATTTS_MODEL_DIR=/path/to/chatts-200m
+# Mosaic 已包含代码，只需要安装基础依赖
+pip install "mosaic[audio]" vocos
+
+# 权重：首次运行自动从 Hugging Face 下载（约 1.2GB）到 ~/.cache/huggingface/hub/
+# 也可手动指定模型目录：
+#   export CHATTTS_MODEL_DIR=/path/to/chattts-200m
 ```
+
+> 官方仓库：[2noise/ChatTTS](https://github.com/2noise/ChatTTS) — 代码已集成到 Mosaic，无需单独克隆。
 
 ### Fish Speech
 
 ```bash
-pip install fish-speech
-# 权重：访问 https://huggingface.co/fishaudio/fish-speech-1.5 下载
-# 或通过 HF Hub：
-#   from huggingface_hub import snapshot_download
-#   snapshot_download("fishaudio/fish-speech-1.5", local_dir="weights/fish-speech")
+# Mosaic 已包含代码，只需要安装基础依赖
+pip install "mosaic[audio]"
+
+# 权重：从 Hugging Face 下载
+# from huggingface_hub import snapshot_download
+# snapshot_download("fishaudio/fish-speech-1.5", local_dir="weights/fish-speech")
 ```
+
+> 官方仓库：[fishaudio/fish-speech](https://github.com/fishaudio/fish-speech) — Mosaic 复用了 Fish Speech 的模型架构代码，权重遵循 Apache-2.0 许可证。
 
 ### GPT-SoVITS
 
 ```bash
-pip install "GPT-SoVITS[cpu]"  # CPU
-# 或 pip install "GPT-SoVITS[gpu]"  # GPU（需要 CUDA 12.x）
-# 权重：从 https://huggingface.co/lj1995/GPT-SoVITS 下载预训练底模
-#       自训练说话人模型参考官方 README
+# Mosaic 已包含代码，需要额外安装 GPT-SoVITS 依赖
+pip install "mosaic[audio]" chinese-text-splitter pypinyin
+
+# 预训练权重：从 https://huggingface.co/lj1995/GPT-SoVITS 下载
+# 将下载的文件放到你指定的 model_path 目录即可使用
+# 自训练说话人模型参考 GPT-SoVITS 官方 README
 ```
+
+> 官方仓库：[RVC-Boss/GPT-SoVITS](https://github.com/RVC-Boss/GPT-SoVITS) — 代码架构已集成，遵循 MIT 许可证。
 
 ### CosyVoice
 
 ```bash
-pip install cosyvoice
-# 权重：访问 https://huggingface.co/FunAudioLLM/CosyVoice-300M 下载
-# 或：snapshot_download("FunAudioLLM/CosyVoice-300M")
+# Mosaic 已包含代码，只需要安装基础依赖
+pip install "mosaic[audio]"
+
+# 权重：从 Hugging Face 下载
+# from huggingface_hub import snapshot_download
+# snapshot_download("FunAudioLLM/CosyVoice-300M", local_dir="weights/cosyvoice")
 ```
+
+> 官方仓库：[FunAudioLLM/CosyVoice](https://github.com/FunAudioLLM/CosyVoice) — 代码架构已集成，遵循 Apache-2.0 许可证。
 
 ### 离线 / 内网环境
 
