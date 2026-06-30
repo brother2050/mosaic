@@ -122,3 +122,52 @@ class TextGenerator(BaseTextNode):
             },
         )
         return result
+
+    def stream(self, input_data: MosaicData) -> Any:
+        """流式生成文本。
+
+        与 :meth:`run` 使用相同的输入约定，但通过
+        :meth:`BaseTextNode.stream_generate` 逐 token yield 生成的文本片段，
+        适用于需要实时输出的场景。
+
+        Parameters
+        ----------
+        input_data:
+            必须包含 ``prompt`` (str)；可选 ``max_new_tokens`` (int, 默认 512)、
+            ``temperature`` (float, 默认 0.7)、``top_p`` (float, 默认 0.9)、
+            ``do_sample`` (bool, 默认 True)。
+
+        Yields
+        ------
+        str
+            生成的文本片段。
+
+        Raises
+        ------
+        ValueError
+            缺少 ``prompt`` 或 ``prompt`` 非字符串。
+        """
+        # 校验输入
+        prompt = input_data.get("prompt")
+        if not isinstance(prompt, str):
+            raise ValueError(
+                f"TextGenerator requires 'prompt' (str), "
+                f"got {type(prompt).__name__}."
+            )
+
+        # 提取生成参数
+        max_new_tokens = int(input_data.get("max_new_tokens", 512))
+        temperature = float(input_data.get("temperature", 0.7))
+        top_p = float(input_data.get("top_p", 0.9))
+        do_sample = bool(input_data.get("do_sample", True))
+
+        # 构造单轮对话消息
+        messages = [{"role": "user", "content": prompt}]
+
+        yield from self.stream_generate(
+            messages=messages,
+            max_new_tokens=max_new_tokens,
+            temperature=temperature,
+            top_p=top_p,
+            do_sample=do_sample,
+        )

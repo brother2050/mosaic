@@ -28,6 +28,7 @@ from mosaic.core.registry import registry
 from mosaic.core.types import AudioData, MosaicData
 
 from mosaic.nodes.audio._base import BaseAudioNode
+from mosaic.nodes.audio._ref_audio_utils import load_reference_audio
 from mosaic.nodes.audio.tts import (
     _EMOTION_VOICE_MAP,
     _split_sentences,
@@ -342,23 +343,14 @@ class VoiceClone(BaseAudioNode):
             voice = input_data.get("voice", self._voice)
             user_speed = float(input_data.get("speed", self._speed))
 
-            # 加载参考音频
-            ref_waveform, ref_sr = self._load_audio(reference_input)
+            # 加载参考音频（统一处理时长校验与自动截断）
+            # VoiceClone 推荐 6-30s：过短（<1s）将抛出 ValueError，
+            # 过长（>30s）将由工具函数自动截取前 30 秒并发出警告，
+            # 偏短（<3s）也会由工具函数发出提示。
+            ref_waveform, ref_sr = load_reference_audio(
+                reference_input, target_sr=22050, backend="default"
+            )
             ref_duration = self._get_duration(ref_waveform, ref_sr)
-
-            # 检查参考音频时长
-            if ref_duration < 3.0:
-                self._logger.warning(
-                    "Reference audio is very short (%.1fs). "
-                    "Recommend 6-30s for best matching quality.",
-                    ref_duration,
-                )
-            elif ref_duration > 30.0:
-                self._logger.warning(
-                    "Reference audio is long (%.1fs). "
-                    "Recommend 6-30s to save resources.",
-                    ref_duration,
-                )
 
             # 分句
             sentences = _split_sentences(text)

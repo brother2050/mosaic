@@ -263,6 +263,121 @@ class BaseTextNode(Node):
 
         return generated_text, int(input_length), output_tokens
 
+    def stream_generate(
+        self,
+        messages: list[dict[str, str]],
+        max_new_tokens: int = 512,
+        temperature: float = 0.7,
+        top_p: float = 0.9,
+        do_sample: bool = True,
+    ) -> Any:
+        """流式生成文本，逐 token yield 返回。
+
+        使用 transformers 的 :class:`TextIteratorStreamer` 在后台线程中执行
+        ``generate()``，主线程逐 token yield 生成的文本片段。
+
+        若 ``transformers`` 不可用 ``TextIteratorStreamer``，则回退到
+        :meth:`_generate_from_messages` 一次性生成后整体 yield。
+
+        Parameters
+        ----------
+        messages:
+            对话消息列表，格式 ``[{"role": "user", "content": "..."}]``。
+        max_new_tokens:
+            最大生成 token 数。
+        temperature:
+            采样温度。
+        top_p:
+            Top-p 采样参数。
+        do_sample:
+            是否使用采样。
+
+        Yields
+        ------
+        str
+            生成的文本片段（逐 token）。
+        """
+        import torch  # type: ignore
+        from threading import Thread
+
+        # 通过调度器确保模型已加载（惰性加载 + LRU 淘汰），与 run() 保持一致。
+        # 放在 try/except 之前，使流式与回退两条路径都能拿到已加载的模型。
+        self._scheduler.ensure_loaded(self)
+
+        try:
+            from transformers import TextIteratorStreamer  # type: ignore
+        except ImportError:
+            # 回退到非流式
+            generated_text, _input_tokens, _output_tokens = (
+                self._generate_from_messages(
+                    messages,
+                    max_new_tokens=max_new_tokens,
+                    temperature=temperature,
+                    top_p=top_p,
+                    do_sample=do_sample,
+                )
+            )
+            yield generated_text
+            return
+
+        # 构造输入：优先使用 chat template（返回 PyTorch tensor）
+        input_ids = self._apply_chat_template(messages)
+
+        # 确保 2D: (batch=1, seq_len)
+        if hasattr(input_ids, "dim") and callable(getattr(input_ids, "dim", None)):
+            try:
+                if input_ids.dim() == 1:
+                    input_ids = input_ids.unsqueeze(0)
+            except (TypeError, RuntimeError):
+                pass
+
+        # 迁移到模型所在设备
+        model_device = self._infer_device()
+        if hasattr(input_ids, "to"):
+            input_ids = input_ids.to(model_device)
+
+        # 构造 attention_mask（全 1，与 input_ids 同设备）
+        try:
+            attention_mask = torch.ones_like(input_ids)
+        except Exception:  # noqa: BLE001
+            attention_mask = None
+
+        # 创建 streamer
+        streamer = TextIteratorStreamer(
+            self._tokenizer,
+            skip_prompt=True,
+            skip_special_tokens=True,
+        )
+
+        # 生成参数
+        gen_kwargs: dict[str, Any] = {
+            "max_new_tokens": max_new_tokens,
+            "do_sample": do_sample,
+            "pad_token_id": self._tokenizer.pad_token_id
+            or self._tokenizer.eos_token_id,
+            "streamer": streamer,
+        }
+        if attention_mask is not None:
+            gen_kwargs["attention_mask"] = attention_mask
+        if do_sample:
+            gen_kwargs["temperature"] = max(temperature, 1e-5)
+            gen_kwargs["top_p"] = top_p
+
+        # 在后台线程中执行 generate（保持与 _generate_from_messages 一致的推理上下文）
+        def _run_generate() -> None:
+            with torch.inference_mode():
+                self._model.generate(input_ids, **gen_kwargs)
+
+        thread = Thread(target=_run_generate)
+        thread.start()
+
+        # 主线程逐 token yield
+        try:
+            for text_chunk in streamer:
+                yield text_chunk
+        finally:
+            thread.join()
+
     def _apply_chat_template(self, messages: list[dict[str, str]]) -> Any:
         """应用 tokenizer 的 chat template 构造输入张量。
 

@@ -53,13 +53,13 @@ class TextToImage(BaseImageNode):
 
     def _load_pipeline(self) -> None:
         """加载 StableDiffusionXLPipeline。"""
-        from diffusers import StableDiffusionXLPipeline  # type: ignore
+        from diffusers import AutoPipelineForText2Image  # type: ignore
         from mosaic.nodes._pipeline_utils import safe_load_pipeline
 
         torch_dtype = self._resolve_dtype()
 
         self._pipeline = safe_load_pipeline(
-            StableDiffusionXLPipeline,
+            AutoPipelineForText2Image,
             self._model_name,
             variant_fp16=self._dtype_str in ("float16", "fp16"),
             dtype_str=self._dtype_str,

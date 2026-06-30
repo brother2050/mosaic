@@ -132,6 +132,8 @@ class TextToVideo(BaseVideoNode):
             self._model_name,
             needs_t5=True,
             torch_dtype=torch_dtype,
+            variant_fp16=self._dtype_str in ("float16", "fp16"),
+            dtype_str=self._dtype_str,
         )
 
         # 应用显存优化

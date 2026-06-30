@@ -78,6 +78,7 @@ from collections.abc import Iterator
 from typing import Any
 
 from mosaic.core.types import AudioData
+from mosaic.nodes.audio._ref_audio_utils import load_reference_audio
 from mosaic.nodes.audio.tts_backends.base import TTSBackend, TTSBackendSpec
 
 __all__ = ["CosyVoiceBackend"]
@@ -1057,27 +1058,36 @@ class CosyVoiceBackend(TTSBackend):
         return None
 
     def _get_waveform(self, audio: AudioData | str) -> Any:
-        """从 AudioData 或文件路径获取波形。"""
-        if hasattr(audio, "waveform"):
-            return audio.waveform
-        if isinstance(audio, str) and os.path.isfile(audio):
-            try:
-                import soundfile as sf  # type: ignore
+        """从 AudioData 或文件路径获取波形。
 
-                waveform, _sr = sf.read(audio, dtype="float32")
-                return waveform
-            except ImportError:
-                try:
-                    import librosa  # type: ignore
-
-                    waveform, _sr = librosa.load(audio, sr=22050)
-                    return waveform
-                except ImportError:
-                    self._logger.warning(
-                        "soundfile/librosa not installed; cannot load audio."
-                    )
-                    return None
-        return None
+        使用统一的参考音频预处理工具 :func:`load_reference_audio` 加载、
+        校验时长并自动截断到 CosyVoice 推荐时长上限（10 秒），避免超长
+        参考音频导致 OOM 或晦涩错误。注意 CosyVoice 模型采样率为
+        24000Hz（非 22050Hz）。
+        """
+        is_audio_data = hasattr(audio, "waveform") and hasattr(
+            audio, "sample_rate"
+        )
+        is_file = isinstance(audio, str) and os.path.isfile(audio)
+        if not (is_audio_data or is_file):
+            return None
+        try:
+            waveform, _sr = load_reference_audio(
+                audio, target_sr=24000, backend="cosyvoice"
+            )
+            return waveform
+        except FileNotFoundError as exc:
+            self._logger.warning("Reference audio file not found: %s", exc)
+            return None
+        except ValueError as exc:
+            self._logger.warning("Invalid reference audio: %s", exc)
+            return None
+        except ImportError as exc:
+            self._logger.warning(
+                "soundfile/librosa not installed; cannot load audio file: %s",
+                exc,
+            )
+            return None
 
     def _synthesize_with_speaker_info(
         self,

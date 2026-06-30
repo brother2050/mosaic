@@ -141,3 +141,64 @@ class Chat(BaseTextNode):
             },
         )
         return result
+
+    def stream(self, input_data: MosaicData) -> Any:
+        """流式对话生成。
+
+        与 :meth:`run` 使用相同的输入约定，但通过
+        :meth:`BaseTextNode.stream_generate` 逐 token yield 生成的回复片段，
+        适用于需要实时输出的场景。注意：流式方法仅 yield 文本片段，不返回
+        更新后的 ``messages`` 历史（如需历史请在调用方自行拼接）。
+
+        Parameters
+        ----------
+        input_data:
+            必须包含 ``messages`` (list[dict])，格式为
+            ``[{"role": "user", "content": "..."}, ...]``；
+            可选 ``system_prompt`` (str)、``max_new_tokens`` (int, 默认 1024)、
+            ``temperature`` (float, 默认 0.7)、``top_p`` (float, 默认 0.9)、
+            ``do_sample`` (bool, 默认 True)。
+
+        Yields
+        ------
+        str
+            生成的回复片段。
+
+        Raises
+        ------
+        ValueError
+            缺少 ``messages`` 或格式不正确。
+        """
+        # 校验输入
+        messages = input_data.get("messages")
+        if not isinstance(messages, list) or not messages:
+            raise ValueError(
+                "Chat requires 'messages' (list[dict]) with at least one "
+                f"message, got {type(messages).__name__}."
+            )
+        for msg in messages:
+            if not isinstance(msg, dict) or "role" not in msg or "content" not in msg:
+                raise ValueError(
+                    f"Each message must be a dict with 'role' and 'content', got {msg!r}."
+                )
+
+        # 提取参数
+        system_prompt = input_data.get("system_prompt")
+        max_new_tokens = int(input_data.get("max_new_tokens", 1024))
+        temperature = float(input_data.get("temperature", 0.7))
+        top_p = float(input_data.get("top_p", 0.9))
+        do_sample = bool(input_data.get("do_sample", True))
+
+        # 构造完整消息列表：可选系统提示词 + 对话历史
+        full_messages: list[dict[str, str]] = []
+        if isinstance(system_prompt, str) and system_prompt.strip():
+            full_messages.append({"role": "system", "content": system_prompt})
+        full_messages.extend(messages)
+
+        yield from self.stream_generate(
+            messages=full_messages,
+            max_new_tokens=max_new_tokens,
+            temperature=temperature,
+            top_p=top_p,
+            do_sample=do_sample,
+        )
