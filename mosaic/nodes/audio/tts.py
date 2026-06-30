@@ -602,7 +602,7 @@ class TTS(BaseAudioNode):
                 self._logger.warning("TTS backend '%s' not registered. Falling back to edge-tts.", backend_name)
                 self._backend = "edge_tts"
                 return
-            self._tts_backend = backend_class(model=self._model_name, device=self._device, **self._backend_kwargs)
+            self._tts_backend = backend_class(model_path=self._model_name, **self._backend_kwargs)
             self._tts_backend.load(device=self._device, dtype=getattr(self, "_dtype", "float16"))
             self._backend = backend_name
             self._logger.info("TTS backend '%s' loaded successfully.", backend_name)

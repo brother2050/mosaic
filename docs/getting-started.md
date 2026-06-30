@@ -199,6 +199,61 @@ snapshot_download('sentence-transformers/all-MiniLM-L6-v2')
 
 > **离线环境**：先在有网机器上完成下载，将 `~/.cache/huggingface/` 复制到离线机器相同路径即可。TTS 后端模型下载详见 [TTS 完整指南](tts-guide.md)。
 
+### 自定义模型路径
+
+默认情况下，模型下载到 `~/.cache/huggingface/hub/`。如果需要将模型存放在其他位置，有以下三种方式：
+
+**方式 1：节点构造函数传入本地路径（推荐）**
+
+所有节点的 `model` 参数既接受 HuggingFace 仓库 ID，也接受本地目录路径。模型已在本地时，直接传路径即可：
+
+```python
+from mosaic import Pipeline, MosaicData
+from mosaic.nodes.image import TextToImage
+
+# 传入本地路径而非 HF 仓库 ID
+pipeline = Pipeline()
+pipeline.add(TextToImage(model="/data/models/sdxl-base"))
+
+result = pipeline.run(MosaicData(prompt="a cat"))
+```
+
+TTS 后端同理，通过 `model_path` 指定：
+
+```python
+from mosaic.nodes.audio.tts import TTS
+
+tts = TTS(backend="chattts", model="/data/models/chattts")
+result = tts.run(MosaicData(text="你好", language="zh"))
+```
+
+**方式 2：设置 HF_HOME 环境变量**
+
+修改 HuggingFace 默认缓存根目录，所有自动下载的模型都会存到该位置：
+
+```bash
+# 设置缓存目录（所有 from_pretrained 下载的模型都会存到这里）
+export HF_HOME=/data/hf_cache
+
+# 或在 Python 中设置
+import os
+os.environ["HF_HOME"] = "/data/hf_cache"
+```
+
+**方式 3：国内镜像加速下载**
+
+设置镜像端点加速模型下载（不影响已下载的模型）：
+
+```bash
+# 使用 HF 镜像
+export HF_ENDPOINT=https://hf-mirror.com
+
+# 或使用 Mosaic 专用镜像变量
+export MOSAIC_HF_MIRROR=https://hf-mirror.com
+```
+
+> TTS 后端模型会自动使用镜像加速下载。常规节点（文本/图像/视频等）依赖 HuggingFace 原生 `HF_ENDPOINT` 机制。
+
 ---
 
 ## 第一个示例：文字生成图片

@@ -233,10 +233,26 @@ pip install "mosaic[audio]"
 ```python
 from mosaic.nodes.audio.tts_backends.hf_model_manager import HFModelManager
 
-mgr = HFModelManager(local_dir="/data/weights")
-mgr.download("2noise/ChatTTS", "chattts")      # 存到 /data/weights/chattts
-mgr.download("fishaudio/fish-speech-1.5", "fish-speech")
-mgr.download("FunAudioLLM/CosyVoice2-0.5B", "cosyvoice2-0.5b")
+# 下载到自定义路径（路径不存在时自动创建）
+HFModelManager.ensure_model(
+    model_path="/data/weights/chattts",
+    repo_id="2Noise/ChatTTS",
+)
+HFModelManager.ensure_model(
+    model_path="/data/weights/fish-speech",
+    repo_id="fishaudio/fish-speech-1.5",
+)
+HFModelManager.ensure_model(
+    model_path="/data/weights/gpt-sovits",
+    repo_id="lj1995/GPT-SoVITS",
+)
+HFModelManager.ensure_model(
+    model_path="/data/weights/cosyvoice2",
+    repo_id="FunAudioLLM/CosyVoice2-0.5B",
+)
+# CosyVoice 的文本 LLM 单独下载
+from huggingface_hub import snapshot_download
+snapshot_download("Qwen/Qwen2.5-1.5B-Instruct")
 ```
 
 ---

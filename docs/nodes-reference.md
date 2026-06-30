@@ -25,7 +25,7 @@
 
 | 参数 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
-| `model` | str | `Qwen/Qwen2.5-7B-Instruct` | HuggingFace 模型 ID |
+| `model` | str | `Qwen/Qwen2.5-7B-Instruct` | HuggingFace 模型 ID 或本地路径 |
 | `device_map` | str | `auto` | 传递给 `from_pretrained` 的 `device_map` |
 | `torch_dtype` | str | `fp16` | 权重精度（`fp32`/`fp16`/`bf16`） |
 | `trust_remote_code` | bool | `True` | 是否信任远程代码 |
@@ -2250,7 +2250,12 @@ text → ChatTokenizer → LlamaARModel → DVAE+Vocos → StreamAdapter → wav
 ```python
 from mosaic.nodes.audio.tts_backends.implementations import ChatTTSBackend
 
+# 方式 1：传 HF 仓库 ID（自动下载到同名目录）
 backend = ChatTTSBackend(model_path="2Noise/ChatTTS")
+
+# 方式 2：传本地路径（直接使用已下载的模型）
+# backend = ChatTTSBackend(model_path="/data/models/chattts")
+
 backend.load()
 audio = backend.synthesize(text="你好", language="zh")
 
@@ -2294,7 +2299,12 @@ text → FishTokenizer → FishLlamaARModel → VQDecoder+HiFiGAN → StreamAdap
 ```python
 from mosaic.nodes.audio.tts_backends.implementations import FishSpeechBackend
 
+# 方式 1：传 HF 仓库 ID（自动下载到同名目录）
 backend = FishSpeechBackend(model_path="fishaudio/fish-speech-1.5")
+
+# 方式 2：传本地路径（直接使用已下载的模型）
+# backend = FishSpeechBackend(model_path="/data/models/fish-speech")
+
 backend.load()
 audio = backend.synthesize(text="你好", language="zh")
 ```
@@ -2336,7 +2346,12 @@ text → SoVITSTokenizer → GPT2ARModel → SoVITSDecoder → StreamAdapter →
 ```python
 from mosaic.nodes.audio.tts_backends.implementations import GPTSoVITSBackend
 
-backend = GPTSoVITSBackend(model_path="path/to/gpt-sovits")
+# 方式 1：传 HF 仓库 ID（自动下载到同名目录）
+backend = GPTSoVITSBackend(model_path="lj1995/GPT-SoVITS")
+
+# 方式 2：传本地路径（直接使用已下载的模型）
+# backend = GPTSoVITSBackend(model_path="/data/models/gpt-sovits")
+
 backend.load()
 audio = backend.synthesize(text="你好", language="zh")
 ```
@@ -2389,7 +2404,12 @@ text → CosyVoiceTokenizer → FlowMatchingModel → HiFiGanVocoder → StreamA
 ```python
 from mosaic.nodes.audio.tts_backends.implementations import CosyVoiceBackend
 
+# 方式 1：传 HF 仓库 ID（自动下载到同名目录）
 backend = CosyVoiceBackend(model_path="FunAudioLLM/CosyVoice2-0.5B", num_ode_steps=10)
+
+# 方式 2：传本地路径（直接使用已下载的模型）
+# backend = CosyVoiceBackend(model_path="/data/models/cosyvoice2", num_ode_steps=10)
+
 backend.load()
 audio = backend.synthesize(text="你好", language="zh")
 ```
