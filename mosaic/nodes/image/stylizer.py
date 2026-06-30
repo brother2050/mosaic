@@ -18,6 +18,14 @@ from mosaic.core.registry import registry
 from mosaic.core.types import MosaicData
 
 from mosaic.nodes.image._base import BaseImageNode
+from mosaic.nodes.image._image_utils import (
+    safe_float,
+    safe_int,
+    validate_guidance_scale,
+    validate_image_dimensions,
+    validate_num_inference_steps,
+    validate_strength,
+)
 
 __all__ = ["Stylizer"]
 
@@ -81,6 +89,9 @@ class Stylizer(BaseImageNode):
     version: str = "0.1.0"
     input_types = ["image", "mosaic"]
     output_types = ["image"]
+
+    # IP-Adapter 默认权重（F2：避免魔法数字）
+    DEFAULT_IP_ADAPTER_SCALE: float = 0.6
 
     def __init__(
         self,
@@ -183,15 +194,21 @@ class Stylizer(BaseImageNode):
                 )
 
             # 提取参数
-            strength = float(input_data.get("strength", 0.65))
-            strength = max(0.0, min(1.0, strength))
+            strength = safe_float(input_data.get("strength", 0.65), "strength")
+            validate_strength(strength)
 
             prompt_extra = input_data.get("prompt_extra", "")
             if not isinstance(prompt_extra, str):
                 prompt_extra = ""
 
-            num_inference_steps = int(input_data.get("num_inference_steps", 30))
-            guidance_scale = float(input_data.get("guidance_scale", 7.5))
+            num_inference_steps = safe_int(
+                input_data.get("num_inference_steps", 30), "num_inference_steps"
+            )
+            validate_num_inference_steps(num_inference_steps)
+            guidance_scale = safe_float(
+                input_data.get("guidance_scale", 7.5), "guidance_scale"
+            )
+            validate_guidance_scale(guidance_scale)
 
             seed, generator = self._prepare_seed(input_data.get("seed"))
 
@@ -204,6 +221,8 @@ class Stylizer(BaseImageNode):
 
             # 将输入图片尺寸对齐到 8 的倍数
             image = self._resize_to_multiple_of_8(image)
+            # 校验尺寸上下限（A2/E3：防止过大导致显存溢出）
+            validate_image_dimensions(image.size[0], image.size[1])
 
             # 构造 Pipeline 参数
             pipe_kwargs: dict = {
@@ -223,19 +242,25 @@ class Stylizer(BaseImageNode):
                 pipe_kwargs["ip_adapter_image"] = ref_image
                 # 设置 IP-Adapter scale
                 try:
-                    self._pipeline.set_ip_adapter_scale(0.6)
+                    self._pipeline.set_ip_adapter_scale(self.DEFAULT_IP_ADAPTER_SCALE)
                 except Exception:  # noqa: BLE001
                     pass
 
             # 执行推理
             output = self._run_pipeline(**pipe_kwargs)
+
+            result_image = output.images[0] if hasattr(output, "images") and output.images else None
+            if result_image is None:
+                raise RuntimeError(
+                    f"{self.__class__.__name__} failed to generate output image. "
+                    f"The model returned None. This may indicate an issue with "
+                    f"the input parameters or model state."
+                )
         except Exception as exc:
             self._emit_error(exc)
             raise
 
         elapsed = time.perf_counter() - t0
-
-        result_image = output.images[0] if hasattr(output, "images") and output.images else None
 
         result = MosaicData(
             image=result_image,

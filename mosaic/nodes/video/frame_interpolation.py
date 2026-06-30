@@ -58,6 +58,7 @@ from mosaic.core.registry import registry
 from mosaic.core.types import MosaicData, VideoData
 
 from mosaic.nodes.video._base import BaseVideoNode
+from mosaic.nodes.video._video_utils import safe_int
 
 __all__ = ["FrameInterpolator"]
 
@@ -154,6 +155,10 @@ class FrameInterpolator(BaseVideoNode):
         * ``rife``：惰性导入 ``onnxruntime``，加载 RIFE ONNX 模型。
         * ``film``：惰性导入 ``tensorflow`` / ``tensorflow_hub``，加载 FILM 模型。
         """
+        self._logger.info(
+            "Loading interpolation model: method=%s, model=%r, chunk_size=%d.",
+            self._method, self._model_name, self._chunk_size,
+        )
         if self._method == "linear":
             self._logger.info(
                 "Linear interpolation selected; no model required, "
@@ -377,6 +382,11 @@ class FrameInterpolator(BaseVideoNode):
             插帧后的帧列表，长度约为 ``2 * len(frames) - 1``。
         """
         label = pass_label or self._method
+        n_in = len(frames)
+        self._logger.debug(
+            "interpolate_2x dispatch: method=%s, input_frames=%d, label=%r.",
+            self._method, n_in, label,
+        )
         if self._method == "linear":
             return self._interpolate_linear(
                 frames, progress_base, progress_total, label
@@ -773,10 +783,11 @@ class FrameInterpolator(BaseVideoNode):
                 )
 
             frames: list[Any] = list(video.frames)
-            if not frames:
+            # E4：插帧至少需要 2 帧（单帧无法插值）
+            if len(frames) < 2:
                 raise ValueError(
-                    "FrameInterpolator requires a non-empty 'video' "
-                    "(video.frames is empty)."
+                    f"Frame interpolation requires at least 2 input frames, "
+                    f"got {len(frames)}."
                 )
 
             original_fps = video.fps
@@ -788,18 +799,34 @@ class FrameInterpolator(BaseVideoNode):
             original_fps = int(original_fps)
             original_frame_count = len(frames)
 
+            self._logger.debug(
+                "Input video: %d frames @ %d fps, frame size=%s.",
+                original_frame_count,
+                original_fps,
+                frames[0].size if hasattr(frames[0], "size") else "unknown",
+            )
+
             # 参数解析（target_fps 与 scale_factor 二选一，target_fps 优先）
             target_fps = input_data.get("target_fps")
             if target_fps is not None:
-                target_fps = int(target_fps)
-            scale_factor = int(input_data.get("scale_factor", 2))
+                target_fps = safe_int(target_fps, "target_fps")
+            scale_factor = safe_int(input_data.get("scale_factor", 2), "scale_factor")
 
             num_passes, target_fps_used = self._resolve_num_passes(
                 original_fps, scale_factor, target_fps
             )
 
             # 防御性：统一帧尺寸
+            before_norm_sizes = {
+                getattr(f, "size", None) for f in frames
+            }
             frames = self._normalize_frame_sizes(frames)
+            if len(before_norm_sizes) > 1:
+                self._logger.debug(
+                    "Normalized %d frames to a uniform size %s.",
+                    original_frame_count,
+                    frames[0].size if hasattr(frames[0], "size") else "unknown",
+                )
 
             self._logger.info(
                 "Interpolating video: method=%s, original_frames=%d, fps=%d, "
@@ -823,6 +850,10 @@ class FrameInterpolator(BaseVideoNode):
                 n = max(1, 2 * n - 1)
 
             if total_work <= 0:
+                self._logger.info(
+                    "No interpolation needed (num_passes=0); "
+                    "returning input frames unchanged."
+                )
                 self._emit_progress(0, 1, "No interpolation needed")
             else:
                 self._emit_progress(0, total_work, "Starting interpolation")
@@ -831,6 +862,16 @@ class FrameInterpolator(BaseVideoNode):
             new_frames = frames
             done_work = 0
             for p in range(num_passes):
+                frames_before = len(new_frames)
+                self._logger.debug(
+                    "Starting pass %d/%d (method=%s): %d frames -> "
+                    "expecting %d frames.",
+                    p + 1,
+                    num_passes,
+                    self._method,
+                    frames_before,
+                    2 * frames_before - 1,
+                )
                 new_frames = self._interpolate_2x(
                     new_frames,
                     progress_base=done_work,
@@ -838,9 +879,27 @@ class FrameInterpolator(BaseVideoNode):
                     pass_label=f"pass {p + 1}/{num_passes}",
                 )
                 done_work += work_per_pass[p]
+                self._logger.info(
+                    "Pass %d/%d complete: %d frames -> %d frames.",
+                    p + 1,
+                    num_passes,
+                    frames_before,
+                    len(new_frames),
+                )
 
             new_frame_count = len(new_frames)
             new_fps = original_fps * (2 ** num_passes)
+
+            self._logger.info(
+                "Interpolation complete: %d frames @ %d fps -> "
+                "%d frames @ %d fps (method=%s, passes=%d).",
+                original_frame_count,
+                original_fps,
+                new_frame_count,
+                new_fps,
+                self._method,
+                num_passes,
+            )
 
             if total_work <= 0:
                 self._emit_progress(1, 1, "No interpolation needed")

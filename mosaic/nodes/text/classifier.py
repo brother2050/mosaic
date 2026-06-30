@@ -277,10 +277,10 @@ class TextClassifier(BaseTextNode):
         for prefix in ("类别：", "分类：", "答案：", "结果：", "Label:"):
             if text.startswith(prefix):
                 text = text[len(prefix):].strip()
-        # 切分
+        # 切分（含制表符等常见分隔符）
         import re
 
-        parts = re.split(r"[、,，\n;；]+", text)
+        parts = re.split(r"[、,，\n;；\t]+", text)
         matched: list[str] = []
         seen: set = set()
         for part in parts:

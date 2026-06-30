@@ -73,6 +73,9 @@ class BaseConsistencyNode(Node):
     input_types: list[str] = ["image", "mosaic"]
     output_types: list[str] = ["image"]
 
+    #: 图像尺寸上限（单边像素），超过则抛出 ValueError 以避免内存溢出。
+    MAX_DIMENSION: int = 4096
+
     def __init__(
         self,
         device: str = "cuda",
@@ -123,6 +126,40 @@ class BaseConsistencyNode(Node):
         except Exception:  # noqa: BLE001
             pass
         return self._device
+
+    def _resolve_device(self) -> str:
+        """解析实际推理设备，无 GPU 时从调度器降级。
+
+        统一的设备解析入口：当节点配置为 CUDA 但调度器检测不到 GPU 时，
+        降级到调度器报告的设备（通常为 ``"cpu"``）并记录日志。所有一致性
+        子类应通过本方法解析目标设备，避免各自实现不一致的降级逻辑。
+        """
+        device = self._device
+        if device.startswith("cuda") and not self._scheduler.is_gpu:
+            device = self._scheduler.device
+            self._logger.info(
+                "No GPU available; falling back to device %r.", device
+            )
+        return device
+
+    def _check_image_dimensions(self, width: int, height: int) -> None:
+        """校验图像尺寸是否在合理上限内，避免大图像导致内存溢出。
+
+        Parameters
+        ----------
+        width, height:
+            待校验的图像宽 / 高（像素）。
+
+        Raises
+        ------
+        ValueError
+            ``width`` 或 ``height`` 超过 :attr:`MAX_DIMENSION`。
+        """
+        if width > self.MAX_DIMENSION or height > self.MAX_DIMENSION:
+            raise ValueError(
+                f"Image dimensions too large: {width}x{height}, "
+                f"max {self.MAX_DIMENSION}x{self.MAX_DIMENSION}"
+            )
 
     def _prepare_seed(self, seed: int | None) -> tuple[int, Any]:
         """准备随机种子与 generator。

@@ -158,8 +158,12 @@ class TextRewriter(BaseTextNode):
         for pat in prefix_patterns:
             text = re.sub(pat, "", text, flags=re.IGNORECASE | re.MULTILINE)
 
-        # 去除常见后缀解释（如"希望这个改写..."）
-        suffix_markers = ["\n\n希望", "\n\n注：", "\n\n说明：", "\n\n备注："]
+        # 去除常见后缀解释（如"希望这个改写..."、"以上是..."等）
+        suffix_markers = [
+            "\n\n希望", "\n希望", "\n\n注：", "\n注：",
+            "\n\n说明：", "\n说明：", "\n\n备注：", "\n备注：",
+            "\n\n以上是", "\n以上是", "\n\n请注意", "\n请注意",
+        ]
         for marker in suffix_markers:
             idx = text.find(marker)
             if idx != -1:

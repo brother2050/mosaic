@@ -124,6 +124,14 @@ class AvatarDriver(BaseDigitalHumanNode):
     input_types: list[str] = ["image", "video", "audio", "mosaic"]
     output_types: list[str] = ["video", "image", "mosaic"]
 
+    # -- 表情参数推导的魔法数字（提取为类常量便于调参） -------------------
+    #: 音频能量到嘴部张开度的缩放系数。
+    ENERGY_SCALE: float = 3.0
+    #: 嘴部张开代理值归一化的阈值（除数）。
+    MOUTH_OPEN_THRESHOLD: float = 0.5
+    #: 微笑判定时嘴宽 / 眼距的偏移量。
+    MOUTH_WIDTH_OFFSET: float = 0.4
+
     def __init__(
         self,
         model: str = "KwaiVGI/LivePortrait",
@@ -769,7 +777,7 @@ class AvatarDriver(BaseDigitalHumanNode):
         for i in range(n_frames):
             seg = mono[i * hop:(i + 1) * hop]
             energy = float(np.sqrt(np.mean(seg ** 2))) if seg.size else 0.0
-            mouth_open = float(np.clip(energy * 3.0, 0.0, 1.0))
+            mouth_open = float(np.clip(energy * self.ENERGY_SCALE, 0.0, 1.0))
             seq.append(
                 {
                     "smile": 0.0,
@@ -793,8 +801,8 @@ class AvatarDriver(BaseDigitalHumanNode):
         mouth_width = float(np.linalg.norm(right_mouth - left_mouth))
         mouth_mid = (left_mouth + right_mouth) / 2.0
         mouth_open_proxy = abs(float(mouth_mid[1] - nose[1])) / eye_dist
-        mouth_open = float(np.clip(mouth_open_proxy / 0.5, 0.0, 1.0))
-        smile = float(np.clip(mouth_width / eye_dist - 0.4, 0.0, 1.0))
+        mouth_open = float(np.clip(mouth_open_proxy / self.MOUTH_OPEN_THRESHOLD, 0.0, 1.0))
+        smile = float(np.clip(mouth_width / eye_dist - self.MOUTH_WIDTH_OFFSET, 0.0, 1.0))
         return {
             "smile": smile,
             "mouth_open": mouth_open,

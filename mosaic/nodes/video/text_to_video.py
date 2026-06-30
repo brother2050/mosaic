@@ -25,7 +25,6 @@
 
 from __future__ import annotations
 
-import random
 import time
 from typing import Any
 
@@ -33,6 +32,15 @@ from mosaic.core.registry import registry
 from mosaic.core.types import MosaicData, VideoData
 
 from mosaic.nodes.video._base import BaseVideoNode
+from mosaic.nodes.video._video_utils import (
+    adjust_num_frames_cogvideox,
+    extract_frames_from_output,
+    prepare_seed,
+    safe_float,
+    safe_int,
+    validate_common_video_params,
+    validate_model_path,
+)
 
 __all__ = ["TextToVideo"]
 
@@ -115,6 +123,9 @@ class TextToVideo(BaseVideoNode):
         import torch  # type: ignore
         from diffusers import CogVideoXPipeline  # type: ignore
         from mosaic.nodes._pipeline_utils import safe_load_pipeline
+
+        # 校验模型路径：本地路径不存在时给出友好错误（B2）
+        validate_model_path(self._model_name, self._logger)
 
         # 减少 CUDA 内存碎片：设置 expandable_segments
         # 这对 VAE decode 阶段的大张量分配特别重要
@@ -211,37 +222,13 @@ class TextToVideo(BaseVideoNode):
         int
             调整后的有效帧数。
         """
-        if num_frames in _VALID_NUM_FRAMES:
-            return num_frames
-
-        # 找最近的合法值
-        closest = min(_VALID_NUM_FRAMES, key=lambda v: abs(v - num_frames))
-        self._logger.warning(
-            "num_frames=%d is not a valid value for CogVideoX. "
-            "Adjusted to %d (valid values: %s).",
-            num_frames,
-            closest,
-            _VALID_NUM_FRAMES,
+        return adjust_num_frames_cogvideox(
+            num_frames, _VALID_NUM_FRAMES, self._logger
         )
-        return closest
 
     def _prepare_seed(self, seed: int | None) -> tuple:
         """准备随机种子与 generator。"""
-        import torch  # type: ignore
-
-        if seed is None:
-            seed = random.randint(0, 2**32 - 1)
-        seed = int(seed) % (2**32)
-
-        device = self._infer_device()
-        try:
-            generator = torch.Generator(device=device)
-            generator.manual_seed(seed)
-        except (RuntimeError, ValueError, TypeError):
-            generator = torch.Generator(device="cpu")
-            generator.manual_seed(seed)
-
-        return seed, generator
+        return prepare_seed(seed, self._infer_device())
 
     def _extract_frames_from_output(self, output: Any) -> list:
         """从 CogVideoX Pipeline 输出中提取帧列表。
@@ -260,45 +247,7 @@ class TextToVideo(BaseVideoNode):
         list[PIL.Image]
             帧列表。
         """
-        from PIL import Image  # type: ignore
-        import numpy as np  # type: ignore
-
-        frames: list = []
-
-        # 尝试从 frames 属性提取
-        if hasattr(output, "frames"):
-            raw = output.frames
-            # 可能是 tensor 或 list
-            if hasattr(raw, "cpu"):
-                raw = raw.cpu()
-
-            if hasattr(raw, "numpy"):
-                arr = raw.numpy()
-            else:
-                arr = np.asarray(raw)
-
-            # 显式转 float32 避免 float16 精度损失（仅对真实 ndarray）
-            if isinstance(arr, np.ndarray) and arr.dtype == np.float16:
-                arr = arr.astype(np.float32)
-
-            # 形状 (batch, num_frames, H, W, C) -> 取第一个 batch
-            if arr.ndim == 5:
-                arr = arr[0]
-            # 形状 (num_frames, H, W, C)
-
-            # 归一化到 [0, 255]
-            if arr.max() <= 1.0:
-                arr = (arr * 255).clip(0, 255).astype(np.uint8)
-            else:
-                arr = arr.clip(0, 255).astype(np.uint8)
-
-            for i in range(arr.shape[0]):
-                frames.append(Image.fromarray(arr[i]))
-
-        elif hasattr(output, "images"):
-            frames = list(output.images)
-
-        return frames
+        return extract_frames_from_output(output, self._logger)
 
     def run(self, input_data: MosaicData) -> MosaicData:
         """执行文生视频。
@@ -342,18 +291,30 @@ class TextToVideo(BaseVideoNode):
             if not isinstance(negative_prompt, str):
                 negative_prompt = None
 
-            num_frames = int(input_data.get("num_frames", 49))
+            num_frames = safe_int(input_data.get("num_frames", 49), "num_frames")
             num_frames = self._adjust_num_frames(num_frames)
 
-            width = int(input_data.get("width", 720))
-            height = int(input_data.get("height", 480))
+            width = safe_int(input_data.get("width", 720), "width")
+            height = safe_int(input_data.get("height", 480), "height")
             # 确保偶数
             width, height = self._ensure_even_dimensions(width, height)
 
-            num_inference_steps = int(input_data.get("num_inference_steps", 50))
-            guidance_scale = float(input_data.get("guidance_scale", 6.0))
-            fps = int(input_data.get("fps", 8))
+            num_inference_steps = safe_int(
+                input_data.get("num_inference_steps", 50), "num_inference_steps"
+            )
+            guidance_scale = safe_float(
+                input_data.get("guidance_scale", 6.0), "guidance_scale"
+            )
+            fps = safe_int(input_data.get("fps", 8), "fps")
             seed = input_data.get("seed")
+
+            # 参数范围校验（A2）
+            validate_common_video_params(
+                num_frames=num_frames,
+                fps=fps,
+                num_inference_steps=num_inference_steps,
+                guidance_scale=guidance_scale,
+            )
 
             actual_seed, generator = self._prepare_seed(seed)
 

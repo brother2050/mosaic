@@ -14,6 +14,13 @@ from mosaic.core.registry import registry
 from mosaic.core.types import MosaicData
 
 from mosaic.nodes.image._base import BaseImageNode
+from mosaic.nodes.image._image_utils import (
+    safe_float,
+    safe_int,
+    validate_guidance_scale,
+    validate_image_dimensions,
+    validate_num_inference_steps,
+)
 
 __all__ = ["Inpainting"]
 
@@ -122,19 +129,25 @@ class Inpainting(BaseImageNode):
             # 校验输入
             image = input_data.get("image")
             if image is None:
-                raise ValueError("Inpainting requires 'image' (PIL.Image).")
+                raise ValueError(
+                    f"Inpainting requires 'image' (PIL.Image), "
+                    f"got {type(image).__name__}."
+                )
             image = self._ensure_pil_image(image)
 
             mask_image = input_data.get("mask_image")
             if mask_image is None:
-                raise ValueError("Inpainting requires 'mask_image' (PIL.Image).")
+                raise ValueError(
+                    f"Inpainting requires 'mask_image' (PIL.Image), "
+                    f"got {type(mask_image).__name__}."
+                )
             mask_image = self._ensure_pil_image(mask_image)
 
             prompt = input_data.get("prompt")
-            if not isinstance(prompt, str):
+            if not isinstance(prompt, str) or not prompt.strip():
                 raise ValueError(
-                    f"Inpainting requires 'prompt' (str), "
-                    f"got {type(prompt).__name__}."
+                    f"{self.__class__.__name__} requires 'prompt' (non-empty str), "
+                    f"got {type(prompt).__name__}: {prompt!r}"
                 )
 
             # 提取参数
@@ -142,15 +155,29 @@ class Inpainting(BaseImageNode):
             if not isinstance(negative_prompt, str):
                 negative_prompt = None
 
-            num_inference_steps = int(input_data.get("num_inference_steps", 30))
-            guidance_scale = float(input_data.get("guidance_scale", 7.5))
+            num_inference_steps = safe_int(
+                input_data.get("num_inference_steps", 30), "num_inference_steps"
+            )
+            validate_num_inference_steps(num_inference_steps)
+            guidance_scale = safe_float(
+                input_data.get("guidance_scale", 7.5), "guidance_scale"
+            )
+            validate_guidance_scale(guidance_scale)
 
             seed, generator = self._prepare_seed(input_data.get("seed"))
 
             # 将 image 和 mask_image resize 到相同尺寸（8 的倍数）
             # 以 image 尺寸为准
             image = self._resize_to_multiple_of_8(image)
-            mask_image = mask_image.resize(image.size)
+            # 校验尺寸上下限（A2/E3：防止过大导致显存溢出）
+            validate_image_dimensions(image.size[0], image.size[1])
+            if mask_image.size != image.size:
+                self._logger.warning(
+                    "Mask size %s does not match image size %s; "
+                    "resizing mask to match image.",
+                    mask_image.size, image.size,
+                )
+                mask_image = mask_image.resize(image.size)
 
             # 自动二值化 mask
             mask_image = self._binarize_mask(mask_image)
@@ -169,13 +196,19 @@ class Inpainting(BaseImageNode):
 
             # 执行推理
             output = self._run_pipeline(**pipe_kwargs)
+
+            result_image = output.images[0] if hasattr(output, "images") and output.images else None
+            if result_image is None:
+                raise RuntimeError(
+                    f"{self.__class__.__name__} failed to generate output image. "
+                    f"The model returned None. This may indicate an issue with "
+                    f"the input parameters or model state."
+                )
         except Exception as exc:
             self._emit_error(exc)
             raise
 
         elapsed = time.perf_counter() - t0
-
-        result_image = output.images[0] if hasattr(output, "images") and output.images else None
 
         result = MosaicData(
             image=result_image,

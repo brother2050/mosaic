@@ -36,6 +36,11 @@ from mosaic.core.registry import registry
 from mosaic.core.types import MosaicData, VideoData
 
 from mosaic.nodes.video._base import BaseVideoNode
+from mosaic.nodes.video._video_utils import (
+    safe_float,
+    safe_int,
+    validate_common_video_params,
+)
 
 __all__ = ["ImageToVideo"]
 
@@ -323,24 +328,45 @@ class ImageToVideo(BaseVideoNode):
             # resize 到 SVD 要求的 1024x576
             image = self._prepare_input_image(image)
 
-            num_frames = int(input_data.get("num_frames", _SVD_XT_NUM_FRAMES))
+            num_frames = safe_int(
+                input_data.get("num_frames", _SVD_XT_NUM_FRAMES), "num_frames"
+            )
             # SVD-XT 固定输出 25 帧，限制上限
             num_frames = max(1, min(num_frames, _SVD_XT_NUM_FRAMES))
 
-            fps = int(input_data.get("fps", 7))
+            # E4：单帧不算视频，告警提示
+            if num_frames < 2:
+                self._logger.warning(
+                    "num_frames=%d is less than 2; generating a single "
+                    "frame instead of a video.", num_frames,
+                )
 
-            motion_bucket_id = int(
-                input_data.get("motion_bucket_id", _MOTION_BUCKET_ID_DEFAULT)
+            fps = safe_int(input_data.get("fps", 7), "fps")
+
+            motion_bucket_id = safe_int(
+                input_data.get("motion_bucket_id", _MOTION_BUCKET_ID_DEFAULT),
+                "motion_bucket_id",
             )
             # 限制到合法范围 1-255
             motion_bucket_id = max(1, min(motion_bucket_id, 255))
 
-            noise_level = float(input_data.get("noise_level", _NOISE_LEVEL_DEFAULT))
-            num_inference_steps = int(input_data.get("num_inference_steps", 25))
+            noise_level = safe_float(
+                input_data.get("noise_level", _NOISE_LEVEL_DEFAULT), "noise_level"
+            )
+            num_inference_steps = safe_int(
+                input_data.get("num_inference_steps", 25), "num_inference_steps"
+            )
             decode_chunk_size = input_data.get(
                 "decode_chunk_size", self._decode_chunk_size
             )
             seed = input_data.get("seed")
+
+            # 参数范围校验（A2）；SVD 不使用 guidance_scale
+            validate_common_video_params(
+                num_frames=num_frames,
+                fps=fps,
+                num_inference_steps=num_inference_steps,
+            )
 
             actual_seed, generator = self._prepare_seed(seed)
 
@@ -368,7 +394,9 @@ class ImageToVideo(BaseVideoNode):
                 "generator": generator,
             }
             if decode_chunk_size is not None:
-                pipe_kwargs["decode_chunk_size"] = int(decode_chunk_size)
+                pipe_kwargs["decode_chunk_size"] = safe_int(
+                    decode_chunk_size, "decode_chunk_size"
+                )
 
             # 执行推理
             import torch  # type: ignore

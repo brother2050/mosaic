@@ -15,6 +15,14 @@ from mosaic.core.registry import registry
 from mosaic.core.types import MosaicData
 
 from mosaic.nodes.text._base import BaseTextNode
+from mosaic.nodes.text._text_utils import (
+    check_prompt_length,
+    safe_float,
+    safe_int,
+    validate_max_new_tokens,
+    validate_temperature,
+    validate_top_p,
+)
 
 __all__ = ["TextGenerator"]
 
@@ -79,17 +87,29 @@ class TextGenerator(BaseTextNode):
         try:
             # 校验输入
             prompt = input_data.get("prompt")
-            if not isinstance(prompt, str):
+            if not isinstance(prompt, str) or not prompt.strip():
                 raise ValueError(
-                    f"TextGenerator requires 'prompt' (str), "
+                    f"TextGenerator requires 'prompt' (non-empty str), "
                     f"got {type(prompt).__name__}."
                 )
 
-            # 提取生成参数
-            max_new_tokens = int(input_data.get("max_new_tokens", 512))
-            temperature = float(input_data.get("temperature", 0.7))
-            top_p = float(input_data.get("top_p", 0.9))
+            # 提取生成参数（安全类型转换）
+            max_new_tokens = safe_int(
+                input_data.get("max_new_tokens", 512), "max_new_tokens"
+            )
+            temperature = safe_float(
+                input_data.get("temperature", 0.7), "temperature"
+            )
+            top_p = safe_float(input_data.get("top_p", 0.9), "top_p")
             do_sample = bool(input_data.get("do_sample", True))
+
+            # 参数范围校验
+            validate_max_new_tokens(max_new_tokens)
+            validate_temperature(temperature)
+            validate_top_p(top_p)
+
+            # 超长上下文保护
+            check_prompt_length(prompt, self._logger)
 
             # 构造单轮对话消息
             messages = [{"role": "user", "content": prompt}]
@@ -149,17 +169,29 @@ class TextGenerator(BaseTextNode):
         """
         # 校验输入
         prompt = input_data.get("prompt")
-        if not isinstance(prompt, str):
+        if not isinstance(prompt, str) or not prompt.strip():
             raise ValueError(
-                f"TextGenerator requires 'prompt' (str), "
+                f"TextGenerator requires 'prompt' (non-empty str), "
                 f"got {type(prompt).__name__}."
             )
 
-        # 提取生成参数
-        max_new_tokens = int(input_data.get("max_new_tokens", 512))
-        temperature = float(input_data.get("temperature", 0.7))
-        top_p = float(input_data.get("top_p", 0.9))
+        # 提取生成参数（安全类型转换）
+        max_new_tokens = safe_int(
+            input_data.get("max_new_tokens", 512), "max_new_tokens"
+        )
+        temperature = safe_float(
+            input_data.get("temperature", 0.7), "temperature"
+        )
+        top_p = safe_float(input_data.get("top_p", 0.9), "top_p")
         do_sample = bool(input_data.get("do_sample", True))
+
+        # 参数范围校验
+        validate_max_new_tokens(max_new_tokens)
+        validate_temperature(temperature)
+        validate_top_p(top_p)
+
+        # 超长上下文保护
+        check_prompt_length(prompt, self._logger)
 
         # 构造单轮对话消息
         messages = [{"role": "user", "content": prompt}]

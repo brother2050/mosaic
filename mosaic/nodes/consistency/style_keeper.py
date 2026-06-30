@@ -322,12 +322,13 @@ class StyleKeeper(BaseConsistencyNode):
 
     def _move_pipeline_to_device(self) -> None:
         """将 Pipeline 迁移到目标设备，CUDA 不可用时回退到 CPU。"""
+        target = self._resolve_device()
         try:
-            self._pipeline = self._pipeline.to(self._device)
+            self._pipeline = self._pipeline.to(target)
         except Exception as exc:  # noqa: BLE001
             self._logger.warning(
                 "Failed to move pipeline to %s: %s. Falling back to CPU.",
-                self._device,
+                target,
                 exc,
             )
             self._device = "cpu"
@@ -494,6 +495,8 @@ class StyleKeeper(BaseConsistencyNode):
             height = int(input_data.get("height", 1024))
             width = max(8, (width // 8) * 8)
             height = max(8, (height // 8) * 8)
+            # 大图像内存保护
+            self._check_image_dimensions(width, height)
 
             num_inference_steps = int(input_data.get("num_inference_steps", 30))
             guidance_scale = float(input_data.get("guidance_scale", 7.5))
@@ -509,6 +512,9 @@ class StyleKeeper(BaseConsistencyNode):
             seed, generator = self._prepare_seed(input_data.get("seed"))
 
             # ---------- 分发推理 ----------
+            self._emit_progress(
+                current=0, total=1, message="Generating style-preserving image"
+            )
             if self._method == "ip-adapter":
                 image = self._generate_ip_adapter(
                     prompt=prompt,
@@ -545,6 +551,9 @@ class StyleKeeper(BaseConsistencyNode):
                     style_strength=style_strength,
                     generator=generator,
                 )
+            self._emit_progress(
+                current=1, total=1, message="Generation complete"
+            )
         except Exception as exc:
             self._emit_error(exc)
             raise

@@ -14,6 +14,14 @@ from mosaic.core.registry import registry
 from mosaic.core.types import MosaicData
 
 from mosaic.nodes.image._base import BaseImageNode
+from mosaic.nodes.image._image_utils import (
+    safe_float,
+    safe_int,
+    validate_guidance_scale,
+    validate_image_dimensions,
+    validate_num_inference_steps,
+    validate_strength,
+)
 
 __all__ = ["ImageToImage"]
 
@@ -120,14 +128,17 @@ class ImageToImage(BaseImageNode):
             # 校验输入
             image = input_data.get("image")
             if image is None:
-                raise ValueError("ImageToImage requires 'image' (PIL.Image).")
+                raise ValueError(
+                    f"ImageToImage requires 'image' (PIL.Image), "
+                    f"got {type(image).__name__}."
+                )
             image = self._ensure_pil_image(image)
 
             prompt = input_data.get("prompt")
-            if not isinstance(prompt, str):
+            if not isinstance(prompt, str) or not prompt.strip():
                 raise ValueError(
-                    f"ImageToImage requires 'prompt' (str), "
-                    f"got {type(prompt).__name__}."
+                    f"{self.__class__.__name__} requires 'prompt' (non-empty str), "
+                    f"got {type(prompt).__name__}: {prompt!r}"
                 )
 
             # 提取参数
@@ -135,16 +146,24 @@ class ImageToImage(BaseImageNode):
             if not isinstance(negative_prompt, str):
                 negative_prompt = None
 
-            strength = float(input_data.get("strength", 0.75))
-            strength = max(0.0, min(1.0, strength))
+            strength = safe_float(input_data.get("strength", 0.75), "strength")
+            validate_strength(strength)
 
-            num_inference_steps = int(input_data.get("num_inference_steps", 30))
-            guidance_scale = float(input_data.get("guidance_scale", 7.5))
+            num_inference_steps = safe_int(
+                input_data.get("num_inference_steps", 30), "num_inference_steps"
+            )
+            validate_num_inference_steps(num_inference_steps)
+            guidance_scale = safe_float(
+                input_data.get("guidance_scale", 7.5), "guidance_scale"
+            )
+            validate_guidance_scale(guidance_scale)
 
             seed, generator = self._prepare_seed(input_data.get("seed"))
 
             # 将输入图片尺寸对齐到 8 的倍数
             image = self._resize_to_multiple_of_8(image)
+            # 校验尺寸上下限（A2/E3：防止过大导致显存溢出）
+            validate_image_dimensions(image.size[0], image.size[1])
 
             # 构造 Pipeline 参数
             pipe_kwargs: dict = {
@@ -160,14 +179,20 @@ class ImageToImage(BaseImageNode):
 
             # 执行推理
             output = self._run_pipeline(**pipe_kwargs)
+
+            # 提取结果
+            result_image = output.images[0] if hasattr(output, "images") and output.images else None
+            if result_image is None:
+                raise RuntimeError(
+                    f"{self.__class__.__name__} failed to generate output image. "
+                    f"The model returned None. This may indicate an issue with "
+                    f"the input parameters or model state."
+                )
         except Exception as exc:
             self._emit_error(exc)
             raise
 
         elapsed = time.perf_counter() - t0
-
-        # 提取结果
-        result_image = output.images[0] if hasattr(output, "images") and output.images else None
 
         result = MosaicData(
             image=result_image,

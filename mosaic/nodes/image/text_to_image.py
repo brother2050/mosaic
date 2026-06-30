@@ -14,6 +14,14 @@ from mosaic.core.registry import registry
 from mosaic.core.types import MosaicData
 
 from mosaic.nodes.image._base import BaseImageNode
+from mosaic.nodes.image._image_utils import (
+    ALIGNMENT_MULTIPLE,
+    safe_float,
+    safe_int,
+    validate_guidance_scale,
+    validate_image_dimensions,
+    validate_num_inference_steps,
+)
 
 __all__ = ["TextToImage"]
 
@@ -50,6 +58,13 @@ class TextToImage(BaseImageNode):
     version: str = "0.1.0"
     input_types = ["text", "mosaic"]
     output_types = ["image"]
+
+    # 默认输出尺寸（F2：避免魔法数字）
+    DEFAULT_WIDTH: int = 1024
+    DEFAULT_HEIGHT: int = 1024
+    DEFAULT_NUM_INFERENCE_STEPS: int = 30
+    DEFAULT_GUIDANCE_SCALE: float = 7.5
+    DEFAULT_NUM_IMAGES: int = 1
 
     def _load_pipeline(self) -> None:
         """加载 StableDiffusionXLPipeline。"""
@@ -111,10 +126,10 @@ class TextToImage(BaseImageNode):
         try:
             # 校验输入
             prompt = input_data.get("prompt")
-            if not isinstance(prompt, str):
+            if not isinstance(prompt, str) or not prompt.strip():
                 raise ValueError(
-                    f"TextToImage requires 'prompt' (str), "
-                    f"got {type(prompt).__name__}."
+                    f"{self.__class__.__name__} requires 'prompt' (non-empty str), "
+                    f"got {type(prompt).__name__}: {prompt!r}"
                 )
 
             # 提取参数
@@ -122,15 +137,25 @@ class TextToImage(BaseImageNode):
             if not isinstance(negative_prompt, str):
                 negative_prompt = None
 
-            width = int(input_data.get("width", 1024))
-            height = int(input_data.get("height", 1024))
+            width = safe_int(input_data.get("width", self.DEFAULT_WIDTH), "width")
+            height = safe_int(input_data.get("height", self.DEFAULT_HEIGHT), "height")
             # 确保尺寸是 8 的倍数
-            width = max(8, (width // 8) * 8)
-            height = max(8, (height // 8) * 8)
+            width = max(ALIGNMENT_MULTIPLE, (width // ALIGNMENT_MULTIPLE) * ALIGNMENT_MULTIPLE)
+            height = max(ALIGNMENT_MULTIPLE, (height // ALIGNMENT_MULTIPLE) * ALIGNMENT_MULTIPLE)
+            # 校验尺寸上下限（A2/E3：防止过大导致显存溢出）
+            validate_image_dimensions(width, height)
 
-            num_inference_steps = int(input_data.get("num_inference_steps", 30))
-            guidance_scale = float(input_data.get("guidance_scale", 7.5))
-            num_images = int(input_data.get("num_images", 1))
+            num_inference_steps = safe_int(
+                input_data.get("num_inference_steps", self.DEFAULT_NUM_INFERENCE_STEPS),
+                "num_inference_steps",
+            )
+            validate_num_inference_steps(num_inference_steps)
+            guidance_scale = safe_float(
+                input_data.get("guidance_scale", self.DEFAULT_GUIDANCE_SCALE),
+                "guidance_scale",
+            )
+            validate_guidance_scale(guidance_scale)
+            num_images = safe_int(input_data.get("num_images", self.DEFAULT_NUM_IMAGES), "num_images")
             num_images = max(1, num_images)
 
             # 准备种子

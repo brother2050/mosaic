@@ -22,6 +22,13 @@ from mosaic.core.registry import registry
 from mosaic.core.types import MosaicData
 
 from mosaic.nodes.text._base import BaseTextNode
+from mosaic.nodes.text._text_utils import (
+    check_prompt_length,
+    safe_float,
+    safe_int,
+    validate_max_new_tokens,
+    validate_temperature,
+)
 
 __all__ = ["Translator"]
 
@@ -94,6 +101,8 @@ class Translator(BaseTextNode):
     def __init__(self, model: str = "Qwen/Qwen2.5-7B-Instruct", **kwargs: Any) -> None:
         super().__init__(model=model, **kwargs)
         self._is_specialized: bool = _is_specialized_translation_model(model)
+        # 暴露支持的语言表，供运行时校验与外部查询
+        self._LANGUAGE_NAMES: dict[str, str] = _LANGUAGE_NAMES
 
     # ------------------------------------------------------------------
     # 模型加载（专用翻译模型需要不同的加载逻辑）
@@ -162,10 +171,24 @@ class Translator(BaseTextNode):
                 raise ValueError(
                     "Translator requires 'target_language' (str), e.g. 'zh', 'en'."
                 )
+            # 校验目标语言是否受支持（'auto' 仅用于源语言，不可作为目标语言）
+            if target_language not in self._LANGUAGE_NAMES or target_language == "auto":
+                raise ValueError(
+                    f"Unsupported target language: {target_language!r}. "
+                    f"Supported: {sorted(l for l in self._LANGUAGE_NAMES if l != 'auto')}"
+                )
             source_language = str(input_data.get("source_language", "auto"))
 
-            max_new_tokens = int(input_data.get("max_new_tokens", 512))
-            temperature = float(input_data.get("temperature", 0.3))
+            max_new_tokens = safe_int(
+                input_data.get("max_new_tokens", 512), "max_new_tokens"
+            )
+            temperature = safe_float(
+                input_data.get("temperature", 0.3), "temperature"
+            )
+
+            # 参数范围校验
+            validate_max_new_tokens(max_new_tokens)
+            validate_temperature(temperature)
 
             # 执行翻译
             if self._is_specialized:
@@ -207,6 +230,8 @@ class Translator(BaseTextNode):
         prompt = (
             f"将以下{src_name}文本翻译为{tgt_name}，只输出翻译结果，不要解释：\n\n{text}"
         )
+        # 超长上下文保护
+        check_prompt_length(prompt, self._logger)
         messages = [{"role": "user", "content": prompt}]
         generated, _, _ = self._generate_from_messages(
             messages,

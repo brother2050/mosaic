@@ -12,6 +12,7 @@
 
 from __future__ import annotations
 
+import io
 import time
 from typing import Any
 
@@ -60,6 +61,9 @@ class BackgroundRemover(BaseImageNode):
     version: str = "0.1.0"
     input_types = ["image", "mosaic"]
     output_types = ["image"]
+
+    # 分割模型期望的输入尺寸（F2：避免魔法数字）
+    DEFAULT_INPUT_SIZE: tuple[int, int] = (1024, 1024)
 
     def __init__(
         self,
@@ -149,7 +153,10 @@ class BackgroundRemover(BaseImageNode):
             # 校验输入
             image = input_data.get("image")
             if image is None:
-                raise ValueError("BackgroundRemover requires 'image' (PIL.Image).")
+                raise ValueError(
+                    f"BackgroundRemover requires 'image' (PIL.Image), "
+                    f"got {type(image).__name__}."
+                )
             image = self._ensure_pil_image(image)
 
             # 根据后端执行去背景
@@ -185,7 +192,14 @@ class BackgroundRemover(BaseImageNode):
 
         # rembg remove 返回 PNG 字节流（含 alpha 通道）
         output_bytes = remove(image, session=self._rembg_session)
-        result_image = Image.open(output_bytes) if hasattr(output_bytes, "read") else Image.open(output_bytes)
+        if hasattr(output_bytes, "read"):
+            # 已是文件类对象（含 read 方法）
+            result_image = Image.open(output_bytes)
+        elif isinstance(output_bytes, bytes):
+            # 原始字节流需要 io.BytesIO 包装后才能被 PIL 打开
+            result_image = Image.open(io.BytesIO(output_bytes))
+        else:
+            result_image = Image.open(output_bytes)
         result_image = result_image.convert("RGBA")
 
         # 提取 alpha 通道作为 mask
@@ -204,7 +218,7 @@ class BackgroundRemover(BaseImageNode):
         # 预处理：resize + normalize
         orig_size = image.size
         # 模型期望的输入尺寸（通常是 1024x1024 或 512x512）
-        input_size = (1024, 1024)
+        input_size = self.DEFAULT_INPUT_SIZE
 
         preprocess = transforms.Compose([
             transforms.Resize(input_size),

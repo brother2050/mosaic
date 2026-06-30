@@ -183,14 +183,13 @@ class CrossFrameConsistency(BaseConsistencyNode):
         return self._model_name
 
     def _resolve_target_device(self) -> str:
-        """解析实际推理设备，无 GPU 时从调度器降级。"""
-        device = self._device
-        if device.startswith("cuda") and not self._scheduler.is_gpu:
-            device = self._scheduler.device
-            self._logger.info(
-                "No GPU available; falling back to device %r.", device
-            )
-        return device
+        """解析实际推理设备，无 GPU 时从调度器降级。
+
+        .. deprecated::
+            委托给基类统一的 :meth:`BaseConsistencyNode._resolve_device`，
+            保留仅为向后兼容。
+        """
+        return self._resolve_device()
 
     # ------------------------------------------------------------------
     # 加载 / 卸载
@@ -247,7 +246,7 @@ class CrossFrameConsistency(BaseConsistencyNode):
             raise RuntimeError(
                 _build_error_message(self._effective_model_name, exc)
             ) from exc
-        self._pipeline = self._pipeline.to(self._resolve_target_device())
+        self._pipeline = self._pipeline.to(self._resolve_device())
         self._apply_optimizations()
         self._enable_attention_sharing(target="cross")
 
@@ -280,7 +279,7 @@ class CrossFrameConsistency(BaseConsistencyNode):
             raise RuntimeError(
                 _build_error_message(self._effective_model_name, exc)
             ) from exc
-        self._pipeline = self._pipeline.to(self._resolve_target_device())
+        self._pipeline = self._pipeline.to(self._resolve_device())
         self._apply_optimizations()
         self._enable_attention_sharing(target="self")
 
@@ -313,7 +312,7 @@ class CrossFrameConsistency(BaseConsistencyNode):
             raise RuntimeError(
                 _build_error_message(self._effective_model_name, exc)
             ) from exc
-        self._pipeline = self._pipeline.to(self._resolve_target_device())
+        self._pipeline = self._pipeline.to(self._resolve_device())
         self._apply_optimizations()
         self._load_ip_adapter()
 
@@ -438,8 +437,11 @@ class CrossFrameConsistency(BaseConsistencyNode):
                 # 锚帧：缓存当前 K/V 投影输出
                 try:
                     cache[key] = out.detach().clone()
-                except Exception:  # noqa: BLE001
-                    pass
+                except (RuntimeError, TypeError, AttributeError) as exc:
+                    # 显存不足 / 不支持 detach().clone() 的张量类型
+                    node._logger.debug(
+                        "Failed to cache KV for %s: %s", key, exc
+                    )
             elif mode == "share" and key in cache:
                 # 后续帧：按 consistency_strength 融合锚帧 K/V
                 cached = cache[key]
@@ -448,9 +450,12 @@ class CrossFrameConsistency(BaseConsistencyNode):
                         ratio = node._consistency_strength
                         cached = cached.to(device=out.device, dtype=out.dtype)
                         out = (1.0 - ratio) * out + ratio * cached
-                except Exception:  # noqa: BLE001
-                    # 形状不匹配等异常时回退到原始输出
-                    pass
+                except (RuntimeError, TypeError, ValueError) as exc:
+                    # 形状不匹配 / 设备或精度转换失败时回退到原始输出
+                    node._logger.debug(
+                        "KV fusion skipped for %s due to %s: %s",
+                        key, type(exc).__name__, exc,
+                    )
             return out
 
         proj.forward = wrapped_forward  # type: ignore[assignment]
@@ -601,10 +606,12 @@ class CrossFrameConsistency(BaseConsistencyNode):
             缺少 ``prompts`` 或 ``character_description``，或 ``prompts``
             非非空字符串列表。
         """
+        # 与其它一致性节点保持一致：先确保模型加载，再发射事件与校验输入。
+        self._scheduler.ensure_loaded(self)
         self._emit_start()
         t0 = time.perf_counter()
         try:
-            # -- 校验必填输入（fail-fast，无需加载模型） ----------------
+            # -- 校验必填输入（fail-fast） -------------------------------
             prompts = input_data.get("prompts")
             if (
                 not isinstance(prompts, list)
@@ -626,9 +633,6 @@ class CrossFrameConsistency(BaseConsistencyNode):
                     "(non-empty str)."
                 )
 
-            # -- 加载模型（输入校验通过后再加载） -----------------------
-            self._scheduler.ensure_loaded(self)
-
             # -- 解析参数 -------------------------------------------------
             negative_prompt = input_data.get("negative_prompt")
             if not isinstance(negative_prompt, str):
@@ -639,6 +643,9 @@ class CrossFrameConsistency(BaseConsistencyNode):
             # 对齐到 8 的倍数
             width = max(8, (width // 8) * 8)
             height = max(8, (height // 8) * 8)
+
+            # 大图像内存保护：超过上限则拒绝，避免显存 / 内存溢出
+            self._check_image_dimensions(width, height)
 
             # story-diffusion (SD 1.5) 在 512 附近表现最佳
             if self._method == "story-diffusion":

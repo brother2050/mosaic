@@ -213,7 +213,16 @@ def _walk(t: np.ndarray) -> np.ndarray:
     kps[:, _KP["left_ankle"], 1] -= lift
     kps[:, _KP["right_knee"], 0] -= stride
     kps[:, _KP["right_ankle"], 0] -= stride * 1.5
-    kps[:, _KP["right_ankle"], 1] -= lift[::-1] if hasattr(lift, "__getitem__") else lift
+    # 右腿使用左腿 lift 的时间反转（交替步态）；
+    # 用 shape 属性精确区分 numpy/torch 数组与 Python 标量
+    # （hasattr(x, "__getitem__") 对 numpy 数组恒为 True，无法区分标量）。
+    if isinstance(lift, (list, tuple)):
+        right_lift = lift[::-1]
+    elif hasattr(lift, "shape"):  # numpy / torch 数组
+        right_lift = lift[::-1]
+    else:  # 标量
+        right_lift = lift
+    kps[:, _KP["right_ankle"], 1] -= right_lift
 
     # 手臂反向摆动
     kps[:, _KP["left_wrist"], 0] -= stride * 0.8

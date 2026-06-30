@@ -15,6 +15,14 @@ from mosaic.core.registry import registry
 from mosaic.core.types import MosaicData
 
 from mosaic.nodes.text._base import BaseTextNode
+from mosaic.nodes.text._text_utils import (
+    check_prompt_length,
+    safe_float,
+    safe_int,
+    validate_max_new_tokens,
+    validate_temperature,
+    validate_top_p,
+)
 
 __all__ = ["Chat"]
 
@@ -95,18 +103,31 @@ class Chat(BaseTextNode):
                         f"Each message must be a dict with 'role' and 'content', got {msg!r}."
                     )
 
-            # 提取参数
+            # 提取参数（安全类型转换）
             system_prompt = input_data.get("system_prompt")
-            max_new_tokens = int(input_data.get("max_new_tokens", 1024))
-            temperature = float(input_data.get("temperature", 0.7))
-            top_p = float(input_data.get("top_p", 0.9))
+            max_new_tokens = safe_int(
+                input_data.get("max_new_tokens", 1024), "max_new_tokens"
+            )
+            temperature = safe_float(
+                input_data.get("temperature", 0.7), "temperature"
+            )
+            top_p = safe_float(input_data.get("top_p", 0.9), "top_p")
             do_sample = bool(input_data.get("do_sample", True))
+
+            # 参数范围校验
+            validate_max_new_tokens(max_new_tokens)
+            validate_temperature(temperature)
+            validate_top_p(top_p)
 
             # 构造完整消息列表：可选系统提示词 + 对话历史
             full_messages: list[dict[str, str]] = []
             if isinstance(system_prompt, str) and system_prompt.strip():
                 full_messages.append({"role": "system", "content": system_prompt})
             full_messages.extend(messages)
+
+            # 超长上下文保护：粗略估算整体输入 token 数
+            joined_prompt = "\n".join(m.get("content", "") for m in full_messages)
+            check_prompt_length(joined_prompt, self._logger)
 
             # 执行生成
             reply, input_tokens, output_tokens = self._generate_from_messages(
@@ -182,18 +203,31 @@ class Chat(BaseTextNode):
                     f"Each message must be a dict with 'role' and 'content', got {msg!r}."
                 )
 
-        # 提取参数
+        # 提取参数（安全类型转换）
         system_prompt = input_data.get("system_prompt")
-        max_new_tokens = int(input_data.get("max_new_tokens", 1024))
-        temperature = float(input_data.get("temperature", 0.7))
-        top_p = float(input_data.get("top_p", 0.9))
+        max_new_tokens = safe_int(
+            input_data.get("max_new_tokens", 1024), "max_new_tokens"
+        )
+        temperature = safe_float(
+            input_data.get("temperature", 0.7), "temperature"
+        )
+        top_p = safe_float(input_data.get("top_p", 0.9), "top_p")
         do_sample = bool(input_data.get("do_sample", True))
+
+        # 参数范围校验
+        validate_max_new_tokens(max_new_tokens)
+        validate_temperature(temperature)
+        validate_top_p(top_p)
 
         # 构造完整消息列表：可选系统提示词 + 对话历史
         full_messages: list[dict[str, str]] = []
         if isinstance(system_prompt, str) and system_prompt.strip():
             full_messages.append({"role": "system", "content": system_prompt})
         full_messages.extend(messages)
+
+        # 超长上下文保护：粗略估算整体输入 token 数
+        joined_prompt = "\n".join(m.get("content", "") for m in full_messages)
+        check_prompt_length(joined_prompt, self._logger)
 
         yield from self.stream_generate(
             messages=full_messages,

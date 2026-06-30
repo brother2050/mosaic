@@ -323,10 +323,11 @@ class BaseVideoNode(Node):
                 arr = np.asarray(frame)
                 # 防御性 dtype 转换：imageio 期望 uint8
                 if arr.dtype != np.uint8:
-                    arr = np.clip(
-                        arr * 255 if arr.max() <= 1.0 else arr,
-                        0, 255,
-                    ).astype(np.uint8)
+                    # 空数组保护：arr.size == 0 时 arr.max() 会抛 ValueError
+                    if arr.size > 0 and arr.max() <= 1.0:
+                        arr = np.clip(arr * 255, 0, 255).astype(np.uint8)
+                    else:
+                        arr = np.clip(arr, 0, 255).astype(np.uint8)
             writer.append_data(arr)
 
         writer.close()
@@ -440,6 +441,10 @@ class BaseVideoNode(Node):
         # 显式转 float32 避免 float16 精度损失（仅对真实 ndarray）
         if isinstance(arr, np.ndarray) and arr.dtype == np.float16:
             arr = arr.astype(np.float32)
+
+        # 空数组保护：arr.size == 0 时 arr.max() 会抛 ValueError
+        if arr.size == 0:
+            return []
 
         # 归一化到 [0, 255]
         if arr.max() <= 1.0:

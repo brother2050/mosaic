@@ -143,6 +143,22 @@ class RealtimeRenderer(BaseDigitalHumanNode):
     input_types: list[str] = ["image", "audio", "text", "motion", "mosaic"]
     output_types: list[str] = ["video", "image", "mosaic"]
 
+    # -- 占位渲染调制的魔法数字（提取为类常量便于调参） -------------------
+    #: 音频能量到亮度波动系数。
+    AUDIO_BRIGHTNESS_GAIN: float = 0.15
+    #: 音频能量到对比度波动系数。
+    AUDIO_CONTRAST_GAIN: float = 0.10
+    #: 动作位移到亮度 / 对比度波动系数。
+    MOTION_GAIN: float = 0.05
+    #: 动作位移放大系数。
+    MOTION_SCALE: float = 5.0
+    #: 动作波动上限。
+    MOTION_CAP: float = 0.2
+    #: 周期性头部摆动的角度幅度（度）。
+    HEAD_SWING_AMPLITUDE: float = 2.0
+    #: 周期性头部摆动的周期（帧）。
+    HEAD_SWING_PERIOD: float = 30.0
+
     def __init__(
         self,
         model: str = _DEFAULT_MODEL,
@@ -307,14 +323,16 @@ class RealtimeRenderer(BaseDigitalHumanNode):
 
         使用 ``mosaic.core.onnx_utils`` 验证 onnxruntime 是否真正可用
         （不仅检查 import，还验证 InferenceSession 属性存在）。
-        失败时静默回退到 PyTorch 推理。
+        失败时记录警告并回退到 PyTorch 推理。
         """
-        from mosaic.core.onnx_utils import is_onnxruntime_usable
+        from mosaic.core.onnx_utils import OnnxRuntimeStatus
 
-        if not is_onnxruntime_usable():
-            self._logger.debug(
-                "onnxruntime 不可用（InferenceSession 加载失败），"
-                "使用 PyTorch 推理。"
+        usable, _version, _providers, error = OnnxRuntimeStatus.get()
+        if not usable:
+            self._logger.warning(
+                "ONNX runtime not available: %s; falling back to "
+                "PyTorch inference.",
+                error or "unknown reason",
             )
             self._use_onnx = False
             return
@@ -354,7 +372,11 @@ class RealtimeRenderer(BaseDigitalHumanNode):
             self._device = "cpu"
             try:
                 return obj.to("cpu")
-            except Exception:  # noqa: BLE001
+            except (RuntimeError, TypeError, AttributeError) as cpu_exc:
+                self._logger.warning(
+                    "Failed to move model to CPU fallback: %s. "
+                    "Keeping model on current device.", cpu_exc,
+                )
                 return obj
 
     # ------------------------------------------------------------------
@@ -709,7 +731,11 @@ class RealtimeRenderer(BaseDigitalHumanNode):
         except TypeError:
             # API 不匹配，尝试位置参数
             output = self._pipeline(avatar_img, driving)
-        except Exception:  # noqa: BLE001
+        except (RuntimeError, ValueError, AttributeError) as exc:
+            self._logger.warning(
+                "Pipeline inference failed for frame: %s. "
+                "Skipping frame.", exc,
+            )
             return None
 
         # 解析输出为 PIL.Image
@@ -762,20 +788,20 @@ class RealtimeRenderer(BaseDigitalHumanNode):
         if mode == "audio":
             energy = self._signal_energy(driving)
             # 能量映射到亮度/对比度波动
-            brightness = 1.0 + 0.15 * energy
-            contrast = 1.0 + 0.10 * energy
+            brightness = 1.0 + self.AUDIO_BRIGHTNESS_GAIN * energy
+            contrast = 1.0 + self.AUDIO_CONTRAST_GAIN * energy
         else:  # motion
             # 用关键点的整体位移量作为调制
             kp = np.asarray(driving, dtype=np.float32).reshape(-1)
             motion_mag = float(np.std(kp)) if kp.size else 0.0
-            brightness = 1.0 + 0.05 * min(motion_mag * 5, 0.2)
-            contrast = 1.0 + 0.05 * min(motion_mag * 5, 0.2)
+            brightness = 1.0 + self.MOTION_GAIN * min(motion_mag * self.MOTION_SCALE, self.MOTION_CAP)
+            contrast = 1.0 + self.MOTION_GAIN * min(motion_mag * self.MOTION_SCALE, self.MOTION_CAP)
 
         img = ImageEnhance.Brightness(img).enhance(brightness)
         img = ImageEnhance.Contrast(img).enhance(contrast)
 
         # 轻微的周期性头部摆动（仿射）模拟驱动
-        angle = 2.0 * np.sin(2 * np.pi * frame_idx / 30.0)
+        angle = self.HEAD_SWING_AMPLITUDE * np.sin(2 * np.pi * frame_idx / self.HEAD_SWING_PERIOD)
         img = img.rotate(angle, resample=Image.Resampling.BILINEAR, fillcolor=(0, 0, 0))
 
         return img

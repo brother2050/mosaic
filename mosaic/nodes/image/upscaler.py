@@ -15,6 +15,10 @@ from mosaic.core.registry import registry
 from mosaic.core.types import MosaicData
 
 from mosaic.nodes.image._base import BaseImageNode
+from mosaic.nodes.image._image_utils import (
+    safe_int,
+    validate_num_inference_steps,
+)
 
 __all__ = ["Upscaler"]
 
@@ -120,7 +124,10 @@ class Upscaler(BaseImageNode):
             # 校验输入
             image = input_data.get("image")
             if image is None:
-                raise ValueError("Upscaler requires 'image' (PIL.Image).")
+                raise ValueError(
+                    f"Upscaler requires 'image' (PIL.Image), "
+                    f"got {type(image).__name__}."
+                )
             image = self._ensure_pil_image(image)
 
             # 提取参数
@@ -128,10 +135,13 @@ class Upscaler(BaseImageNode):
             if not isinstance(prompt, str):
                 prompt = ""
 
-            scale_factor = int(input_data.get("scale_factor", 4))
+            scale_factor = safe_int(input_data.get("scale_factor", 4), "scale_factor")
             scale_factor = max(2, min(8, scale_factor))  # 限制在 2-8 倍
 
-            num_inference_steps = int(input_data.get("num_inference_steps", 20))
+            num_inference_steps = safe_int(
+                input_data.get("num_inference_steps", 20), "num_inference_steps"
+            )
+            validate_num_inference_steps(num_inference_steps)
 
             seed, generator = self._prepare_seed(input_data.get("seed"))
 

@@ -22,6 +22,13 @@ from mosaic.core.registry import registry
 from mosaic.core.types import MosaicData
 
 from mosaic.nodes.text._base import BaseTextNode
+from mosaic.nodes.text._text_utils import (
+    check_prompt_length,
+    safe_float,
+    safe_int,
+    validate_max_new_tokens,
+    validate_temperature,
+)
 
 __all__ = ["TextSummarizer"]
 
@@ -147,7 +154,11 @@ class TextSummarizer(BaseTextNode):
                 raise ValueError(
                     f"TextSummarizer requires 'text' (str), got {type(text).__name__}."
                 )
-            max_length = int(input_data.get("max_length", 150))
+            max_length = safe_int(input_data.get("max_length", 150), "max_length")
+            if max_length < 1:
+                raise ValueError(
+                    f"max_length must be >= 1, got {max_length}"
+                )
             style = str(input_data.get("style", "concise"))
             if style not in _VALID_STYLES:
                 raise ValueError(
@@ -172,8 +183,16 @@ class TextSummarizer(BaseTextNode):
                 )
                 return result
 
-            max_new_tokens = int(input_data.get("max_new_tokens", 512))
-            temperature = float(input_data.get("temperature", 0.3))
+            max_new_tokens = safe_int(
+                input_data.get("max_new_tokens", 512), "max_new_tokens"
+            )
+            temperature = safe_float(
+                input_data.get("temperature", 0.3), "temperature"
+            )
+
+            # 参数范围校验
+            validate_max_new_tokens(max_new_tokens)
+            validate_temperature(temperature)
 
             # 执行摘要
             if self._is_specialized:
@@ -218,6 +237,8 @@ class TextSummarizer(BaseTextNode):
         """通用生成模式：通过 prompt 指令摘要。"""
         instruction = _STYLE_INSTRUCTIONS[style].format(max_length=max_length)
         prompt = f"{instruction}\n\n原文：\n{text}"
+        # 超长上下文保护
+        check_prompt_length(prompt, self._logger)
         messages = [{"role": "user", "content": prompt}]
         generated, _, _ = self._generate_from_messages(
             messages,

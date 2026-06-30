@@ -29,7 +29,6 @@
 
 from __future__ import annotations
 
-import random
 import time
 from typing import Any
 
@@ -37,6 +36,14 @@ from mosaic.core.registry import registry
 from mosaic.core.types import MosaicData, VideoData
 
 from mosaic.nodes.video._base import BaseVideoNode
+from mosaic.nodes.video._video_utils import (
+    extract_frames_from_output,
+    prepare_seed,
+    safe_float,
+    safe_int,
+    validate_common_video_params,
+    validate_model_path,
+)
 
 __all__ = ["WanVideo"]
 
@@ -128,8 +135,8 @@ class WanVideo(BaseVideoNode):
         # 已带后缀则不处理
         if name.endswith("-Diffusers"):
             return name
-        # 检查是否是 Wan 仓库
-        if "Wan-AI/" in name or name.startswith("Wan-AI/"):
+        # 检查是否是 Wan 仓库（F3：去除冗余条件判断）
+        if name.startswith("Wan-AI/"):
             return name + "-Diffusers"
         return name
 
@@ -139,6 +146,9 @@ class WanVideo(BaseVideoNode):
         import torch  # type: ignore
         from diffusers import WanPipeline  # type: ignore
         from mosaic.nodes._pipeline_utils import safe_load_pipeline
+
+        # 校验模型路径：本地路径不存在时给出友好错误（B2）
+        validate_model_path(self._model_name, self._logger)
 
         _device = self._resolve_device()
         if _device.startswith("cuda"):
@@ -189,59 +199,11 @@ class WanVideo(BaseVideoNode):
 
     def _prepare_seed(self, seed: int | None) -> tuple:
         """准备随机种子与 generator。"""
-        import torch  # type: ignore
-
-        if seed is None:
-            seed = random.randint(0, 2**32 - 1)
-        seed = int(seed) % (2**32)
-
-        device = self._infer_device()
-        try:
-            generator = torch.Generator(device=device)
-            generator.manual_seed(seed)
-        except (RuntimeError, ValueError, TypeError):
-            generator = torch.Generator(device="cpu")
-            generator.manual_seed(seed)
-
-        return seed, generator
+        return prepare_seed(seed, self._infer_device())
 
     def _extract_frames_from_output(self, output: Any) -> list:
         """从 Wan Pipeline 输出中提取帧列表。"""
-        from PIL import Image  # type: ignore
-        import numpy as np  # type: ignore
-
-        frames: list = []
-
-        if hasattr(output, "frames"):
-            raw = output.frames
-            if hasattr(raw, "cpu"):
-                raw = raw.cpu()
-
-            if hasattr(raw, "numpy"):
-                arr = raw.numpy()
-            else:
-                arr = np.asarray(raw)
-
-            if isinstance(arr, np.ndarray) and arr.dtype == np.float16:
-                arr = arr.astype(np.float32)
-
-            # (batch, num_frames, H, W, C) -> 取第一个 batch
-            if arr.ndim == 5:
-                arr = arr[0]
-            # (num_frames, H, W, C)
-
-            if arr.max() <= 1.0:
-                arr = (arr * 255).clip(0, 255).astype(np.uint8)
-            else:
-                arr = arr.clip(0, 255).astype(np.uint8)
-
-            for i in range(arr.shape[0]):
-                frames.append(Image.fromarray(arr[i]))
-
-        elif hasattr(output, "images"):
-            frames = list(output.images)
-
-        return frames
+        return extract_frames_from_output(output, self._logger)
 
     def run(self, input_data: MosaicData) -> MosaicData:
         """执行文生视频。
@@ -284,7 +246,9 @@ class WanVideo(BaseVideoNode):
             if not isinstance(negative_prompt, str):
                 negative_prompt = None
 
-            num_frames = int(input_data.get("num_frames", _WAN_DEFAULT_FRAMES))
+            num_frames = safe_int(
+                input_data.get("num_frames", _WAN_DEFAULT_FRAMES), "num_frames"
+            )
             # Wan 要求 num_frames + 1 为 4 的倍数（首帧）
             # 常见值：49(3s), 81(5s), 121(7s)
             if (num_frames - 1) % 4 != 0:
@@ -296,18 +260,28 @@ class WanVideo(BaseVideoNode):
                 )
                 num_frames = adjusted
 
-            width = int(input_data.get("width", _WAN_DEFAULT_SIZE[0]))
-            height = int(input_data.get("height", _WAN_DEFAULT_SIZE[1]))
+            width = safe_int(input_data.get("width", _WAN_DEFAULT_SIZE[0]), "width")
+            height = safe_int(input_data.get("height", _WAN_DEFAULT_SIZE[1]), "height")
             width, height = self._ensure_even_dimensions(width, height)
 
-            num_inference_steps = int(
-                input_data.get("num_inference_steps", _WAN_DEFAULT_STEPS)
+            num_inference_steps = safe_int(
+                input_data.get("num_inference_steps", _WAN_DEFAULT_STEPS),
+                "num_inference_steps",
             )
-            guidance_scale = float(
-                input_data.get("guidance_scale", _WAN_DEFAULT_GUIDANCE)
+            guidance_scale = safe_float(
+                input_data.get("guidance_scale", _WAN_DEFAULT_GUIDANCE),
+                "guidance_scale",
             )
-            fps = int(input_data.get("fps", _WAN_DEFAULT_FPS))
+            fps = safe_int(input_data.get("fps", _WAN_DEFAULT_FPS), "fps")
             seed = input_data.get("seed")
+
+            # 参数范围校验（A2）
+            validate_common_video_params(
+                num_frames=num_frames,
+                fps=fps,
+                num_inference_steps=num_inference_steps,
+                guidance_scale=guidance_scale,
+            )
 
             actual_seed, generator = self._prepare_seed(seed)
 
@@ -339,7 +313,9 @@ class WanVideo(BaseVideoNode):
                     output = self._pipeline(**pipe_kwargs)
             except RuntimeError as exc:
                 if "out of memory" in str(exc).lower():
-                    is_lite = "1.3B" in self._model_name
+                    # 大小写不敏感匹配模型规模（B1）
+                    model_name_lower = self._model_name.lower()
+                    is_lite = "1.3b" in model_name_lower
                     min_vram = 8 if is_lite else 30
                     raise RuntimeError(
                         f"CUDA out of memory while running {self._model_name}. "

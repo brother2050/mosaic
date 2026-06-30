@@ -90,6 +90,25 @@ _DEFAULT_FPS: int = 25
 _DEFAULT_PADDING: list[int] = [0, 20, 0, 20]  # [left, top, right, bottom]
 
 
+def _is_local_model_path(name: str) -> bool:
+    """判断 *name* 是否形似本地文件系统路径（而非 HuggingFace repo id）。
+
+    用于在加载前对本地路径做友好存在性校验：当路径本身存在、或其父目录
+    存在时认为它是本地路径；形如 ``org/repo`` 的 HuggingFace 标识不会被
+    误判，从而避免对在线下载的模型误报。
+    """
+    import os
+
+    if not name:
+        return False
+    if os.path.exists(name):
+        return True
+    parent = os.path.dirname(name)
+    if parent and os.path.isdir(parent):
+        return True
+    return False
+
+
 @registry.register
 class LipSyncer(BaseDigitalHumanNode):
     """口型同步节点。
@@ -131,6 +150,18 @@ class LipSyncer(BaseDigitalHumanNode):
     version: str = "0.1.0"
     input_types: list[str] = ["image", "audio", "video", "mosaic"]
     output_types: list[str] = ["video", "image", "audio", "mosaic"]
+
+    # -- 嘴部区域裁剪的魔法数字（提取为类常量便于调参） -------------------
+    #: 无关键点回退时嘴部区域起始位置占人脸高度的比例。
+    MOUTH_FALLBACK_Y_RATIO: float = 0.60
+    #: ``jaw`` 模式下嘴部半宽 / 上 / 下扩展系数（相对嘴宽）。
+    JAW_HALF_W_RATIO: float = 0.85
+    JAW_TOP_RATIO: float = 0.35
+    JAW_BOTTOM_RATIO: float = 1.05
+    #: 默认模式下嘴部半宽 / 上 / 下扩展系数（相对嘴宽）。
+    MOUTH_HALF_W_RATIO: float = 0.75
+    MOUTH_TOP_RATIO: float = 0.40
+    MOUTH_BOTTOM_RATIO: float = 0.60
 
     def __init__(
         self,
@@ -208,6 +239,14 @@ class LipSyncer(BaseDigitalHumanNode):
         device = self._resolve_device()
         dtype = self._resolve_dtype()
 
+        # 友好校验：本地路径不存在时提前报错（不影响 HuggingFace repo id）
+        if _is_local_model_path(self._model_name) and not os.path.exists(
+            self._model_name
+        ):
+            raise FileNotFoundError(
+                f"MuseTalk model not found: {self._model_name}"
+            )
+
         try:
             from musetalk import MuseTalk  # type: ignore
 
@@ -266,6 +305,14 @@ class LipSyncer(BaseDigitalHumanNode):
         device = self._resolve_device()
         dtype = self._resolve_dtype()
 
+        # 友好校验：本地路径不存在时提前报错（不影响 HuggingFace repo id）
+        if _is_local_model_path(self._model_name) and not os.path.exists(
+            self._model_name
+        ):
+            raise FileNotFoundError(
+                f"Wav2Lip model not found: {self._model_name}"
+            )
+
         try:
             from wav2lip import Wav2Lip  # type: ignore
 
@@ -276,7 +323,10 @@ class LipSyncer(BaseDigitalHumanNode):
             # 判别器（用于同步性评估，推理可选但按需加载）
             try:
                 self._discriminator = self._model.get_discriminator()
-            except Exception:  # noqa: BLE001
+            except (AttributeError, RuntimeError, TypeError) as exc:
+                self._logger.debug(
+                    "Wav2Lip discriminator not available: %s.", exc
+                )
                 self._discriminator = None
         except ImportError:
             self._logger.warning(
@@ -746,7 +796,7 @@ class LipSyncer(BaseDigitalHumanNode):
             # 回退：人脸下 1/3 区域
             mx1 = x1
             mx2 = x2
-            my1 = y1 + int(fh * 0.60)
+            my1 = y1 + int(fh * LipSyncer.MOUTH_FALLBACK_Y_RATIO)
             my2 = y2
             return (
                 max(0, mx1),
@@ -764,13 +814,13 @@ class LipSyncer(BaseDigitalHumanNode):
 
         if parsing_mode == "jaw":
             # 下颌模式：嘴部区域向下扩展更多以包含下巴
-            half_w = mouth_w * 0.85
-            top = mouth_w * 0.35
-            bottom = mouth_w * 1.05
+            half_w = mouth_w * LipSyncer.JAW_HALF_W_RATIO
+            top = mouth_w * LipSyncer.JAW_TOP_RATIO
+            bottom = mouth_w * LipSyncer.JAW_BOTTOM_RATIO
         else:
-            half_w = mouth_w * 0.75
-            top = mouth_w * 0.40
-            bottom = mouth_w * 0.60
+            half_w = mouth_w * LipSyncer.MOUTH_HALF_W_RATIO
+            top = mouth_w * LipSyncer.MOUTH_TOP_RATIO
+            bottom = mouth_w * LipSyncer.MOUTH_BOTTOM_RATIO
 
         mx1 = int(mouth_cx - half_w)
         mx2 = int(mouth_cx + half_w)
