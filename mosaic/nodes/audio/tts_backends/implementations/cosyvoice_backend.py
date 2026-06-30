@@ -200,6 +200,9 @@ class CosyVoiceBackend(TTSBackend):
 
         # LLM 模型实例
         self._llm: Any = None
+        # E4-6: LLM hidden_dim -> FlowMatching condition_dim 投影层（按需创建）
+        self._projection: Any = None
+        self._flow_condition_dim: int = 512
         # 语音 Tokenizer 实例
         self._speech_tokenizer: Any = None
         # 说话人编码器实例
@@ -395,6 +398,10 @@ class CosyVoiceBackend(TTSBackend):
             dtype=self._dtype,
         )
 
+        # E4-6: 检查 LLM hidden_dim 与 FlowMatching condition_dim 是否匹配，
+        # 不匹配时创建投影层（LLM 与 Flow 均已加载，可安全读取维度）
+        self._setup_llm_projection()
+
         # ------------------------------------------------------------------
         # Layer 3: HiFi-GAN 声码器（复用已有代码）
         # ------------------------------------------------------------------
@@ -522,6 +529,78 @@ class CosyVoiceBackend(TTSBackend):
             )
             self._llm = None
 
+    def _setup_llm_projection(self) -> None:
+        """检查并创建 LLM→Flow 维度投影层（E4-6）。
+
+        CosyVoice 的 LLM（如 Qwen2）``last_hidden_state`` 维度通常为
+        ``896``，而 :class:`FlowMatchingModel` 的 ``condition_dim`` 为
+        ``512``。维度不一致时，``text_feats`` 直接喂给 FlowMatchingModel
+        会在内部 ``text_proj``（``Linear(cond, cond)``）处因形状不匹配而
+        报错。此处按需创建一个 ``nn.Linear(llm_hidden, flow_cond)`` 投影层。
+
+        .. warning::
+
+           该投影层为随机初始化（无对应预训练权重），仅作为维度对齐的最小
+           修复，不保证最优音质；完整方案应加载 CosyVoice 官方
+           ``text_proj`` 权重。
+        """
+        self._projection = None
+        if self._llm is None or self._acoustic_model is None:
+            return
+        # 读取 LLM hidden_size（防御性：部分模型可能没有 config.hidden_size）
+        llm_hidden_dim = None
+        try:
+            llm_hidden_dim = getattr(
+                getattr(self._llm, "config", None), "hidden_size", None
+            )
+        except Exception:  # noqa: BLE001
+            llm_hidden_dim = None
+        # 读取 Flow condition_dim（私有属性，回退到 512）
+        flow_condition_dim = getattr(
+            self._acoustic_model, "_condition_dim", 512
+        )
+        self._flow_condition_dim = flow_condition_dim
+        if llm_hidden_dim is None:
+            self._logger.info(
+                "Cannot determine LLM hidden_size; skipping projection "
+                "setup (assuming dims already match)."
+            )
+            return
+        if llm_hidden_dim == flow_condition_dim:
+            self._logger.info(
+                "LLM hidden_dim (%d) == Flow condition_dim (%d); "
+                "no projection needed.",
+                llm_hidden_dim,
+                flow_condition_dim,
+            )
+            return
+        try:
+            import torch  # type: ignore
+            import torch.nn as nn  # type: ignore
+
+            self._projection = nn.Linear(llm_hidden_dim, flow_condition_dim)
+            resolved = self._device
+            if resolved.startswith("cuda") and not torch.cuda.is_available():
+                resolved = "cpu"
+            self._projection = self._projection.to(resolved)
+            self._projection.eval()
+            self._logger.info(
+                "LLM hidden_dim (%d) != Flow condition_dim (%d); "
+                "added projection layer (randomly initialized; load "
+                "official text_proj weights for best quality).",
+                llm_hidden_dim,
+                flow_condition_dim,
+            )
+        except Exception as exc:  # noqa: BLE001
+            self._logger.warning(
+                "Failed to create LLM->Flow projection (%d->%d): %s. "
+                "text_feats may have wrong dimension.",
+                llm_hidden_dim,
+                flow_condition_dim,
+                exc,
+            )
+            self._projection = None
+
     def _load_speaker_cache(self) -> None:
         """加载预计算的说话人嵌入。"""
         embeddings_path = os.path.join(self._speaker_dir, "embeddings.json")
@@ -537,7 +616,10 @@ class CosyVoiceBackend(TTSBackend):
                     len(self._speaker_cache),
                 )
         except Exception as exc:  # noqa: BLE001
-            self._logger.debug("Failed to load speaker cache: %s", exc)
+            # E3-1: 说话人缓存加载失败应可见，而非静默 debug
+            self._logger.warning(
+                "Failed to load speaker cache: %s", exc, exc_info=True
+            )
 
     # ==================================================================
     # 核心合成
@@ -592,6 +674,8 @@ class CosyVoiceBackend(TTSBackend):
         self._ensure_loaded()
         if not isinstance(text, str) or not text.strip():
             raise ValueError("synthesize requires a non-empty 'text' string.")
+        # A3-1: 统一 speaker 类型校验
+        self._validate_speaker(speaker)
 
         self._logger.info(
             "synthesize: backend=%s language=%s speaker=%s speed=%.2f text_len=%d",
@@ -729,24 +813,35 @@ class CosyVoiceBackend(TTSBackend):
         # 创建流式会话
         session = self._get_stream_session(chunk_size)
 
-        # Chunk-aware ODE 求解 → 逐块解码
-        for mel_chunk in self._acoustic_model.generate_stream(
-            token_ids=text_feats,
-            speaker_embedding=speaker_info,
-            target_length=target_len,
-            chunk_size_frames=self._chunk_size_frames,
-            overlap_frames=self._chunk_overlap_frames,
-            **params,
-        ):
-            waveform_chunk, _sr = self._decode_mel(mel_chunk)
-            self._stream_push(session, waveform_chunk)
-            yield from self._stream_drain(
+        try:
+            # Chunk-aware ODE 求解 → 逐块解码
+            for mel_chunk in self._acoustic_model.generate_stream(
+                token_ids=text_feats,
+                speaker_embedding=speaker_info,
+                target_length=target_len,
+                chunk_size_frames=self._chunk_size_frames,
+                overlap_frames=self._chunk_overlap_frames,
+                **params,
+            ):
+                # 流式取消：提前终止生成循环
+                if session.is_cancelled:
+                    self._logger.info(
+                        "synthesize_stream cancelled for backend %s",
+                        self.name,
+                    )
+                    break
+                waveform_chunk, _sr = self._decode_mel(mel_chunk)
+                self._stream_push(session, waveform_chunk)
+                yield from self._stream_drain(
+                    session, text, speaker, language, speed
+                )
+
+            yield from self._stream_finish(
                 session, text, speaker, language, speed
             )
-
-        yield from self._stream_finish(
-            session, text, speaker, language, speed
-        )
+        finally:
+            # 确保会话缓冲与声学模型 KV cache 被释放/重置（即使中途抛异常）
+            self._cleanup_stream_state(session)
 
     # ==================================================================
     # 语音克隆
@@ -994,10 +1089,24 @@ class CosyVoiceBackend(TTSBackend):
         Returns
         -------
         Any
-            文本特征 ``[batch, seq_len, hidden]`` 或原始 token_ids。
+            文本特征 ``[batch, seq_len, hidden]``。
+
+        Raises
+        ------
+        RuntimeError
+            LLM 未加载时抛出。E4-2：此前在 LLM 加载失败时静默返回原始
+            ``token_ids``（整数 token id 张量）作为 ``text_feats`` 直接喂给
+            FlowMatchingModel 当条件，维度/语义全错，产出垃圾音频却无任何
+            错误抛出。现改为显式抛错，避免静默生成无效音频。
         """
         if self._llm is None:
-            return token_ids
+            raise RuntimeError(
+                "CosyVoice LLM model is not loaded. "
+                "Cannot generate speech without LLM: text_feats would be "
+                "raw integer token ids (wrong dimension/semantics for the "
+                "FlowMatching condition). Please ensure the LLM is properly "
+                "loaded (check model paths and the load() log for warnings)."
+            )
 
         try:
             import torch
@@ -1006,15 +1115,25 @@ class CosyVoiceBackend(TTSBackend):
                 outputs = self._llm(token_ids)
                 # 取最后一层隐藏状态
                 if hasattr(outputs, "last_hidden_state"):
-                    return outputs.last_hidden_state
+                    text_feats = outputs.last_hidden_state
                 elif hasattr(outputs, "logits"):
-                    return outputs.logits
+                    text_feats = outputs.logits
                 elif isinstance(outputs, tuple):
-                    return outputs[0]
-                return outputs
+                    text_feats = outputs[0]
+                else:
+                    text_feats = outputs
+                # E4-6: LLM hidden_dim 可能与 FlowMatching condition_dim 不一致
+                # （如 Qwen2 hidden=896 vs Flow condition=512），按需投影对齐，
+                # 否则 text_feats 喂给 FlowMatchingModel.text_proj 会形状报错。
+                if self._projection is not None:
+                    text_feats = self._projection(text_feats)
+                return text_feats
         except Exception as exc:  # noqa: BLE001
-            self._logger.warning("LLM encoding failed: %s", exc)
-            return token_ids
+            # E4-2：LLM 推理失败时同样不应静默回退到 token_ids（会产出垃圾音频）
+            raise RuntimeError(
+                f"CosyVoice LLM encoding failed: {exc}. Cannot produce valid "
+                f"text features for the FlowMatching model."
+            ) from exc
 
     def _decode_mel(self, mel: Any) -> tuple[Any, int]:
         """通过 HiFi-GAN 声码器将 mel 解码为波形。
@@ -1051,10 +1170,19 @@ class CosyVoiceBackend(TTSBackend):
                 return self.extract_speaker(speaker)
             except Exception as exc:  # noqa: BLE001
                 self._logger.warning(
-                    "Failed to extract speaker from %s: %s", speaker, exc
+                    "Failed to extract speaker from %s: %s",
+                    speaker,
+                    exc,
+                    exc_info=True,
                 )
                 return None
 
+        # A3-4: 未知 speaker 记录警告，回退默认音色（避免静默）
+        self._logger.warning(
+            "Speaker %r not found in cache or as a file path; "
+            "falling back to default speaker.",
+            speaker,
+        )
         return None
 
     def _get_waveform(self, audio: AudioData | str) -> Any:
@@ -1161,23 +1289,27 @@ class CosyVoiceBackend(TTSBackend):
 
         session = self._get_stream_session(kwargs.get("chunk_size", 4096))
 
-        for mel_chunk in self._acoustic_model.generate_stream(
-            token_ids=text_feats,
-            speaker_embedding=speaker_info,
-            target_length=target_len,
-            chunk_size_frames=self._chunk_size_frames,
-            overlap_frames=self._chunk_overlap_frames,
-            **params,
-        ):
-            waveform_chunk, _sr = self._decode_mel(mel_chunk)
-            self._stream_push(session, waveform_chunk)
-            yield from self._stream_drain(
+        try:
+            for mel_chunk in self._acoustic_model.generate_stream(
+                token_ids=text_feats,
+                speaker_embedding=speaker_info,
+                target_length=target_len,
+                chunk_size_frames=self._chunk_size_frames,
+                overlap_frames=self._chunk_overlap_frames,
+                **params,
+            ):
+                waveform_chunk, _sr = self._decode_mel(mel_chunk)
+                self._stream_push(session, waveform_chunk)
+                yield from self._stream_drain(
+                    session, text, "cloned", language, params.get("speed", 1.0)
+                )
+
+            yield from self._stream_finish(
                 session, text, "cloned", language, params.get("speed", 1.0)
             )
-
-        yield from self._stream_finish(
-            session, text, "cloned", language, params.get("speed", 1.0)
-        )
+        finally:
+            # 确保会话缓冲与声学模型 KV cache 被释放/重置（即使中途抛异常）
+            self._cleanup_stream_state(session)
 
     @staticmethod
     def _adjust_speed(waveform: Any, speed: float) -> Any:

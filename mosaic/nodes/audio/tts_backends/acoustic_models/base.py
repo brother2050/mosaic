@@ -21,7 +21,11 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from collections.abc import Iterator
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    import numpy as np
+    import torch
 
 __all__ = ["AcousticModel"]
 
@@ -113,7 +117,7 @@ class AcousticModel(ABC):
         speaker_embedding: Any | None = None,
         stream_batch: int = 24,
         **kwargs: Any,
-    ) -> Iterator[Any]:
+    ) -> Iterator[np.ndarray | torch.Tensor]:
         """流式生成声学特征。
 
         每生成 ``stream_batch`` 个 token yield 一次。

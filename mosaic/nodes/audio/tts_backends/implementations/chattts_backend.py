@@ -212,6 +212,7 @@ class ChatTTSBackend(TTSBackend):
         language: str = "zh",
         use_flash_attention: bool = True,
         streaming_enabled: bool = True,
+        stream_batch: int = 24,
         scheduler: Any = None,
         repo_id: str | None = None,
     ) -> None:
@@ -252,6 +253,8 @@ class ChatTTSBackend(TTSBackend):
         self._language: str = language
         self._use_flash_attention: bool = use_flash_attention
         self._streaming_enabled: bool = streaming_enabled
+        # D2-2: 流式生成每次 yield 的 token 数（原硬编码 24）
+        self._stream_batch: int = stream_batch
         self._repo_id: str | None = repo_id
 
         # 解析后的模型目录（_build_pipeline 中由 HFModelManager 填充）
@@ -595,6 +598,8 @@ class ChatTTSBackend(TTSBackend):
         # 2. 文本校验
         if not isinstance(text, str) or not text.strip():
             raise ValueError("synthesize requires a non-empty 'text' string.")
+        # A3-1: 统一 speaker 类型校验
+        self._validate_speaker(speaker)
 
         self._logger.info(
             "synthesize: backend=%s language=%s speaker=%s speed=%.2f text_len=%d",
@@ -752,31 +757,42 @@ class ChatTTSBackend(TTSBackend):
 
         # 8. 合并推理参数 + 流式批次大小
         params: dict[str, Any] = dict(self.spec.default_params)
+        params["stream_batch"] = self._stream_batch  # D2-2: 可配置（kwargs 可覆盖）
         params.update(kwargs)
-        params["stream_batch"] = 24
 
         # 创建流式会话并尝试配置块大小（Layer 4 预热）
         session = self._get_stream_session(chunk_size)
 
-        # 9. 流式生成 -> 逐块解码 -> 缓冲输出
-        for audio_codes_chunk in self._acoustic_model.generate_stream(
-            token_ids,
-            speaker_embedding,
-            **params,
-        ):
-            # 10. 复合声码器流式解码：VQ token 块 -> mel 块 -> waveform 块
-            waveform_chunk, _sample_rate = self._decode_chunk(audio_codes_chunk)
-            # 推入缓冲区
-            self._stream_push(session, waveform_chunk)
-            # 弹出已凑齐的块
-            yield from self._stream_drain(
+        try:
+            # 9. 流式生成 -> 逐块解码 -> 缓冲输出
+            for audio_codes_chunk in self._acoustic_model.generate_stream(
+                token_ids,
+                speaker_embedding,
+                **params,
+            ):
+                # 流式取消：提前终止生成循环
+                if session.is_cancelled:
+                    self._logger.info(
+                        "synthesize_stream cancelled for backend %s",
+                        self.name,
+                    )
+                    break
+                # 10. 复合声码器流式解码：VQ token 块 -> mel 块 -> waveform 块
+                waveform_chunk, _sample_rate = self._decode_chunk(audio_codes_chunk)
+                # 推入缓冲区
+                self._stream_push(session, waveform_chunk)
+                # 弹出已凑齐的块
+                yield from self._stream_drain(
+                    session, text, speaker, language, speed
+                )
+
+            # 11. 冲刷缓冲区中剩余数据
+            yield from self._stream_finish(
                 session, text, speaker, language, speed
             )
-
-        # 11. 冲刷缓冲区中剩余数据
-        yield from self._stream_finish(
-            session, text, speaker, language, speed
-        )
+        finally:
+            # 确保会话缓冲与声学模型 KV cache 被释放/重置（即使中途抛异常）
+            self._cleanup_stream_state(session)
 
     # ==================================================================
     # 查询与说话人管理
@@ -837,7 +853,10 @@ class ChatTTSBackend(TTSBackend):
                 std = stat.get("std", std)
                 dim = int(mean.shape[-1]) if hasattr(mean, "shape") else dim
             except Exception as exc:  # noqa: BLE001
-                self._logger.debug("Failed to load spk_stat.pt: %s", exc)
+                # E3-1: spk_stat.pt 加载失败影响说话人采样质量，应可见
+                self._logger.warning(
+                    "Failed to load spk_stat.pt: %s", exc, exc_info=True
+                )
 
         # 高斯分布采样：spk = randn * std + mean
         spk = torch.randn(dim) * std + mean
@@ -945,5 +964,7 @@ class ChatTTSBackend(TTSBackend):
             for j in range(nvals):
                 shift = (nvals - 1 - j) * 14
                 chars.append(chr(OFFSET + ((bits >> shift) & 0x3FFF)))
+            # E5-2：追加余数长度标记 \u3D0r，使解码端能精确还原原始字节数
+            chars.append(chr(0x3D00 + len(rem)))
 
         return "".join(chars)

@@ -51,10 +51,15 @@ CosyVoice 将文本 token、语音 token 与结构标记统一在同一词表空
 
 from __future__ import annotations
 
+import logging
 import re
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from mosaic.nodes.audio.tts_backends.text_frontends.base import TextFrontend
+
+if TYPE_CHECKING:
+    import numpy as np
+    import torch
 
 __all__ = ["CosyVoiceTokenizer"]
 
@@ -105,6 +110,8 @@ class CosyVoiceTokenizer(TextFrontend):
 
     # 特殊标记数量：<sos> / <eos> / <flow> / <spk>
     _NUM_SPECIAL: int = 4
+
+    _logger: logging.Logger = logging.getLogger("mosaic.tts.cosyvoice_tokenizer")
 
     # ==================================================================
     # 构造函数
@@ -224,6 +231,13 @@ class CosyVoiceTokenizer(TextFrontend):
         """
         import torch
 
+        # A2-4: CosyVoice 模型内部处理多语言，language 参数仅作记录
+        self._logger.debug(
+            "CosyVoice tokenizer: language=%r recorded but does not "
+            "affect encoding (model handles multilingual internally).",
+            language,
+        )
+
         # 1. 文本清洗
         text = self.preprocess(text)
 
@@ -292,7 +306,9 @@ class CosyVoiceTokenizer(TextFrontend):
     # ==================================================================
     # 说话人编码
     # ==================================================================
-    def encode_speaker(self, speaker_id: Any) -> Any | None:
+    def encode_speaker(
+        self, speaker_id: str | np.ndarray | torch.Tensor | None
+    ) -> torch.Tensor | None:
         """编码说话人信息（语音克隆参考）。
 
         CosyVoice 的"说话人"由参考音频的语音 token（``ref_speech_tokens``）

@@ -58,6 +58,8 @@ class StreamSession:
         self._overlap = int(overlap)
         self._sample_rate = int(sample_rate)
         self._buffer_dtype = buffer_dtype
+        # 参数边界校验，避免无效配置导致死循环或越界
+        self._validate_params(self._chunk_size, self._overlap)
         # 环形缓冲区（存 float 值）
         self._buffer: collections.deque[float] = collections.deque()
         self._lock = threading.Lock()
@@ -67,6 +69,30 @@ class StreamSession:
         self._callback: Callable[[AudioData], None] | None = None
         # 上一个 chunk 的末尾 overlap 样本（用于交叉淡化）
         self._prev_tail: Any = None
+        # 流式取消标志：外部可调用 cancel() 中断合成
+        self._cancelled = False
+
+    @staticmethod
+    def _validate_params(chunk_size: int, overlap: int) -> None:
+        """校验 chunk_size / overlap 边界。
+
+        Raises
+        ------
+        ValueError
+            ``chunk_size`` 非正，或 ``overlap`` 为负，或 ``overlap >= chunk_size``。
+        """
+        if chunk_size <= 0:
+            raise ValueError(
+                f"chunk_size must be positive, got {chunk_size}"
+            )
+        if overlap < 0:
+            raise ValueError(
+                f"overlap must be non-negative, got {overlap}"
+            )
+        if overlap >= chunk_size:
+            raise ValueError(
+                f"overlap ({overlap}) must be < chunk_size ({chunk_size})"
+            )
 
     # ------------------------------------------------------------------
     # 只读属性
@@ -86,6 +112,23 @@ class StreamSession:
         """流是否已完成（flush 后）。"""
         return self._is_complete
 
+    @property
+    def is_cancelled(self) -> bool:
+        """流是否已被外部取消。"""
+        return self._cancelled
+
+    def cancel(self) -> None:
+        """请求取消流式合成。
+
+        线程安全。设置取消标志后，后续的 :meth:`push` 将停止缓冲新数据，
+        :meth:`pop` / :meth:`flush` 也会提前返回 ``None``。已缓冲但未输出
+        的数据不再产出。
+        """
+        with self._lock:
+            self._cancelled = True
+            # 取消后清空待输出缓冲，避免消费方继续读取残留数据
+            self._buffer.clear()
+
     # ------------------------------------------------------------------
     # 写入
     # ------------------------------------------------------------------
@@ -101,6 +144,9 @@ class StreamSession:
 
         emitted: list[AudioData] = []
         with self._lock:
+            # 已取消：丢弃新数据，不再缓冲
+            if self._cancelled:
+                return
             # 将数据转换为 numpy array（1D float）
             arr = np.asarray(waveform_chunk, dtype=self._buffer_dtype)
             arr = np.atleast_1d(arr).ravel()
@@ -110,6 +156,9 @@ class StreamSession:
             # 如果缓冲区数据 >= chunk_size，自动触发回调（如果有）
             if self._callback is not None:
                 while len(self._buffer) >= self._chunk_size:
+                    # 取消则停止产出
+                    if self._cancelled:
+                        break
                     chunk = self._pop_unlocked()
                     if chunk is None:
                         break
@@ -140,6 +189,9 @@ class StreamSession:
 
     def _pop_unlocked(self) -> AudioData | None:
         """``pop`` 的无锁核心实现，调用者须持有 ``self._lock``。"""
+        # 已取消：不再产出
+        if self._cancelled:
+            return None
         # 如果缓冲区数据 < chunk_size 且未完成，返回 None
         if not self._is_complete and len(self._buffer) < self._chunk_size:
             return None
@@ -163,6 +215,9 @@ class StreamSession:
         with self._lock:
             # 设置 is_complete = True
             self._is_complete = True
+            # 已取消：不再产出剩余数据
+            if self._cancelled:
+                return None
             # 输出缓冲区中所有剩余样本（不足 chunk_size 也要输出）
             if len(self._buffer) == 0:
                 return None
@@ -173,6 +228,29 @@ class StreamSession:
     # ------------------------------------------------------------------
     # 回调
     # ------------------------------------------------------------------
+    def reset(self, chunk_size: int | None = None) -> None:
+        """重置会话状态，清空缓冲区。
+
+        用于流式生成中途异常后清理状态，或为下一次流式合成复用会话。
+        线程安全。
+
+        Parameters
+        ----------
+        chunk_size : int | None
+            若提供，同时重配输出 chunk 大小。
+        """
+        with self._lock:
+            self._buffer.clear()
+            self._chunks_emitted = 0
+            self._total_samples = 0
+            self._is_complete = False
+            self._prev_tail = None
+            self._cancelled = False
+            if chunk_size is not None:
+                # 重配时同样校验边界
+                self._validate_params(int(chunk_size), self._overlap)
+                self._chunk_size = int(chunk_size)
+
     def on_chunk_ready(self, callback: Callable[[AudioData], None]) -> None:
         """注册回调：每当有 chunk 可用时自动调用。
 
@@ -270,6 +348,8 @@ class StreamAdapter:
         self._overlap = int(overlap)
         self._sample_rate = int(sample_rate)
         self._buffer_dtype = buffer_dtype
+        # 参数边界校验（与 StreamSession 保持一致）
+        StreamSession._validate_params(self._chunk_size, self._overlap)
 
     def create_stream(self, total_samples_hint: int | None = None) -> StreamSession:
         """创建一个新的流式会话。

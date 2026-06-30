@@ -82,18 +82,17 @@ class HFModelManager:
         """获取 HF 镜像地址。
 
         优先级：``HF_ENDPOINT`` > ``MOSAIC_HF_MIRROR`` > 默认镜像。
+        通过 :class:`mosaic.core.env.MosaicEnv` 集中读取环境变量。
 
         Returns
         -------
         str
             镜像基础 URL（不含尾部斜杠）。
         """
-        mirror = (
-            os.environ.get("HF_ENDPOINT")
-            or os.environ.get("MOSAIC_HF_MIRROR")
-            or "https://hf-mirror.com"
-        )
-        return mirror.rstrip("/")
+        from mosaic.core.env import MosaicEnv
+
+        mirror = MosaicEnv.get_hf_endpoint_or_mirror("https://hf-mirror.com")
+        return mirror or "https://hf-mirror.com"
 
     @staticmethod
     def ensure_model(

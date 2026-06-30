@@ -138,6 +138,7 @@ class GPTSoVITSBackend(TTSBackend):
         speaker_encoder_model: str = "default",
         language: str = "zh",
         streaming_enabled: bool = True,
+        stream_batch: int = 16,
         scheduler: Any = None,
         repo_id: str | None = None,
     ) -> None:
@@ -185,6 +186,8 @@ class GPTSoVITSBackend(TTSBackend):
         self._speaker_encoder_model: str = speaker_encoder_model
         self._language: str = language
         self._streaming_enabled: bool = streaming_enabled
+        # D2-2: 流式生成每次 yield 的语义 token 数（原硬编码 16）
+        self._stream_batch: int = stream_batch
         # HuggingFace 仓库 ID（用于自动下载模型）
         self._repo_id: str | None = repo_id
 
@@ -491,7 +494,10 @@ class GPTSoVITSBackend(TTSBackend):
                     len(self._speaker_cache),
                 )
         except Exception as exc:  # noqa: BLE001
-            self._logger.debug("Failed to load speaker cache: %s", exc)
+            # E3-1: 说话人缓存加载失败应可见，而非静默 debug
+            self._logger.warning(
+                "Failed to load speaker cache: %s", exc, exc_info=True
+            )
 
     # ==================================================================
     # 核心合成
@@ -553,6 +559,8 @@ class GPTSoVITSBackend(TTSBackend):
         self._ensure_loaded()
         if not isinstance(text, str) or not text.strip():
             raise ValueError("synthesize requires a non-empty 'text' string.")
+        # A3-1: 统一 speaker 类型校验
+        self._validate_speaker(speaker)
 
         self._logger.info(
             "synthesize: backend=%s language=%s speaker=%s speed=%.2f text_len=%d",
@@ -696,8 +704,8 @@ class GPTSoVITSBackend(TTSBackend):
 
         # 合并推理参数
         params: dict[str, Any] = dict(self.spec.default_params)
+        params["stream_batch"] = self._stream_batch  # D2-2: 可配置（默认 16，GPT-SoVITS 建议至少 16 个语义 token；kwargs 可覆盖）
         params.update(kwargs)
-        params["stream_batch"] = 16  # GPT-SoVITS 建议至少 16 个语义 token
 
         # 设置参考特征
         if speaker_info and speaker_info.get("ref_semantic_tokens") is not None:
@@ -712,21 +720,32 @@ class GPTSoVITSBackend(TTSBackend):
         # 创建流式会话
         session = self._get_stream_session(chunk_size)
 
-        # 流式生成 → 逐块解码 → 缓冲输出
-        for semantic_chunk in self._acoustic_model.generate_stream(
-            token_ids,
-            speaker_embedding=speaker_info,
-            **params,
-        ):
-            waveform_chunk, _sr = self._decode_chunk(semantic_chunk)
-            self._stream_push(session, waveform_chunk)
-            yield from self._stream_drain(
+        try:
+            # 流式生成 → 逐块解码 → 缓冲输出
+            for semantic_chunk in self._acoustic_model.generate_stream(
+                token_ids,
+                speaker_embedding=speaker_info,
+                **params,
+            ):
+                # 流式取消：提前终止生成循环
+                if session.is_cancelled:
+                    self._logger.info(
+                        "synthesize_stream cancelled for backend %s",
+                        self.name,
+                    )
+                    break
+                waveform_chunk, _sr = self._decode_chunk(semantic_chunk)
+                self._stream_push(session, waveform_chunk)
+                yield from self._stream_drain(
+                    session, text, speaker, language, speed
+                )
+
+            yield from self._stream_finish(
                 session, text, speaker, language, speed
             )
-
-        yield from self._stream_finish(
-            session, text, speaker, language, speed
-        )
+        finally:
+            # 确保会话缓冲与声学模型 KV cache 被释放/重置（即使中途抛异常）
+            self._cleanup_stream_state(session)
 
     # ==================================================================
     # 语音克隆
@@ -982,10 +1001,16 @@ class GPTSoVITSBackend(TTSBackend):
                     "Failed to extract speaker from %s: %s",
                     speaker,
                     exc,
+                    exc_info=True,
                 )
                 return None
 
-        # 3. 未知 speaker，返回 None
+        # 3. 未知 speaker：A3-4 记录警告，回退默认音色（避免静默）
+        self._logger.warning(
+            "Speaker %r not found in cache or as a file path; "
+            "falling back to default speaker.",
+            speaker,
+        )
         return None
 
     def _get_waveform(self, audio: AudioData | str) -> Any:
@@ -1025,12 +1050,18 @@ class GPTSoVITSBackend(TTSBackend):
         Parameters
         ----------
         waveform : Any
-            音频波形。
+            音频波形（由 :meth:`_get_waveform` 加载，采样率为 32000Hz）。
 
         Returns
         -------
         Any
             语义 token ids，或 ``None``（SSL 模型未加载时）。
+
+        Notes
+        -----
+        ``chinese-hubert-base`` 以 **16kHz** 训练，而参考音频被加载为
+        32000Hz。送入 HuBERT 前必须重采样到 16kHz，否则采样率不匹配会
+        导致特征帧率错位、克隆音色失真。
         """
         if self._ssl_encoder is None:
             return None
@@ -1046,9 +1077,13 @@ class GPTSoVITSBackend(TTSBackend):
             model = model.to(device)
             model.eval()
 
-            # 提取特征
+            # C2-1: chinese-hubert-base 以 16kHz 训练，重采样到 16kHz
+            # 后再送入 HuBERT，避免采样率不匹配导致特征错位。
+            waveform_16k = self._resample_to_16k(waveform, orig_sr=32000)
+
+            # 提取特征（告知 extractor 实际为 16kHz）
             inputs = extractor(
-                waveform, sampling_rate=32000, return_tensors="pt"
+                waveform_16k, sampling_rate=16000, return_tensors="pt"
             )
             input_values = inputs.input_values.to(device)
 
@@ -1058,17 +1093,75 @@ class GPTSoVITSBackend(TTSBackend):
                 hidden_states = outputs.last_hidden_state  # [1, T, H]
 
             # 通过 k-means 或简单的 argmax 量化为语义 token
-            # 简化实现：取 hidden_states 的 argmax 作为语义 token
+            # E4-3 NOTE: 当前使用 argmax 量化，与原始 GPT-SoVITS 的 k-means
+            # 语义 token 不同。这可能影响 zero-shot 语音克隆的质量。
+            # 完整 k-means 量化需要预训练码本，此处仅作最小修复（标注限制）。
+            self._logger.debug(
+                "Using argmax quantization for SSL features (not k-means). "
+                "Voice cloning quality may be affected."
+            )
             semantic_tokens = hidden_states.argmax(dim=-1)  # [1, T]
             return semantic_tokens
         except Exception as exc:  # noqa: BLE001
-            self._logger.warning("SSL encoding failed: %s", exc)
+            self._logger.warning(
+                "SSL encoding failed: %s", exc, exc_info=True
+            )
             return None
+
+    @staticmethod
+    def _resample_to_16k(waveform: Any, orig_sr: int) -> Any:
+        """将波形重采样到 16kHz（供 HuBERT 使用）。
+
+        优先使用 ``librosa.resample``；未安装 librosa 时回退到线性插值。
+        输入为 numpy 数组或 torch 张量。
+        """
+        if orig_sr == 16000:
+            return waveform
+        try:
+            import numpy as np
+
+            # 统一转为 1D numpy 处理
+            is_tensor = False
+            import torch  # type: ignore
+
+            if isinstance(waveform, torch.Tensor):
+                is_tensor = True
+                arr = waveform.detach().cpu().numpy()
+            else:
+                arr = np.asarray(waveform, dtype=np.float32)
+            arr = np.atleast_1d(arr).ravel()
+
+            try:
+                import librosa
+
+                resampled = librosa.resample(arr, orig_sr=orig_sr, target_sr=16000)
+            except ImportError:
+                # 线性插值回退
+                ratio = 16000 / orig_sr
+                n_samples = max(1, int(len(arr) * ratio))
+                indices = np.linspace(0, len(arr) - 1, n_samples)
+                resampled = np.interp(
+                    indices, np.arange(len(arr)), arr
+                ).astype(np.float32)
+
+            if is_tensor:
+                return torch.from_numpy(np.asarray(resampled))
+            return resampled
+        except ImportError:
+            # torch/numpy 均不可用，原样返回（下游会报错）
+            return waveform
 
     def _compute_speaker_embedding(self, semantic_tokens: Any) -> Any:
         """从语义 token 计算说话人嵌入。
 
         简化实现：使用语义 token 的统计量（均值 + 标准差）作为嵌入。
+
+        .. warning::
+
+           E4-3: 当前使用 ``one-hot + 均值池化`` 作为说话人嵌入，与原始
+           GPT-SoVITS 的说话人验证模型（ERES2Net）嵌入语义不同，几乎无
+           说话人区分力，可能影响克隆音色相似度。完整实现应使用
+           ``sv/pretrained_eres2netv2w24s4ep4.ckpt`` 说话人验证模型。
 
         Parameters
         ----------
@@ -1087,6 +1180,10 @@ class GPTSoVITSBackend(TTSBackend):
             import torch  # type: ignore
 
             if isinstance(semantic_tokens, torch.Tensor):
+                self._logger.debug(
+                    "Using one-hot mean as speaker embedding (not a real "
+                    "speaker verifier model); speaker discrimination is weak."
+                )
                 # 使用 one-hot + 均值池化
                 tokens = semantic_tokens.long()
                 one_hot = torch.nn.functional.one_hot(
@@ -1094,8 +1191,11 @@ class GPTSoVITSBackend(TTSBackend):
                 ).float()
                 embedding = one_hot.mean(dim=1)  # [1, 768]
                 return embedding
-        except Exception:  # noqa: BLE001
-            pass
+        except Exception as exc:  # noqa: BLE001
+            # E3-1: 不再静默吞掉异常
+            self._logger.warning(
+                "Failed to compute speaker embedding: %s", exc, exc_info=True
+            )
 
         return None
 
@@ -1165,8 +1265,8 @@ class GPTSoVITSBackend(TTSBackend):
         token_ids = self._text_frontend.tokenize(processed, language=language)
 
         params: dict[str, Any] = dict(self.spec.default_params)
+        params["stream_batch"] = self._stream_batch  # D2-2: 可配置（kwargs 可覆盖）
         params.update(kwargs)
-        params["stream_batch"] = 16
 
         if speaker_info.get("ref_semantic_tokens") is not None:
             self._vocoder.set_reference(
@@ -1177,20 +1277,24 @@ class GPTSoVITSBackend(TTSBackend):
 
         session = self._get_stream_session(kwargs.get("chunk_size", 4096))
 
-        for semantic_chunk in self._acoustic_model.generate_stream(
-            token_ids,
-            speaker_embedding=speaker_info,
-            **params,
-        ):
-            waveform_chunk, _sr = self._decode_chunk(semantic_chunk)
-            self._stream_push(session, waveform_chunk)
-            yield from self._stream_drain(
+        try:
+            for semantic_chunk in self._acoustic_model.generate_stream(
+                token_ids,
+                speaker_embedding=speaker_info,
+                **params,
+            ):
+                waveform_chunk, _sr = self._decode_chunk(semantic_chunk)
+                self._stream_push(session, waveform_chunk)
+                yield from self._stream_drain(
+                    session, text, "cloned", language, params.get("speed", 1.0)
+                )
+
+            yield from self._stream_finish(
                 session, text, "cloned", language, params.get("speed", 1.0)
             )
-
-        yield from self._stream_finish(
-            session, text, "cloned", language, params.get("speed", 1.0)
-        )
+        finally:
+            # 确保会话缓冲与声学模型 KV cache 被释放/重置（即使中途抛异常）
+            self._cleanup_stream_state(session)
 
     @staticmethod
     def _adjust_speed(waveform: Any, speed: float) -> Any:

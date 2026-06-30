@@ -57,11 +57,14 @@ ODE 步数与质量/速度权衡
 
 from __future__ import annotations
 
+import logging
 import os
 from collections.abc import Iterator
 from typing import Any
 
 from mosaic.nodes.audio.tts_backends.acoustic_models.base import AcousticModel
+
+logger = logging.getLogger(__name__)
 
 __all__ = ["FlowMatchingModel"]
 
@@ -289,6 +292,10 @@ def _get_flow_matching_class() -> Any:
             条件维度。
         """
 
+        # 数值稳定性常量：velocity 截断范围，防止 ODE 发散（见 E2-1）。
+        VELOCITY_CLAMP_MIN: float = -10.0
+        VELOCITY_CLAMP_MAX: float = 10.0
+
         def __init__(
             self,
             mel_bins: int = 80,
@@ -392,8 +399,10 @@ def _get_flow_matching_class() -> Any:
             else:
                 velocity = velocity * scale.view(-1, 1, 1)
 
-            # 数值稳定性：clamp velocity
-            velocity = torch.clamp(velocity, -10.0, 10.0)
+            # 数值稳定性：clamp velocity，防止 ODE 发散
+            velocity = torch.clamp(
+                velocity, self.VELOCITY_CLAMP_MIN, self.VELOCITY_CLAMP_MAX
+            )
 
             return velocity
 
@@ -743,6 +752,10 @@ class FlowMatchingModel(AcousticModel):
 
     model_type: str = "flow_matching"
 
+    # Mel 帧率（CosyVoice 默认 86.13 fps），用于由目标时长换算 mel 帧数
+    # （见 E2-1：原为 __init__ 内魔法数字 86.13）。
+    MEL_FPS: float = 86.13
+
     def __init__(
         self,
         model_path: str,
@@ -776,7 +789,7 @@ class FlowMatchingModel(AcousticModel):
 
         # mel 帧率（帧/秒）：hop_length / sample_rate
         # CosyVoice 默认 24000Hz, hop=256 → ~94 fps
-        self._mel_fps: float = 86.13
+        self._mel_fps: float = self.MEL_FPS
 
     # ------------------------------------------------------------------
     # 代理转发
@@ -848,7 +861,22 @@ class FlowMatchingModel(AcousticModel):
 
         state_dict = self._load_state_dict(weights_path)
         if state_dict:
-            impl.load_state_dict(state_dict, strict=False)
+            # strict=False 以兼容不同 checkpoint（缺失/多余键），但需报告
+            # 不匹配情况，避免静默加载错误权重（见 E4-1）。
+            result = impl.load_state_dict(state_dict, strict=False)
+            try:
+                missing = list(result.missing_keys)
+                unexpected = list(result.unexpected_keys)
+            except (AttributeError, TypeError):
+                # result 不是标准 _IncompatibleKeys（如 mock 环境），跳过报告
+                missing, unexpected = [], []
+            if missing or unexpected:
+                logger.warning(
+                    "FlowMatching model loaded with non-strict matching: "
+                    "missing=%d keys, unexpected=%d keys",
+                    len(missing),
+                    len(unexpected),
+                )
 
         impl = impl.to(device=resolved, dtype=torch_dtype)
         impl.eval()

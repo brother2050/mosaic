@@ -563,6 +563,14 @@ class LlamaARModel(LlamaARModelBase):
 
         import torch
 
+        # transformers v5 cache 兼容性回退需捕获的异常类型。显式纳入 CUDA OOM
+        # （torch.cuda.OutOfMemoryError 本身是 RuntimeError 的子类，此处列出
+        # 以表明意图并兼容未来可能的解耦，见 D1-2）。
+        _cache_retry_exc: tuple = (RuntimeError,)
+        _oom_type = getattr(torch.cuda, "OutOfMemoryError", None)
+        if isinstance(_oom_type, type) and issubclass(_oom_type, BaseException):
+            _cache_retry_exc = (RuntimeError, _oom_type)
+
         repetition_penalty: float = kwargs.get("repetition_penalty", 1.3)
         spk_emb_pos: int | None = kwargs.get("spk_emb_pos", None)
         eos_token_id: int | None = kwargs.get("eos_token_id", None)
@@ -600,7 +608,7 @@ class LlamaARModel(LlamaARModelBase):
                         past_key_values=past_key_values,
                         use_cache=True,
                     )
-                except RuntimeError:
+                except _cache_retry_exc:
                     # transformers v5 cache 兼容性回退：禁用 KV cache 重试
                     past_key_values = None
                     outputs = self._model(
@@ -652,8 +660,13 @@ class LlamaARModel(LlamaARModelBase):
         if not generated_tokens:
             return torch.empty((num_vq, 0), dtype=torch.long, device=device)
 
+        # generated_tokens 中每个元素 shape 为 [batch, num_vq]（batch 通常为 1），
+        # 沿 dim=0 拼接得到 [generated_len, num_vq]，再转置为 [num_vq, generated_len]
+        # 以匹配 docstring 与声码器（DVAE）期望的 [num_vq, frames] 形状。
+        # 此前误用了两次 .T（互相抵消），导致输出为 [generated_len, num_vq]，
+        # 见 E4-5。
         result = torch.cat(generated_tokens, dim=0).T
-        return result.T
+        return result
 
     def generate_stream(
         self,
@@ -669,6 +682,13 @@ class LlamaARModel(LlamaARModelBase):
             )
 
         import torch
+
+        # transformers v5 cache 兼容性回退需捕获的异常类型；显式纳入 CUDA OOM
+        # （torch.cuda.OutOfMemoryError 是 RuntimeError 的子类，见 D1-2）。
+        _cache_retry_exc: tuple = (RuntimeError,)
+        _oom_type = getattr(torch.cuda, "OutOfMemoryError", None)
+        if isinstance(_oom_type, type) and issubclass(_oom_type, BaseException):
+            _cache_retry_exc = (RuntimeError, _oom_type)
 
         max_new_tokens: int = kwargs.get("max_new_tokens", 1024)
         temperature: float = kwargs.get("temperature", 1.0)
@@ -708,7 +728,7 @@ class LlamaARModel(LlamaARModelBase):
                         past_key_values=past_key_values,
                         use_cache=True,
                     )
-                except RuntimeError:
+                except _cache_retry_exc:
                     # transformers v5 cache 兼容性回退：禁用 KV cache 重试
                     past_key_values = None
                     outputs = self._model(
@@ -757,13 +777,16 @@ class LlamaARModel(LlamaARModelBase):
             cur_embeds = new_embeds
 
             if len(buffer) >= stream_batch:
+                # 拼接为 [chunk_len, num_vq] 后转置为 [num_vq, chunk_len]，
+                # 与 generate() 一致地匹配声码器期望的 [num_vq, frames] 形状
+                # （见 E4-5：此前误用两次 .T 互相抵消）。
                 chunk = torch.cat(buffer, dim=0).T
-                yield chunk.T
+                yield chunk
                 buffer = []
 
         if buffer:
             chunk = torch.cat(buffer, dim=0).T
-            yield chunk.T
+            yield chunk
 
     # ------------------------------------------------------------------
     # ChatTTS 特有方法

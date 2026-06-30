@@ -25,10 +25,15 @@
 
 from __future__ import annotations
 
+import logging
 import re
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from mosaic.nodes.audio.tts_backends.text_frontends.base import TextFrontend
+
+if TYPE_CHECKING:
+    import numpy as np
+    import torch
 
 __all__ = ["FishTokenizer"]
 
@@ -84,6 +89,8 @@ class FishTokenizer(TextFrontend):
 
     # 模型类型标识
     model_type: str = "ar"
+
+    _logger: logging.Logger = logging.getLogger("mosaic.tts.fish_tokenizer")
 
     # 语言代码 -> 语言标记字符串
     _LANG_TOKEN_MAP: dict[str, str] = {
@@ -269,7 +276,13 @@ class FishTokenizer(TextFrontend):
         # 1. 文本清洗
         text = self.preprocess(text)
 
-        # 2. 语言标记
+        # 2. 语言标记（A2-2: 未知语言发出警告并回退到中文）
+        if language not in self._LANG_TOKEN_MAP:
+            self._logger.warning(
+                "Language %r not supported by Fish tokenizer; "
+                "falling back to 'zh'. Supported: %s",
+                language, list(self._LANG_TOKEN_MAP.keys()),
+            )
         lang_tok_str = self._LANG_TOKEN_MAP.get(language, "<zh>")
         lang_id = self.special_tokens[lang_tok_str]
 
@@ -363,7 +376,9 @@ class FishTokenizer(TextFrontend):
     # ==================================================================
     # 说话人编码
     # ==================================================================
-    def encode_speaker(self, speaker_id: Any) -> Any | None:
+    def encode_speaker(
+        self, speaker_id: str | np.ndarray | torch.Tensor | None
+    ) -> torch.Tensor | None:
         """编码说话人信息（语音克隆参考）。
 
         Fish Speech 的"说话人"是参考音频的 codec tokens，而非传统的

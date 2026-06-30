@@ -23,10 +23,15 @@
 
 from __future__ import annotations
 
+import logging
 import re
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from mosaic.nodes.audio.tts_backends.text_frontends.base import TextFrontend
+
+if TYPE_CHECKING:
+    import numpy as np
+    import torch
 
 __all__ = ["ChatTokenizer"]
 
@@ -114,6 +119,12 @@ class ChatTokenizer(TextFrontend):
     # Base16384 字符基址（使用 CJK 统一表意文字区段，共 16384 个码位）
     _BASE16384_OFFSET: int = 0x4E00
 
+    # Base16384 remainder 长度标记基址（\u3D01..\u3D06 表示余 1~6 字节）
+    _BASE16384_REMINDER_BASE: int = 0x3D00
+
+    # 支持的语言代码
+    _SUPPORTED_LANGS: set[str] = {"zh", "en"}
+
     # ==================================================================
     # 构造函数
     # ==================================================================
@@ -124,12 +135,17 @@ class ChatTokenizer(TextFrontend):
         num_vq: int = 4,
         sample_rate: int = 24000,
         num_text_tokens: int = 21178,
+        max_subword_len: int = 20,
     ) -> None:
+        self._logger = logging.getLogger(
+            "mosaic.tts.text_frontends.chat_tokenizer")
         self.vocab_path = vocab_path
         self.merges_path = merges_path
         self.num_vq = num_vq
         self.sample_rate = sample_rate
         self.text_vocab_size = num_text_tokens
+        # 子词匹配最大窗口（A1-4：原硬编码 20，改为可配置）
+        self._max_subword_len: int = max_subword_len
 
         # 词表（token -> id）及其逆映射
         self.vocab: dict[str, int] = {}
@@ -218,7 +234,7 @@ class ChatTokenizer(TextFrontend):
 
             # 2. 词表贪心最长匹配
             if self.vocab:
-                j = min(n, i + 20)
+                j = min(n, i + self._max_subword_len)
                 while j > i:
                     piece = text[i:j]
                     if piece in self.vocab:
@@ -306,6 +322,12 @@ class ChatTokenizer(TextFrontend):
             spk_token = self.special_tokens["[empty_spk]"]
 
         # 6. 语言标记（将 "zh"/"en" 编码为 token，作为语言条件信号）
+        # A2-1：校验语言代码，未知语言回退到 "zh" 并告警
+        if language and language not in self._SUPPORTED_LANGS:
+            self._logger.warning(
+                "Unsupported language %r, falling back to 'zh'.", language,
+            )
+            language = "zh"
         lang_ids = self._encode_text(language) if language else []
 
         # 7. 组装序列：[Stts] [spk] <lang> <text> [Ptts]
@@ -348,7 +370,9 @@ class ChatTokenizer(TextFrontend):
     # ==================================================================
     # 说话人编码
     # ==================================================================
-    def encode_speaker(self, speaker_id: str | None) -> Any | None:
+    def encode_speaker(
+        self, speaker_id: str | np.ndarray | torch.Tensor | None
+    ) -> torch.Tensor | None:
         """将说话人 ID 解码为嵌入张量。
 
         * ``speaker_id`` 为 ``None`` 时返回 ``None``（使用 ``[empty_spk]``）。
@@ -371,8 +395,12 @@ class ChatTokenizer(TextFrontend):
         if isinstance(speaker_id, str):
             try:
                 return self._decode_speaker(speaker_id)
-            except Exception:
-                # 解码失败时优雅降级，返回 None
+            except Exception as exc:
+                # A3-3：解码失败时优雅降级，返回 None 并记录告警
+                self._logger.warning(
+                    "Failed to decode speaker embedding (%.32s...): %s",
+                    speaker_id, exc,
+                )
                 return None
 
         return None
@@ -414,44 +442,109 @@ class ChatTokenizer(TextFrontend):
         values = struct.unpack("<" + "e" * n, bytes(data[: n * 2]))
         return torch.tensor(values, dtype=torch.float16)
 
+    @staticmethod
+    def _base16384_encode(data: bytes) -> str:
+        """简化的 Base16384 编码（与 :meth:`_base16384_decode` 对称）。
+
+        将每 7 字节（56 bit）拆分为 4 个 14-bit 值，映射到 Unicode 字符。
+        尾部余数（1~6 字节）左对齐编码后追加长度标记 ``\\u3D0r``
+        （r = 余数字节数），使解码端能精确还原原始字节数，实现无损往返。
+        """
+        OFFSET = 0x4E00
+        REMINDER_BASE = 0x3D00
+        chars: list[str] = []
+        n = len(data)
+        full = n - (n % 7)
+        # 完整块：7 字节 -> 4 个 14-bit 值
+        for i in range(0, full, 7):
+            bits = int.from_bytes(data[i:i + 7], "big")
+            chars.append(chr(OFFSET + ((bits >> 42) & 0x3FFF)))
+            chars.append(chr(OFFSET + ((bits >> 28) & 0x3FFF)))
+            chars.append(chr(OFFSET + ((bits >> 14) & 0x3FFF)))
+            chars.append(chr(OFFSET + (bits & 0x3FFF)))
+        # 余数：左对齐到 14-bit 边界
+        rem = data[full:]
+        r = len(rem)
+        if r:
+            bits = int.from_bytes(rem, "big")
+            nbits = 8 * r
+            nvals = (nbits + 13) // 14  # 向上取整，与 decode 一致
+            bits <<= (nvals * 14 - nbits)  # 数据左对齐，低位补零
+            for j in range(nvals):
+                shift = (nvals - 1 - j) * 14
+                chars.append(chr(OFFSET + ((bits >> shift) & 0x3FFF)))
+            # 追加余数长度标记 \u3D0r
+            chars.append(chr(REMINDER_BASE + r))
+        return "".join(chars)
+
     def _base16384_decode(self, s: str) -> bytes:
-        """简化的 Base16384 解码。
+        """简化的 Base16384 解码（与 :meth:`_base16384_encode` 对称）。
 
         编码方案：将每 7 字节（56 bit）拆分为 4 个 14-bit 值，每个值映射到
         一个 Unicode 字符（码点 = ``_BASE16384_OFFSET + 值``）。解码执行
         逆过程：每 4 个字符还原为 7 字节。
 
-        说明：此处为简化实现，使用连续的 CJK 区段作为字母表；与官方
-        ``base16384`` 库在字母表顺序上可能不同，但编解码自洽，接口正确。
+        E5-2 修复：尾部余数（1~6 字节）通过追加的长度标记字符
+        ``\\u3D0r``（r = 余数字节数）记录原始长度，使编解码完全对称、
+        可无损往返。若输入不含标记（旧格式），则回退到尽力还原逻辑。
         """
+        # 检测尾部余数长度标记 \u3D01..\u3D06
+        rem_bytes = 0  # 原始余数字节数
+        if s and 0x3D01 <= ord(s[-1]) <= 0x3D06:
+            rem_bytes = ord(s[-1]) - self._BASE16384_REMINDER_BASE
+            s = s[:-1]
+
+        # 提取数据值（跳过非字母表字符，如标记字符）
         values: list[int] = []
         for ch in s:
             v = ord(ch) - self._BASE16384_OFFSET
             if 0 <= v < 16384:
                 values.append(v)
-            # 非字母表字符忽略
 
         out = bytearray()
-        # 每 4 个 14-bit 值 -> 56 bit -> 7 字节
-        full = len(values) - (len(values) % 4)
-        for i in range(0, full, 4):
-            v0, v1, v2, v3 = (
-                values[i], values[i + 1], values[i + 2], values[i + 3]
-            )
-            bits = (v0 << 42) | (v1 << 28) | (v2 << 14) | v3
-            out.extend(bits.to_bytes(7, "big"))
 
-        # 处理剩余的 1~3 个值（对应 2/4/5 字节，按可用比特尽力还原）
-        rem = values[full:]
-        if rem:
-            bits = 0
-            for v in rem:
-                bits = (bits << 14) | v
-            nbits = 14 * len(rem)
-            nbytes = nbits // 8
-            if nbytes > 0:
-                bits >>= nbits - nbytes * 8
-                out.extend(bits.to_bytes(nbytes, "big"))
+        if rem_bytes > 0:
+            # 新格式：通过标记精确还原余数
+            nvals_rem = (8 * rem_bytes + 13) // 14  # 与 encode 一致
+            rem_start = max(0, len(values) - nvals_rem)
+            # 完整块：每 4 个 14-bit 值 -> 56 bit -> 7 字节
+            for i in range(0, rem_start, 4):
+                if i + 3 < rem_start:
+                    v0, v1, v2, v3 = (
+                        values[i], values[i + 1], values[i + 2], values[i + 3]
+                    )
+                    bits = (v0 << 42) | (v1 << 28) | (v2 << 14) | v3
+                    out.extend(bits.to_bytes(7, "big"))
+            # 余数：encode 将数据左对齐，取高 8*rem_bytes 位还原
+            rem_vals = values[rem_start:]
+            if rem_vals:
+                bits = 0
+                for v in rem_vals:
+                    bits = (bits << 14) | v
+                nbits_field = 14 * len(rem_vals)
+                shift = nbits_field - 8 * rem_bytes
+                if shift > 0:
+                    bits >>= shift
+                out.extend(bits.to_bytes(rem_bytes, "big"))
+        else:
+            # 旧格式（无标记）：尽力还原，与历史行为兼容
+            full = len(values) - (len(values) % 4)
+            for i in range(0, full, 4):
+                v0, v1, v2, v3 = (
+                    values[i], values[i + 1], values[i + 2], values[i + 3]
+                )
+                bits = (v0 << 42) | (v1 << 28) | (v2 << 14) | v3
+                out.extend(bits.to_bytes(7, "big"))
+            rem = values[full:]
+            if rem:
+                bits = 0
+                for v in rem:
+                    bits = (bits << 14) | v
+                nbits = 14 * len(rem)
+                nbytes = nbits // 8
+                if nbytes > 0:
+                    bits >>= nbits - nbytes * 8
+                    out.extend(bits.to_bytes(nbytes, "big"))
 
         return bytes(out)
 
@@ -490,6 +583,22 @@ class ChatTokenizer(TextFrontend):
         oral_tokens = [t for t in tokens if t.startswith("[oral_")]
         speed_tokens = [t for t in tokens if t.startswith("[speed_")]
 
+        # A1-2：对正则匹配到但未命中已知分类的标记记录告警
+        known = set(break_tokens + laugh_tokens + oral_tokens + speed_tokens)
+        unknown = [t for t in tokens if t not in known]
+        if unknown:
+            self._logger.warning(
+                "Unknown prosody token(s) ignored: %s", unknown,
+            )
+
+        # A1-3：多个 break 标记时仅使用第一个，并记录告警
+        if len(break_tokens) > 1:
+            self._logger.warning(
+                "Multiple break tokens %s found; only the first (%s) "
+                "will be used.", break_tokens, break_tokens[0],
+            )
+            break_tokens = break_tokens[:1]
+
         # 口语化与语速标记插入到文本最开头；笑声标记紧随其后（句子开头）
         prefix = "".join(oral_tokens) + "".join(speed_tokens)
         prefix += "".join(laugh_tokens)
@@ -507,6 +616,76 @@ class ChatTokenizer(TextFrontend):
         return result
 
     # ==================================================================
+    # 数字规范化（B3-1）
+    # ==================================================================
+    @staticmethod
+    def _int_to_chinese(n: int) -> str:
+        """将非负整数转换为中文读法（支持万、亿）。"""
+        if n == 0:
+            return "零"
+        digits = "零一二三四五六七八九"
+        units = ["", "十", "百", "千"]
+        big_units = ["", "万", "亿", "万亿"]
+        # 按每 4 位一组处理（万进制）
+        groups: list[int] = []
+        while n > 0:
+            groups.append(n % 10000)
+            n //= 10000
+        parts: list[str] = []
+        for gi in range(len(groups) - 1, -1, -1):
+            g = groups[gi]
+            if g == 0:
+                continue
+            group_str = ""
+            for i in range(3, -1, -1):
+                d = (g // (10 ** i)) % 10
+                if d == 0:
+                    if group_str and not group_str.endswith("零"):
+                        group_str += "零"
+                else:
+                    group_str += digits[d] + units[i]
+            group_str = group_str.rstrip("零")
+            parts.append(group_str + big_units[gi])
+        result = "".join(parts)
+        # "一十" -> "十"（10~19 的惯用读法）
+        if result.startswith("一十"):
+            result = result[1:]
+        return result
+
+    def _normalize_numbers(self, text: str) -> str:
+        """上下文感知的数字规范化。
+
+        规则：
+        * 电话号码（11 位、1 开头）逐位转中文；
+        * 小数：整数部分按中文读法，小数部分逐位（3.14 -> 三点一四）；
+        * 4 位数年份（1000~2999，后接"年"）逐位读（2024年 -> 二零二四年）；
+        * 普通整数：按中文数字读法（1234 -> 一千二百三十四）。
+        """
+        # 先处理年份（4 位数 1000~2999，后接"年"）：逐位读
+        text = re.sub(
+            r"(?<![0-9])([12]\d{3})(?=年)",
+            lambda m: "".join(self._DIGIT_TO_CN[c] for c in m.group(1)),
+            text,
+        )
+
+        def _replace(m: re.Match) -> str:
+            num_str = m.group(0)
+            # 电话号码（11 位、1 开头）逐位转中文
+            if re.fullmatch(r"1\d{10}", num_str):
+                return "".join(self._DIGIT_TO_CN[c] for c in num_str)
+            # 小数：整数部分按中文读法，小数部分逐位
+            if "." in num_str:
+                int_part, _, dec_part = num_str.partition(".")
+                int_val = int(int_part) if int_part else 0
+                int_cn = self._int_to_chinese(int_val)
+                dec_cn = "".join(self._DIGIT_TO_CN[c] for c in dec_part)
+                return f"{int_cn}点{dec_cn}"
+            # 普通整数：按中文数字读法
+            return self._int_to_chinese(int(num_str))
+
+        return re.sub(r"\d+(?:\.\d+)?", _replace, text)
+
+    # ==================================================================
     # 文本预处理
     # ==================================================================
     def preprocess(self, text: str) -> str:
@@ -516,8 +695,12 @@ class ChatTokenizer(TextFrontend):
 
         1. 调用 ``super().preprocess()`` 做 Unicode 标准化与空白合并；
         2. 中文标点标准化（全角 -> 半角统一）；
-        3. 数字处理：阿拉伯数字转中文读法（简单逐字符替换）；
-        4. 过滤不支持的字符（保留中英文、标点、数字、空格）。
+        3. A1-1：保护内嵌韵律标记（``[break_4]`` 等），避免被数字转换
+           或字符过滤破坏；
+        4. B3-1：上下文感知的数字规范化；
+        5. E1-1：过滤不支持的字符（保留 CJK 扩展区、全角符号、英文字母、
+           数字、常见标点、空白及下划线）；
+        6. 还原韵律标记。
         """
         # 1. 基本清洗
         text = super().preprocess(text)
@@ -525,14 +708,33 @@ class ChatTokenizer(TextFrontend):
         # 2. 全角 -> 半角标点
         text = "".join(self._PUNCT_FULL_TO_HALF.get(ch, ch) for ch in text)
 
-        # 3. 阿拉伯数字 -> 中文读法
-        text = "".join(self._DIGIT_TO_CN.get(ch, ch) for ch in text)
+        # 3. A1-1：保护韵律标记 [break_4], [laugh_0], [oral_2], [speed_5] 等
+        #    使用 Private Use Area 字符作为占位符，避免与数字转换和过滤冲突
+        placeholders: dict[str, str] = {}
 
-        # 4. 过滤不支持的字符（保留 CJK、英文字母、数字、常见标点、空白）
+        def _save_prosody(m: re.Match) -> str:
+            ph = chr(0xE000 + len(placeholders))
+            placeholders[ph] = m.group(0)
+            return ph
+
+        text = re.sub(r"\[[a-zA-Z_]+\d*\]", _save_prosody, text)
+
+        # 4. B3-1：上下文感知的数字规范化（占位符无数字，不受影响）
+        text = self._normalize_numbers(text)
+
+        # 5. E1-1：过滤不支持的字符
+        #    扩展 CJK 范围：Extension A(\u3400-\u4dbf)、兼容汉字(\uf900-\ufaff)、
+        #    全角符号(\u3000-\u303f)；允许下划线 _ 和 PUA 占位符(\ue000-\uf8ff)
         text = re.sub(
-            "[^\u4e00-\u9fffa-zA-Z0-9,.!?;:'\"()\\[\\]\\s]",
+            r"[^\u3000-\u303f\u3400-\u9fff\uf900-\ufaff"
+            r"\ue000-\uf8ff"
+            r"a-zA-Z0-9,.!?;:'\"()\\[\\]\\s_]",
             "",
             text,
         )
+
+        # 6. 还原韵律标记
+        for ph, orig in placeholders.items():
+            text = text.replace(ph, orig)
 
         return text.strip()

@@ -344,8 +344,10 @@ class TestCLIDoctor:
     def test_doctor_outputs_environment_report(self):
         """T_CLI_17: ``mosaic doctor`` 输出环境诊断报告。"""
         result = _run_cli(["doctor"])
-        assert result.returncode == 0, (
-            f"doctor command failed with stderr: {result.stderr}"
+        # doctor 在存在 error 级别问题（如缺少必需依赖）时返回非零退出码（F3 修复）。
+        # 测试环境可能未安装 torch/transformers/diffusers，因此允许返回 0 或 1。
+        assert result.returncode in (0, 1), (
+            f"doctor command failed unexpectedly with stderr: {result.stderr}"
         )
         output = result.stdout
 

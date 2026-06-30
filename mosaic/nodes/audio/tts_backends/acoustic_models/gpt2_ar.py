@@ -66,6 +66,10 @@ class GPT2ARModel(AcousticModel):
 
     model_type: str = "ar"
 
+    # 说话人嵌入条件强度（GPT-SoVITS 语义 token 模型中，将说话人嵌入以
+    # 固定比例叠加到输入嵌入；见 E2-1：原为散落各处的魔法数字 0.1）。
+    SPK_COND_SCALE: float = 0.1
+
     def __init__(
         self,
         model_path: str,
@@ -205,6 +209,13 @@ class GPT2ARModel(AcousticModel):
     ) -> bool:
         """检查停止条件。
 
+        .. note::
+            本方法返回单一 ``bool``，仅在 ``batch_size=1`` 时能精确表达
+            “该序列应停止”。对 ``batch_size > 1`` 的输入，使用 ``torch.all``
+            聚合判断——只有当批次内所有序列同时满足停止条件时才返回 ``True``，
+            从而避免对多元素张量调用 ``.item()`` 引发的 ``RuntimeError``
+            （见 E4-4）。
+
         Parameters
         ----------
         current_token : Any
@@ -221,20 +232,32 @@ class GPT2ARModel(AcousticModel):
         bool
             ``True`` 表示应停止生成。
         """
+        import torch
+
+        def _matches(token: Any, value: Any) -> bool:
+            """token 与 value 是否全部相等（兼容多元素 tensor 与标量）。
+
+            对 tensor 使用 ``torch.all`` 聚合，避免 ``.item()`` 在
+            ``batch_size > 1`` 时抛 ``RuntimeError``。
+            """
+            eq = token == value
+            try:
+                # tensor（含多元素）→ torch.all 聚合；Python 标量 bool
+                # 也可被 torch.all 处理为 0-dim tensor。
+                return bool(torch.all(eq))
+            except (TypeError, RuntimeError, ValueError):
+                return bool(eq)
+
         # EOS 检测
         if eos_token_id is not None:
-            cur_val = current_token.item() if hasattr(current_token, "item") else current_token
-            if cur_val == eos_token_id:
+            if _matches(current_token, eos_token_id):
                 return True
 
         # 重复检测
         if len(recent_tokens) >= max_repeat:
-            cur_val = current_token.item() if hasattr(current_token, "item") else current_token
-            recent_vals = [
-                t.item() if hasattr(t, "item") else t
-                for t in recent_tokens[-max_repeat:]
-            ]
-            if all(v == cur_val for v in recent_vals):
+            if all(
+                _matches(current_token, t) for t in recent_tokens[-max_repeat:]
+            ):
                 return True
 
         return False
@@ -447,7 +470,7 @@ class GPT2ARModel(AcousticModel):
             spk_cond = spk_cond.expand(
                 -1, input_embeds.size(1), -1
             )
-            input_embeds = input_embeds + spk_cond * 0.1
+            input_embeds = input_embeds + spk_cond * self.SPK_COND_SCALE
 
         # 自回归生成
         generated_tokens: list[torch.Tensor] = []
@@ -564,7 +587,7 @@ class GPT2ARModel(AcousticModel):
             elif spk_cond.dim() == 2:
                 spk_cond = spk_cond.unsqueeze(1)
             spk_cond = spk_cond.expand(-1, input_embeds.size(1), -1)
-            input_embeds = input_embeds + spk_cond * 0.1
+            input_embeds = input_embeds + spk_cond * self.SPK_COND_SCALE
 
         buffer: list[torch.Tensor] = []
         past_key_values: Any = None

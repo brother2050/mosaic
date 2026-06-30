@@ -27,7 +27,7 @@ import time
 from typing import Any
 
 from mosaic.core.registry import registry
-from mosaic.core.types import MosaicData
+from mosaic.core.types import AudioData, MosaicData
 
 from mosaic.nodes.audio._base import BaseAudioNode
 
@@ -93,8 +93,65 @@ _EMOTION_VOICE_MAP: dict[str, dict[str, str]] = {
 }
 
 
+# ---------------------------------------------------------------------------
+# 句子分割与文本预处理
+# ---------------------------------------------------------------------------
+# edge-tts（Azure Neural TTS）输出固定为 24kHz，作为两条解码路径的统一
+# 采样率来源，避免 soundfile 实际读取值与 librosa 回退默认值不一致。
+EDGE_TTS_SAMPLE_RATE: int = 24000
+
+# 占位符：用于保护小数/日期/缩写中的句点，使其不被当作句末标点。
+# 使用 null 字节序列，TTS 输入文本中不会出现。
+_PROTECTED_DOT: str = "\x00DOT\x00"
+
+# 常见英文缩写（后接句点不应分句）。按长度降序排列，确保 "Sept" 优先于
+# "Sep" 匹配，避免短缩写"吃掉"长缩写的尾部字符。
+_ABBREVIATIONS: frozenset[str] = frozenset({
+    "Mr", "Mrs", "Ms", "Dr", "Prof", "Sr", "Jr", "St",
+    "Inc", "Ltd", "Co", "Corp",
+    "e.g", "i.e", "etc", "vs", "cf",
+    "No", "Vol", "pp", "p",
+    "Jan", "Feb", "Mar", "Apr", "Jun", "Jul", "Aug", "Sep", "Sept",
+    "Oct", "Nov", "Dec",
+    "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun",
+})
+
+# 缩写 + 句点：\b(Mr|Dr|...)\. —— 长缩写在前，避免短缩写优先匹配。
+_ABBREV_DOT_RE: re.Pattern[str] = re.compile(
+    r"\b(?:" + "|".join(
+        re.escape(a) for a in sorted(_ABBREVIATIONS, key=len, reverse=True)
+    ) + r")\.",
+    re.IGNORECASE,
+)
+
+# 小数/日期中的句点：数字之间的 "."，如 3.14 / 2024.06.30
+_DECIMAL_DOT_RE: re.Pattern[str] = re.compile(r"(?<=\d)\.(?=\d)")
+
+# 句末标点（中英文）
+_SENTENCE_SPLIT_RE: re.Pattern[str] = re.compile(r"[。！？.!?；;\n]+")
+
+# CJK 汉字检测
+_CJK_RE: re.Pattern[str] = re.compile(r"[\u4e00-\u9fff]")
+
+
+def _is_chinese(text: str) -> bool:
+    """检测文本是否包含 CJK 汉字。"""
+    return bool(_CJK_RE.search(text))
+
+
 def _split_sentences(text: str, max_length: int = 200) -> list[str]:
     """将长文本按句子分割，避免一次生成过长音频。
+
+    采用"保护-分割-还原"三步策略，避免误切缩写（``Mr.``）、小数
+    （``3.14``）、序号（``No.1``）与日期（``2024.06.30``）：
+
+    1. **保护**：用占位符替换小数/日期中的句点（``\\d.\\d``）以及缩写
+       后的句点（``Mr.`` / ``e.g.`` 等，含内部句点）。
+    2. **分割**：按句末标点（``。！？.!?；;\\n``）切分。
+    3. **还原**：将占位符还原为句点。
+
+    超过 ``max_length`` 的句子进一步按逗号/空格切分；重组时若含 CJK
+    字符则不加空格，避免污染中文。
 
     Parameters
     ----------
@@ -108,30 +165,150 @@ def _split_sentences(text: str, max_length: int = 200) -> list[str]:
     list[str]
         分割后的句子列表。
     """
-    # 按中英文标点分句
-    sentences = re.split(r"[。！？.!?；;\n]+", text)
+    # 1. 保护小数/日期中的句点：3.14 -> 3<PH>14
+    protected = _DECIMAL_DOT_RE.sub(_PROTECTED_DOT, text)
+
+    # 2. 保护缩写后的句点：Mr. -> Mr<PH>，e.g. -> e<PH>g<PH>
+    #    替换匹配到的全部句点（含 "e.g"/"i.e" 的内部句点），避免误切。
+    protected = _ABBREV_DOT_RE.sub(
+        lambda m: m.group(0).replace(".", _PROTECTED_DOT), protected
+    )
+
+    # 3. 按句末标点分割
+    sentences = _SENTENCE_SPLIT_RE.split(protected)
     sentences = [s.strip() for s in sentences if s.strip()]
 
-    # 过长的句子进一步按逗号/空格切分
+    # 4. 还原占位符
+    sentences = [s.replace(_PROTECTED_DOT, ".") for s in sentences]
+
+    # 5. 超长句进一步按逗号/空格切分（B1-2：中文不加空格）
     result: list[str] = []
     for sent in sentences:
         if len(sent) <= max_length:
             result.append(sent)
             continue
-        # 按逗号/空格切分
         parts = re.split(r"[，,、\s]+", sent)
         current = ""
         for part in parts:
-            if len(current) + len(part) + 1 > max_length:
-                if current:
-                    result.append(current)
+            if not part:
+                continue
+            if current and len(current) + len(part) + 1 > max_length:
+                result.append(current)
                 current = part
+            elif current:
+                if _is_chinese(current) or _is_chinese(part):
+                    current = f"{current}{part}"
+                else:
+                    current = f"{current} {part}"
             else:
-                current = f"{current} {part}".strip() if current else part
+                current = part
         if current:
             result.append(current)
 
     return result if result else [text]
+
+
+# ---------------------------------------------------------------------------
+# SSML 处理
+# ---------------------------------------------------------------------------
+_SSML_TAG_RE: re.Pattern[str] = re.compile(r"<[^>]+>")
+_SSML_DETECT_RE: re.Pattern[str] = re.compile(
+    r"<speak\b|<break\b|<emphasis\b|<prosody\b", re.IGNORECASE
+)
+# <break time="1.5s"/> / <break time="500ms"/>
+_SSML_BREAK_RE: re.Pattern[str] = re.compile(
+    r'<break\s+[^>]*?time="(\d+(?:\.\d+)?)(s|ms)"[^>]*/?\s*>',
+    re.IGNORECASE,
+)
+
+
+def _has_ssml(text: str) -> bool:
+    """检测文本是否包含 SSML 标签。"""
+    return bool(_SSML_DETECT_RE.search(text))
+
+
+def _strip_ssml(text: str) -> str:
+    """剥离 SSML 标签，保留内部文本。
+
+    ``<break time="Xs"/>`` 会被转换为对应时长的停顿标点（>=0.5s 用句号，
+    否则用逗号），其余标签仅移除标签本身，保留内部文本。
+    """
+    def _break_repl(m: re.Match[str]) -> str:
+        val = float(m.group(1))
+        unit = m.group(2).lower()
+        if unit == "ms":
+            val = val / 1000.0
+        return "。" if val >= 0.5 else "，"
+
+    text = _SSML_BREAK_RE.sub(_break_repl, text)
+    # 移除所有剩余 SSML 标签，保留内部文本
+    text = _SSML_TAG_RE.sub("", text)
+    return text.strip()
+
+
+# ---------------------------------------------------------------------------
+# 音频拼接
+# ---------------------------------------------------------------------------
+def _concat_audios(audios: list[AudioData]) -> AudioData:
+    """合并多个 :class:`AudioData` 为一个连续音频。
+
+    用于扩展后端长文本分句合成后的多段音频拼接。同一后端的各段采样率
+    理论上一致；若出现不一致则重采样至第一段的采样率（防御性处理）。
+
+    Parameters
+    ----------
+    audios:
+        待合并的 AudioData 列表，至少 1 个。
+
+    Returns
+    -------
+    AudioData
+        拼接后的音频，``metadata.duration`` 为各段时长之和。
+    """
+    if not audios:
+        raise ValueError("Cannot concatenate an empty list of AudioData.")
+    if len(audios) == 1:
+        return audios[0]
+
+    import numpy as np  # type: ignore
+
+    ref_sr: int = audios[0].sample_rate
+    waveforms: list[Any] = []
+    for audio in audios:
+        wf = audio.waveform
+        sr = audio.sample_rate
+        if sr != ref_sr:
+            # 防御性重采样：同一后端理论上不会触发
+            try:
+                import librosa  # type: ignore
+
+                wf = librosa.resample(wf, orig_sr=sr, target_sr=ref_sr)
+            except Exception:
+                pass
+        if not isinstance(wf, np.ndarray):
+            wf = np.array(wf, dtype=np.float32)
+        elif wf.dtype != np.float32:
+            wf = wf.astype(np.float32)
+        waveforms.append(wf)
+
+    # 维度对齐：若存在 2D 波形，将所有 1D 提升为 (1, samples)
+    if any(w.ndim == 2 for w in waveforms):
+        waveforms = [
+            w[np.newaxis, :] if w.ndim == 1 else w for w in waveforms
+        ]
+
+    combined = np.concatenate(waveforms, axis=-1)
+
+    # 合并 metadata：累加时长，保留首段元信息
+    metadata: dict[str, Any] = dict(audios[0].metadata)
+    metadata["duration"] = sum(
+        float(a.metadata.get("duration", 0.0) or 0.0) for a in audios
+    )
+    metadata["segment_count"] = len(audios)
+
+    return AudioData(
+        waveform=combined, sample_rate=ref_sr, metadata=metadata
+    )
 
 
 def _resolve_voice(
@@ -221,7 +398,10 @@ def _synthesize_edge_tts(
     try:
         import soundfile as sf  # type: ignore
 
-        waveform, sr = sf.read(io.BytesIO(combined_bytes), dtype="float32")
+        waveform, _sr = sf.read(io.BytesIO(combined_bytes), dtype="float32")
+        # C2-3: edge-tts（Azure Neural TTS）输出固定为 24kHz，统一采样率
+        # 来源，避免 soundfile 实际读取值与 librosa 回退默认值不一致。
+        sr = EDGE_TTS_SAMPLE_RATE
         if logger is not None:
             logger.debug(
                 "edge-tts synthesized %d sentence(s) -> %d samples @ %dHz.",
@@ -236,7 +416,7 @@ def _synthesize_edge_tts(
         import tempfile
 
         waveforms: list[Any] = []
-        sr = 24000
+        sr = EDGE_TTS_SAMPLE_RATE
         for audio_bytes in all_audio:
             tmp_path = tempfile.mktemp(suffix=".mp3")
             with open(tmp_path, "wb") as f:
@@ -289,6 +469,8 @@ class TTS(BaseAudioNode):
         ``"neutral"``。仅在 edge-tts 后端且未显式指定 ``voice`` 时生效。
     speed:
         语速倍率，``1.0`` 为正常语速，默认 ``1.0``。
+    max_sentence_length:
+        单句最大字符数，超出时在逗号/空格处进一步切分，默认 ``200``。
     **kwargs:
         透传给 :class:`BaseAudioNode` 的参数。
 
@@ -328,6 +510,7 @@ class TTS(BaseAudioNode):
         speed: float = 1.0,
         speaker: str | None = None,
         stream_chunk_size: int = 4096,
+        max_sentence_length: int = 200,
         **kwargs: Any,
     ) -> None:
         super().__init__(model=model, **kwargs)
@@ -338,6 +521,8 @@ class TTS(BaseAudioNode):
         self._speed: float = float(speed)
         self._speaker: str | None = speaker
         self._stream_chunk_size: int = stream_chunk_size
+        # B1-4: 可配置的最大句长，避免硬编码 200
+        self._max_sentence_length: int = max_sentence_length
         self._backend_kwargs: dict[str, Any] = {}
         # 内置后端标识（edge_tts / transformers），与扩展后端区分
         self._backend: str = "edge_tts"
@@ -497,13 +682,34 @@ class TTS(BaseAudioNode):
 
             # ---- 扩展后端（tts_backends 框架） ----
             if self._tts_backend is not None:
+                # B2-1: 扩展后端不支持 SSML，剥离标签保留纯文本
+                synth_text = _strip_ssml(text) if _has_ssml(text) else text
                 self._logger.info(
                     "TTS generating via %s backend (speaker=%s, language=%s, speed=%.2f).",
                     self._backend, speaker or "<default>", language, speed,
                 )
-                audio = self._tts_backend.synthesize(
-                    text=text, speaker=speaker, language=language, speed=speed,
+                # B1-3: 对扩展后端也进行句子分割，避免超长文本导致越界报错
+                sentences = _split_sentences(
+                    synth_text, max_length=self._max_sentence_length
                 )
+                if len(sentences) > 1:
+                    self._logger.info(
+                        "TTS: splitting text into %d sentences for %s backend.",
+                        len(sentences), self._backend,
+                    )
+                    audios: list[AudioData] = []
+                    for sent in sentences:
+                        seg_audio = self._tts_backend.synthesize(
+                            text=sent, speaker=speaker,
+                            language=language, speed=speed,
+                        )
+                        audios.append(seg_audio)
+                    audio = _concat_audios(audios)
+                else:
+                    audio = self._tts_backend.synthesize(
+                        text=synth_text, speaker=speaker,
+                        language=language, speed=speed,
+                    )
                 elapsed = time.perf_counter() - t0
                 duration = audio.metadata.get("duration", 0.0)
                 result = MosaicData(audio=audio, text=text, duration=duration)
@@ -515,8 +721,21 @@ class TTS(BaseAudioNode):
 
             # ---- 内置后端 ----
 
-            # 分句处理
-            sentences = _split_sentences(text)
+            # B2-1: SSML 处理 + B1-4: 可配置最大句长
+            if _has_ssml(text):
+                if self._backend == "edge_tts":
+                    # edge-tts 原生支持 SSML，直接透传，不进行分句
+                    sentences = [text]
+                else:
+                    # transformers 等后端不支持 SSML，剥离标签后分句
+                    sentences = _split_sentences(
+                        _strip_ssml(text),
+                        max_length=self._max_sentence_length,
+                    )
+            else:
+                sentences = _split_sentences(
+                    text, max_length=self._max_sentence_length
+                )
             self._logger.info(
                 "TTS generating %d sentence(s) via %s backend "
                 "(emotion=%s, speed=%.2f).",
@@ -635,8 +854,10 @@ class TTS(BaseAudioNode):
         speaker = input_data.get("speaker", self._speaker)
 
         if self._tts_backend is not None:
+            # B2-1: 扩展后端不支持 SSML，剥离标签保留纯文本
+            stream_text = _strip_ssml(text) if _has_ssml(text) else text
             yield from self._tts_backend.synthesize_stream(
-                text=text, speaker=speaker, language=language, speed=speed,
+                text=stream_text, speaker=speaker, language=language, speed=speed,
                 chunk_size=self._stream_chunk_size,
             )
             return

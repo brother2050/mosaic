@@ -22,10 +22,15 @@ G2P 实现说明
 
 from __future__ import annotations
 
+import logging
 import re
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from mosaic.nodes.audio.tts_backends.text_frontends.base import TextFrontend
+
+if TYPE_CHECKING:
+    import numpy as np
+    import torch
 
 __all__ = ["SoVITSTokenizer"]
 
@@ -206,6 +211,8 @@ class SoVITSTokenizer(TextFrontend):
     model_type: str = "ar"
     special_tokens: dict[str, int] = SPECIAL_TOKENS
 
+    _logger: logging.Logger = logging.getLogger("mosaic.tts.sovits_tokenizer")
+
     def __init__(
         self,
         vocab_path: str = "",
@@ -309,6 +316,12 @@ class SoVITSTokenizer(TextFrontend):
             phonemes = list(processed.replace(" ", ""))
             lang_token = SPECIAL_TOKENS["[JA]"]
         else:
+            # A2-3: ko/yue 等声明支持但实际走中文 G2P，发出警告
+            self._logger.warning(
+                "Language %r declared as supported but uses Chinese G2P "
+                "as fallback; pronunciation may not be accurate.",
+                language,
+            )
             phonemes = self._g2p_chinese(processed)
             lang_token = SPECIAL_TOKENS["[ZH]"]
 
@@ -523,7 +536,11 @@ class SoVITSTokenizer(TextFrontend):
         """
         result: list[str] = []
         # 按空格分词
-        words = re.findall(r"[A-Za-z']+|[,.!?;:]", text)
+        # B3-2: 改进英文分词正则，识别连字符、数字、常见符号
+        words = re.findall(
+            r"[A-Za-z]+(?:[-'][A-Za-z]+)*|\d+(?:\.\d+)?|[,.!?;:$%@]",
+            text,
+        )
         for word in words:
             if word in ",.!?;:":
                 result.append("_")
@@ -541,7 +558,9 @@ class SoVITSTokenizer(TextFrontend):
     # ------------------------------------------------------------------
     # 说话人编码
     # ------------------------------------------------------------------
-    def encode_speaker(self, speaker_id: str | None) -> Any | None:
+    def encode_speaker(
+        self, speaker_id: str | np.ndarray | torch.Tensor | None
+    ) -> torch.Tensor | None:
         """编码说话人标识。
 
         GPT-SoVITS 的说话人表示是参考音频的 SSL 语义 tokens + speaker embedding。

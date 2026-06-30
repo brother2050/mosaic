@@ -243,7 +243,21 @@ class TTSBackend(abc.ABC):
         text:
             待合成文本。
         speaker:
-            说话人名称或 ID，``None`` 使用默认说话人。
+            说话人标识。``None`` 使用默认说话人。
+
+            .. note::
+
+               同一个 ``speaker`` 参数在不同后端语义不同：
+
+               * **ChatTTS**：speaker 嵌入字符串（由
+                 :meth:`sample_random_speaker` / ``encode_speaker`` 生成的
+                 Base16384 编码串）。
+               * **Fish**：参考音频文件路径，或预编码的 codec token 张量。
+               * **SoVITS / CosyVoice**：已缓存（``save_speaker``）的说话人
+                 名称，或参考音频文件路径。
+
+            基类 :meth:`_validate_speaker` 仅做统一类型校验（``str`` /
+            张量 / ``AudioData`` / ``None``），不改变各后端实际语义。
         language:
             语言代码，默认 ``"zh"``。
         speed:
@@ -263,10 +277,14 @@ class TTSBackend(abc.ABC):
             后端未加载。
         ValueError
             文本为空。
+        TypeError
+            ``speaker`` 类型不被任何后端接受。
         """
         self._ensure_loaded()
         if not isinstance(text, str) or not text.strip():
             raise ValueError("synthesize requires a non-empty 'text' string.")
+        # A3-1: 统一 speaker 类型校验（不改变各后端实际语义）
+        self._validate_speaker(speaker)
 
         self._logger.info(
             "synthesize: backend=%s language=%s speaker=%s speed=%.2f text_len=%d",
@@ -380,22 +398,33 @@ class TTSBackend(abc.ABC):
         # Layer 1: 文本前端 —— tokenize
         tokens = self._text_frontend.tokenize(text, language=language, **kwargs)
 
-        # Layer 2 + 3 + 4: 流式生成 → 逐块解码 → 缓冲输出
-        for acoustic_chunk in self._acoustic_model.generate_stream(
-            tokens, **self._acoustic_params(speaker, language, speed, kwargs)
-        ):
-            waveform_chunk, _sample_rate = self._decode_chunk(acoustic_chunk)
-            # 推入缓冲区
-            self._stream_push(session, waveform_chunk)
-            # 弹出已凑齐的块
-            yield from self._stream_drain(
+        try:
+            # Layer 2 + 3 + 4: 流式生成 → 逐块解码 → 缓冲输出
+            for acoustic_chunk in self._acoustic_model.generate_stream(
+                tokens, **self._acoustic_params(speaker, language, speed, kwargs)
+            ):
+                # 流式取消：提前终止生成循环
+                if session.is_cancelled:
+                    self._logger.info(
+                        "synthesize_stream cancelled for backend %s",
+                        self.name,
+                    )
+                    break
+                waveform_chunk, _sample_rate = self._decode_chunk(acoustic_chunk)
+                # 推入缓冲区
+                self._stream_push(session, waveform_chunk)
+                # 弹出已凑齐的块
+                yield from self._stream_drain(
+                    session, text, speaker, language, speed
+                )
+
+            # 冲刷缓冲区中剩余数据
+            yield from self._stream_finish(
                 session, text, speaker, language, speed
             )
-
-        # 冲刷缓冲区中剩余数据
-        yield from self._stream_finish(
-            session, text, speaker, language, speed
-        )
+        finally:
+            # 确保会话缓冲与声学模型 KV cache 被释放/重置（即使中途抛异常）
+            self._cleanup_stream_state(session)
 
     # ------------------------------------------------------------------
     # 查询方法
@@ -468,6 +497,46 @@ class TTSBackend(abc.ABC):
                 f"TTS backend {self.name!r} is not loaded. "
                 f"Call load() before synthesis."
             )
+
+    def _validate_speaker(self, speaker: Any) -> None:
+        """统一校验 ``speaker`` 参数类型（A3-1）。
+
+        不同后端对 ``speaker`` 的语义不同（见 :meth:`synthesize` 文档），
+        但公共接口统一要求其为 ``None`` / ``str`` / 张量
+        （``numpy.ndarray`` 或 ``torch.Tensor``）/ 序列（``list``/``tuple``
+        ，如 Fish 的 codec token ids）/ :class:`AudioData` 之一。
+
+        此处仅做类型校验，给出清晰错误；不改变各后端的实际语义。子类的
+        ``synthesize`` 在文本校验后应调用本方法。
+        """
+        if speaker is None or isinstance(speaker, str):
+            return
+        # 允许序列类型（Fish clone_voice 透传的 codec token id 列表）
+        if isinstance(speaker, (list, tuple)):
+            return
+        # 允许张量类型（Fish 的 codec token ids / 预编码嵌入）
+        try:
+            import numpy as np  # type: ignore
+
+            if isinstance(speaker, np.ndarray):
+                return
+        except ImportError:
+            pass
+        try:
+            import torch  # type: ignore
+
+            if isinstance(speaker, torch.Tensor):
+                return
+        except ImportError:
+            pass
+        # 兼容 AudioData（部分语音克隆路径透传参考音频对象）
+        if hasattr(speaker, "waveform") and hasattr(speaker, "sample_rate"):
+            return
+        raise TypeError(
+            f"speaker must be str, a sequence (list/tuple), a tensor "
+            f"(numpy.ndarray/torch.Tensor), AudioData, or None; "
+            f"got {type(speaker).__name__}"
+        )
 
     @staticmethod
     def _resolve_device(device: str) -> str:
@@ -623,6 +692,44 @@ class TTSBackend(abc.ABC):
             session = adapter
         self._try_set_chunk_size(session, chunk_size)
         return session
+
+    def _cleanup_stream_state(self, session: Any) -> None:
+        """流式合成结束后清理会话状态与声学模型 KV cache。
+
+        应在 ``synthesize_stream`` 的 ``finally`` 块中调用，确保即使
+        流式生成中途抛异常，``StreamSession`` 缓冲与声学模型 KV cache
+        也能被释放/重置，避免资源泄漏与状态污染。
+
+        对 ``session`` 与 ``_acoustic_model`` 均采用鸭子类型：仅当对象
+        提供相应方法时才调用，缺失时静默跳过。
+        """
+        # 1. 清理会话缓冲
+        if session is not None:
+            reset = getattr(session, "reset", None)
+            if callable(reset):
+                try:
+                    reset()
+                except Exception as exc:  # noqa: BLE001
+                    self._logger.debug("session.reset() failed: %s", exc)
+            else:
+                # 退而求其次：尝试 flush 清空缓冲
+                flush = getattr(session, "flush", None)
+                if callable(flush):
+                    try:
+                        flush()
+                    except Exception as exc:  # noqa: BLE001
+                        self._logger.debug("session.flush() failed: %s", exc)
+        # 2. 清理声学模型 KV cache（如果模型支持）
+        model = self._acoustic_model
+        if model is not None:
+            reset_cache = getattr(model, "reset_cache", None)
+            if callable(reset_cache):
+                try:
+                    reset_cache()
+                except Exception as exc:  # noqa: BLE001
+                    self._logger.debug(
+                        "acoustic_model.reset_cache() failed: %s", exc
+                    )
 
     def _try_set_chunk_size(self, session: Any, chunk_size: int) -> None:
         """尝试为流式会话配置块大小（不支持时静默跳过）。"""

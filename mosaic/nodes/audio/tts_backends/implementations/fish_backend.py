@@ -208,6 +208,7 @@ class FishSpeechBackend(TTSBackend):
         language: str = "zh",
         use_flash_attention: bool = True,
         streaming_enabled: bool = True,
+        stream_batch: int = 24,
         scheduler: Any = None,
         repo_id: str | None = None,
     ) -> None:
@@ -256,6 +257,8 @@ class FishSpeechBackend(TTSBackend):
         self._language: str = language
         self._use_flash_attention: bool = use_flash_attention
         self._streaming_enabled: bool = streaming_enabled
+        # D2-2: 流式生成每次 yield 的 token 数（原硬编码 24）
+        self._stream_batch: int = stream_batch
         # HuggingFace 仓库 ID（用于自动下载模型）
         self._repo_id: str | None = repo_id
 
@@ -498,6 +501,36 @@ class FishSpeechBackend(TTSBackend):
         # AudioEncoder 的实际实例由 FishLlamaARModel 内部管理
         # 此处仅记录路径，供 clone_voice 使用
 
+    def _resolve_builtin_speaker(self, speaker: Any) -> Any:
+        """解析内置 speaker 名称（A3-2）。
+
+        Fish Speech 通过参考音频实现任意音色克隆，本身没有预定义的内置
+        speaker 嵌入。:meth:`list_speakers` 仍返回 ``["default", "male",
+        "female"]`` 作为占位标识；当用户传入这些名称时，此处记录提示并
+        回退为 ``None``（默认音色），避免将名称当作音频文件路径在声学
+        模型深层报错。
+
+        Parameters
+        ----------
+        speaker : Any
+            原始 speaker 参数。
+
+        Returns
+        -------
+        Any
+            若为内置名称则返回 ``None``；否则原样返回。
+        """
+        if isinstance(speaker, str) and speaker in self._BUILTIN_SPEAKERS:
+            self._logger.info(
+                "Built-in speaker name %r requested; Fish Speech has no "
+                "predefined embeddings for built-in speakers. Voice clone "
+                "requires a reference audio file path or codec token tensor. "
+                "Falling back to default voice.",
+                speaker,
+            )
+            return None
+        return speaker
+
     def _destroy_pipeline(self) -> None:
         """销毁四层管线并释放资源。"""
         super()._destroy_pipeline()
@@ -606,6 +639,8 @@ class FishSpeechBackend(TTSBackend):
         self._ensure_loaded()
         if not isinstance(text, str) or not text.strip():
             raise ValueError("synthesize requires a non-empty 'text' string.")
+        # A3-1: 统一 speaker 类型校验
+        self._validate_speaker(speaker)
 
         self._logger.info(
             "synthesize: backend=%s language=%s speaker=%s speed=%.2f text_len=%d",
@@ -620,7 +655,10 @@ class FishSpeechBackend(TTSBackend):
         processed_text = self._text_frontend.preprocess(text)
 
         # 4. 说话人/参考音频编码
-        ref_audio_codes = self._text_frontend.encode_speaker(speaker)
+        # A3-2: 内置 speaker 名称（default/male/female）无预定义嵌入，
+        # 此处解析为 None（回退默认音色）而非当作文件路径，避免深层报错。
+        resolved_speaker = self._resolve_builtin_speaker(speaker)
+        ref_audio_codes = self._text_frontend.encode_speaker(resolved_speaker)
 
         # 5. 分词（传入 ref_tokens 以构造语音克隆序列）
         token_ids = self._text_frontend.tokenize(
@@ -717,30 +755,43 @@ class FishSpeechBackend(TTSBackend):
 
         # 文本预处理与分词
         processed_text = self._text_frontend.preprocess(text)
-        ref_audio_codes = self._text_frontend.encode_speaker(speaker)
+        # A3-2: 内置 speaker 名称解析为 None，避免当作文件路径
+        resolved_speaker = self._resolve_builtin_speaker(speaker)
+        ref_audio_codes = self._text_frontend.encode_speaker(resolved_speaker)
         token_ids = self._text_frontend.tokenize(
             processed_text, language=language, ref_tokens=ref_audio_codes,
         )
 
         # 合并推理参数
         params: dict[str, Any] = dict(self.spec.default_params)
+        params["stream_batch"] = self._stream_batch  # D2-2: 可配置（kwargs 可覆盖）
         params.update(kwargs)
-        params["stream_batch"] = 24
 
         session = self._get_stream_session(chunk_size)
 
-        for audio_codec_chunk in self._acoustic_model.generate_stream(
-            token_ids, ref_audio_codes, **params,
-        ):
-            waveform_chunk, _sr = self._decode_chunk(audio_codec_chunk)
-            self._stream_push(session, waveform_chunk)
-            yield from self._stream_drain(
+        try:
+            for audio_codec_chunk in self._acoustic_model.generate_stream(
+                token_ids, ref_audio_codes, **params,
+            ):
+                # 流式取消：提前终止生成循环
+                if session.is_cancelled:
+                    self._logger.info(
+                        "synthesize_stream cancelled for backend %s",
+                        self.name,
+                    )
+                    break
+                waveform_chunk, _sr = self._decode_chunk(audio_codec_chunk)
+                self._stream_push(session, waveform_chunk)
+                yield from self._stream_drain(
+                    session, text, speaker, language, speed
+                )
+
+            yield from self._stream_finish(
                 session, text, speaker, language, speed
             )
-
-        yield from self._stream_finish(
-            session, text, speaker, language, speed
-        )
+        finally:
+            # 确保会话缓冲与声学模型 KV cache 被释放/重置（即使中途抛异常）
+            self._cleanup_stream_state(session)
 
     # ==================================================================
     # 语音克隆
@@ -780,6 +831,13 @@ class FishSpeechBackend(TTSBackend):
             # AudioData 实例
             ref_tokens = self._acoustic_model.encode_reference_audio(audio)
         elif isinstance(audio, str):
+            # E3-2: 前置校验路径存在，避免非法路径透传到 synthesize 后在
+            # 声学模型深层报出晦涩错误
+            if not os.path.exists(audio):
+                raise FileNotFoundError(
+                    f"Speaker audio file not found: {audio!r}. "
+                    f"Please provide a valid audio file path."
+                )
             # 音频文件路径 — 作为 speaker 传入 synthesize
             return self.synthesize(
                 text, speaker=audio, language=language, **kwargs

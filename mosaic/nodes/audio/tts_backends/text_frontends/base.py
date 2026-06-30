@@ -18,7 +18,11 @@ token ids。子类需实现具体的 tokenize / detokenize 逻辑，并可覆写
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    import numpy as np
+    import torch
 
 __all__ = ["TextFrontend"]
 
@@ -73,7 +77,10 @@ class TextFrontend(ABC):
             还原的文本。
         """
 
-    def encode_speaker(self, speaker_id: str | None) -> Any | None:
+    def encode_speaker(
+        self,
+        speaker_id: str | np.ndarray | torch.Tensor | None,
+    ) -> torch.Tensor | None:
         """将说话人 ID 编码为嵌入向量。
 
         默认实现返回 ``None``（不支持说话人编码）。
@@ -81,8 +88,9 @@ class TextFrontend(ABC):
 
         Parameters
         ----------
-        speaker_id : str | None
-            说话人标识符。
+        speaker_id : str | numpy.ndarray | torch.Tensor | None
+            说话人标识符。不同前端语义不同：可为说话人名称/嵌入字符串、
+            参考音频路径、或预编码的张量；``None`` 表示使用默认说话人。
 
         Returns
         -------

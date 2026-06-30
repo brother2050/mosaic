@@ -196,7 +196,33 @@ class TTSBackendRegistry:
                 "fallback to 'edge_tts'.",
                 requirements,
             )
+            if language:
+                logger.warning(
+                    "No backend declares support for language %r in spec. "
+                    "Note: spec.supported_languages may not reflect actual "
+                    "backend capability.",
+                    language,
+                )
             return "edge_tts"
+
+        # 语言声明与实际支持可能不一致：当指定语言但所有候选均未在 spec 中
+        # 显式声明支持该语言（仅因 supported_languages 为空而通过过滤）时，
+        # 给出警告，提示 spec 声明未必反映后端真实能力。
+        if language:
+            declares = [
+                n for n, s in candidates
+                if s.supported_languages and language in s.supported_languages
+            ]
+            if not declares:
+                logger.warning(
+                    "No TTS backend explicitly declares support for "
+                    "language %r in spec.supported_languages; candidates "
+                    "(%s) passed via empty-language fallback. Note: "
+                    "spec.supported_languages may not reflect actual "
+                    "backend capability.",
+                    language,
+                    ", ".join(n for n, _ in candidates),
+                )
 
         # 优先级评分：根据需求场景为每个后端打分
         quality = bool(requirements.get("quality", False))
