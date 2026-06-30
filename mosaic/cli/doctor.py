@@ -238,16 +238,43 @@ def _check_plugins() -> CheckResult:
 
 
 def _check_model_cache() -> CheckResult:
-    """检查模型缓存目录是否存在。"""
-    cache_dir = os.environ.get(
+    """检查模型缓存目录是否存在。
+
+    依次检查 HuggingFace 相关的环境变量（``HF_HOME``、
+    ``TRANSFORMERS_CACHE``、``HF_HUB_CACHE``、``HF_DATASETS_CACHE``）
+    以及默认目录 ``~/.cache/huggingface``，只要其中任一目录存在即视为通过。
+    """
+    # 收集所有可能指向缓存目录的环境变量
+    cache_env_vars = [
         "HF_HOME",
-        os.path.expanduser("~/.cache/huggingface"),
-    )
-    if os.path.isdir(cache_dir):
-        return CheckResult("ok", f"模型缓存目录存在: {cache_dir}")
+        "TRANSFORMERS_CACHE",
+        "HF_HUB_CACHE",
+        "HF_DATASETS_CACHE",
+    ]
+    found_dirs: list[str] = []
+    for var in cache_env_vars:
+        val = os.environ.get(var)
+        if val and os.path.isdir(val):
+            found_dirs.append(f"{var}={val}")
+
+    # 跨平台构造默认缓存目录路径（避免硬编码 "/" 分隔符）。
+    # 通过 MosaicEnv 集中读取 HF_HOME，保持与其它模块一致。
+    from mosaic.core.env import MosaicEnv
+
+    default_cache = MosaicEnv.get_hf_home()
+    if os.path.isdir(default_cache):
+        found_dirs.append(f"默认目录={default_cache}")
+
+    if found_dirs:
+        return CheckResult(
+            "ok", f"模型缓存目录存在: {'; '.join(found_dirs)}"
+        )
+
+    # 所有缓存目录均不存在，报告优先级最高的目录（HF_HOME 或默认目录）
+    primary = os.environ.get("HF_HOME") or default_cache
     return CheckResult(
         "warn",
-        f"模型缓存目录不存在: {cache_dir}（首次下载模型时将自动创建）",
+        f"模型缓存目录不存在: {primary}（首次下载模型时将自动创建）",
     )
 
 
@@ -255,14 +282,15 @@ def _check_model_cache() -> CheckResult:
 # 主入口
 # ---------------------------------------------------------------------------
 def run_doctor() -> int:
-    """运行环境诊断，返回警告数量。
+    """运行环境诊断，返回退出码。
 
     依次执行所有检查项并打印结果，最后汇总警告与错误数量。
+    存在 ``error`` 级别问题时返回 ``1``，否则返回 ``0``。
 
     Returns
     -------
     int
-        警告数量。
+        退出码：``0`` 表示无错误，``1`` 表示存在 error 级别问题。
     """
     print()
     print("Mosaic 环境诊断")
@@ -316,7 +344,8 @@ def run_doctor() -> int:
     print(f"诊断完成: {warn_count} 个警告, {error_count} 个错误")
     print()
 
-    return warn_count
+    # 存在 error 级别问题时返回非零退出码，便于脚本/CI 据此判断环境是否就绪
+    return 1 if error_count > 0 else 0
 
 
 # ---------------------------------------------------------------------------
@@ -331,8 +360,7 @@ def main() -> int:
         进程退出码，``0`` 表示无错误，``1`` 表示存在错误。
     """
     try:
-        run_doctor()
-        return 0
+        return run_doctor()
     except Exception as exc:  # noqa: BLE001
         print(f"诊断过程中发生错误: {exc}")
         return 1

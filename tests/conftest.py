@@ -18,7 +18,10 @@ import sys
 
 
 # Modules that have real installations in this environment.
-_REAL_MODULES = ("torch", "transformers", "safetensors", "numpy")
+# Note: diffusers is NOT included here because real diffusers imports trigger
+# pipeline module loading that requires specific transformers classes, causing
+# collection errors. Phase conftests inject mock diffusers instead.
+_REAL_MODULES = ("torch", "transformers", "safetensors", "numpy", "imageio", "soundfile")
 
 
 def _is_real(name: str) -> bool:

@@ -74,7 +74,10 @@ def _make_loaded_backend() -> Any:
     backend._speaker_encoder.encode.return_value = torch.randn(1, 192)
 
     backend._stream_adapter = MagicMock()
-    backend._llm = None
+    # Mock LLM: _encode_text_with_llm calls self._llm(token_ids) and expects
+    # an object with last_hidden_state / logits attribute.
+    backend._llm = MagicMock()
+    backend._llm.return_value.last_hidden_state = torch.randn(1, 4, 256)
     backend.is_loaded = True
     backend._device = "cpu"
     backend._dtype = "float32"

@@ -774,7 +774,7 @@ class FishSpeechBackend(TTSBackend):
                 token_ids, ref_audio_codes, **params,
             ):
                 # 流式取消：提前终止生成循环
-                if session.is_cancelled:
+                if session.is_cancelled is True:
                     self._logger.info(
                         "synthesize_stream cancelled for backend %s",
                         self.name,

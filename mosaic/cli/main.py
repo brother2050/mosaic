@@ -85,7 +85,12 @@ def _format_table(
                 and max_widths[i]
                 and len(text) > max_widths[i]
             ):
-                text = text[: max_widths[i] - 3] + "..."
+                # 边界保护：宽度 > 3 时用 "..." 截断；否则直接硬截断，
+                # 避免 max_widths[i] - 3 产生负索引导致意外结果。
+                if max_widths[i] > 3:
+                    text = text[: max_widths[i] - 3] + "..."
+                else:
+                    text = text[: max_widths[i]]
             cells.append(text)
         processed.append(cells)
 
@@ -187,7 +192,8 @@ def _load_pipeline_file(path: str) -> dict[str, Any]:
     """加载管道定义文件（YAML 或 JSON）。
 
     按扩展名选择解析器：``.yaml``/``.yml`` 使用 PyYAML，``.json`` 使用
-    标准 ``json`` 模块。无法识别的扩展名先尝试 JSON，失败后回退到 YAML。
+    标准 ``json`` 模块。无法识别的扩展名基于内容特征检测：以 ``{`` 或
+    ``[`` 开头按 JSON 解析，否则按 YAML 解析。
 
     Parameters
     ----------
@@ -222,10 +228,12 @@ def _load_pipeline_file(path: str) -> dict[str, Any]:
     elif ext == ".json":
         data = json.loads(content)
     else:
-        # 自动检测：先尝试 JSON，失败则尝试 YAML
-        try:
+        # 未知扩展名：基于内容特征检测，避免依赖异常控制流。
+        # JSON 通常以 ``{`` 或 ``[`` 开头，否则按 YAML 处理。
+        stripped = content.lstrip()
+        if stripped and stripped[0] in ("{", "["):
             data = json.loads(content)
-        except json.JSONDecodeError:
+        else:
             data = _parse_yaml(content)
 
     if not isinstance(data, dict):
@@ -419,6 +427,9 @@ def _cmd_create_node(args: argparse.Namespace) -> int:
 
     有参数时直接生成，无参数时进入交互模式。
     支持 --domain, --name, --description, --output, --model, --author。
+
+    ``NodeGenerator`` 的构造器不接受参数，需先实例化再调用 ``generate()``
+    （参数模式）或 ``interactive()``（交互模式）。
     """
     try:
         from mosaic.cli.create_node import NodeGenerator
@@ -430,55 +441,67 @@ def _cmd_create_node(args: argparse.Namespace) -> int:
     # 判断是否有足够的参数直接生成
     has_args = args.domain is not None or args.name is not None
 
+    generator = NodeGenerator()
+
     if has_args:
         if not args.name:
             print("错误: 使用 --name 指定节点名称。")
             return 1
-        generator = NodeGenerator(
-            domain=args.domain or "custom",
-            name=args.name,
-            description=args.description,
-            output=args.output or "./my_nodes/",
-            model=args.model,
-            author=args.author,
-        )
-    else:
-        # 交互模式
+        # 参数模式：直接调用 generate()，注意参数名与 NodeGenerator API 一致
         try:
-            domain = (
-                input("域 (如 text/image/custom) [custom]: ").strip()
-                or "custom"
+            result = generator.generate(
+                domain=args.domain or "custom",
+                node_name=args.name,
+                description=args.description or "",
+                output_dir=args.output or "./my_nodes/",
+                model_name=args.model or "",
+                author=args.author or "",
             )
-            name = input("节点名称 (如 sentiment_analyzer): ").strip()
-            if not name:
-                print("错误: 节点名称不能为空。")
-                return 1
-            description = input("描述 (可选): ").strip() or None
-            output = (
-                input("输出目录 [./my_nodes/]: ").strip()
-                or "./my_nodes/"
-            )
-            model = input("模型 (可选): ").strip() or None
-            author = input("作者 (可选): ").strip() or None
-        except (EOFError, KeyboardInterrupt):
-            print("\n操作已取消。")
-            return 130
+        except Exception as exc:
+            print(f"错误: 生成节点模板失败: {exc}")
+            return 1
+        print(f"节点模板已生成: {result}")
+        return 0
 
-        generator = NodeGenerator(
-            domain=domain,
-            name=name,
-            description=description,
-            output=output,
-            model=model,
-            author=author,
+    # 交互模式：通过 input() 收集参数
+    try:
+        domain = (
+            input("域 (如 text/image/custom) [custom]: ").strip()
+            or "custom"
         )
+        name = input("节点名称 (如 sentiment_analyzer): ").strip()
+        if not name:
+            print("错误: 节点名称不能为空。")
+            return 1
+        description = input("描述 (可选): ").strip() or ""
+        output = (
+            input("输出目录 [./my_nodes/]: ").strip()
+            or "./my_nodes/"
+        )
+        model = input("模型 (可选): ").strip() or ""
+        author = input("作者 (可选): ").strip() or ""
+    except (EOFError, KeyboardInterrupt):
+        print("\n操作已取消。")
+        return 130
+    except UnicodeDecodeError:
+        # Windows 控制台默认 GBK 编码，input() 可能因解码失败而抛错
+        print("错误: 输入编码异常，请确保终端使用 UTF-8 编码。")
+        print("提示: 在 Windows 上可运行 `chcp 65001` 切换到 UTF-8。")
+        return 1
 
     try:
-        result = generator.generate()
-        print(f"节点模板已生成: {result}")
+        result = generator.generate(
+            domain=domain,
+            node_name=name,
+            description=description,
+            output_dir=output,
+            model_name=model,
+            author=author,
+        )
     except Exception as exc:
         print(f"错误: 生成节点模板失败: {exc}")
         return 1
+    print(f"节点模板已生成: {result}")
     return 0
 
 
@@ -542,6 +565,9 @@ def _cmd_run(args: argparse.Namespace) -> int:
 
     # 构建节点实例列表
     elements: list[Any] = []
+    # 跟踪已使用的节点名，避免别名冲突导致调度器（以 node.name 为键）
+    # 中后注册的节点覆盖先前的跟踪记录。
+    used_names: set[str] = set()
     for i, node_def in enumerate(node_defs):
         if not isinstance(node_def, dict):
             print(f"错误: 第 {i + 1} 个节点定义必须是字典。")
@@ -557,7 +583,19 @@ def _cmd_run(args: argparse.Namespace) -> int:
             node_class = registry.get_class(node_type)
             node = node_class(**params)
             if node_alias:
-                node.name = node_alias
+                # 确保别名唯一：若与已有节点名冲突，添加数字后缀
+                unique_alias = node_alias
+                suffix = 1
+                while unique_alias in used_names:
+                    unique_alias = f"{node_alias}_{suffix}"
+                    suffix += 1
+                if unique_alias != node_alias:
+                    print(
+                        f"警告: 节点别名 '{node_alias}' 已被使用，"
+                        f"自动重命名为 '{unique_alias}'。"
+                    )
+                node.name = unique_alias
+            used_names.add(node.name)
         except KeyError:
             print(f"错误: 未找到节点类型 '{node_type}'。")
             available = registry.list_names()
@@ -624,8 +662,8 @@ def _cmd_doctor(args: argparse.Namespace) -> int:
         return 1
 
     try:
-        run_doctor()
-        return 0
+        # run_doctor 返回退出码：0 表示无错误，1 表示存在 error 级别问题
+        return run_doctor()
     except Exception as exc:
         print(f"错误: 环境诊断失败: {exc}")
         return 1

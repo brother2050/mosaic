@@ -81,6 +81,9 @@ def _inject_mock_diffusers():
         dm.StableDiffusionXLImg2ImgPipeline = MagicMock()
         dm.StableDiffusionXLInpaintPipeline = MagicMock()
         dm.StableDiffusionUpscalePipeline = MagicMock()
+        dm.AutoPipelineForText2Image = MagicMock()
+        dm.AutoPipelineForImage2Image = MagicMock()
+        dm.AutoPipelineForInpainting = MagicMock()
         dm.scheduler_map = {}
         sys.modules["diffusers"] = dm
 

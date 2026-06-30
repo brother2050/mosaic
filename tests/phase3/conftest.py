@@ -163,9 +163,23 @@ def _inject_mock_soundfile():
 def _inject_mock_edge_tts():
     """注入 mock edge_tts 模块，使 TTS/VoiceClone 测试无需真实网络。
 
-    edge_tts.Communicate 提供异步 ``stream()`` 生成器，产出占位音频字节，
-    配合 mock soundfile 即可得到 numpy 波形。
+    edge_tts.Communicate 提供异步 ``stream()`` 生成器，产出有效 WAV 字节，
+    配合真实 soundfile 即可得到 numpy 波形。
     """
+    import io as _io
+    import wave as _wave
+
+    def _make_wav_bytes(duration_s: float = 0.5, sr: int = 22050) -> bytes:
+        """生成一段有效的 WAV 字节数据。"""
+        n_samples = int(sr * duration_s)
+        buf = _io.BytesIO()
+        with _wave.open(buf, "wb") as wf:
+            wf.setnchannels(1)
+            wf.setsampwidth(2)
+            wf.setframerate(sr)
+            wf.writeframes(b"\x00\x80" * n_samples)  # 静音 PCM16
+        return buf.getvalue()
+
     if "edge_tts" not in sys.modules:
         etc = types.ModuleType("edge_tts")
         etc.__spec__ = MagicMock()
@@ -181,8 +195,8 @@ def _inject_mock_edge_tts():
                 self.pitch = pitch
 
             async def stream(self):
-                # 产出一段占位 mp3 字节，配合 mock soundfile.read 解码
-                yield {"type": "audio", "data": b"\x00" * 64}
+                # 产出有效 WAV 字节，配合真实 soundfile 解码
+                yield {"type": "audio", "data": _make_wav_bytes()}
                 yield {"type": "WordBoundary", "offset": 0, "duration": 0.1,
                        "text": self.text}
 
@@ -200,7 +214,7 @@ def _inject_mock_edge_tts():
                     self.rate = rate
 
                 async def stream(self):
-                    yield {"type": "audio", "data": b"\x00" * 64}
+                    yield {"type": "audio", "data": _make_wav_bytes()}
 
             etc.Communicate = _Communicate
         if not hasattr(etc, "SubMaker"):

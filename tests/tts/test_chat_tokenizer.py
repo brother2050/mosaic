@@ -120,9 +120,9 @@ def test_CTKN_08(tokenizer: ChatTokenizer) -> None:
     # 全角标点转半角
     assert "，" not in cleaned
     assert "。" not in cleaned
-    # 数字转中文
+    # 数字转中文（B3-1: 普通整数按中文读法，123 -> 一百二十三）
     assert "1" not in cleaned
-    assert "一二三" in cleaned
+    assert "一百二十三" in cleaned
 
 
 # ----------------------------------------------------------------------

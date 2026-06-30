@@ -26,6 +26,13 @@ def _make_mock_output(images):
 class TestTextToImage:
     """Tests for the TextToImage node."""
 
+    @pytest.fixture(autouse=True)
+    def _mock_pipeline_from_pretrained(self):
+        """Mock AutoPipelineForText2Image.from_pretrained to avoid downloading real models."""
+        with patch("diffusers.AutoPipelineForText2Image.from_pretrained") as mock_fp:
+            mock_fp.return_value = MagicMock()
+            yield
+
     # T_T2I_01 —————————————————————————————————————————————————————————————
     def test_basic_text_to_image(self, sample_image, cpu_scheduler):
         """T_T2I_01: Basic text-to-image generation.

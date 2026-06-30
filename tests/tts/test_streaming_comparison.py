@@ -62,7 +62,8 @@ def _make_loaded_cosyvoice() -> Any:
     backend._speaker_encoder.encode.return_value = torch.randn(1, 192)
 
     backend._stream_adapter = MagicMock()
-    backend._llm = None
+    backend._llm = MagicMock()
+    backend._llm.return_value.last_hidden_state = torch.randn(1, 4, 256)
     backend.is_loaded = True
     backend._device = "cpu"
     backend._dtype = "float32"
