@@ -63,6 +63,7 @@ _SYMBOLS = {
 }
 
 # 可选依赖: (import 名, 显示名)
+# 注意：insightface 和 onnxruntime 有专门的检查函数，不在此列表中
 _OPTIONAL_PACKAGES: list[tuple[str, str]] = [
     ("imageio", "imageio"),
     ("imageio_ffmpeg", "imageio-ffmpeg"),
@@ -71,8 +72,6 @@ _OPTIONAL_PACKAGES: list[tuple[str, str]] = [
     ("faiss", "faiss-cpu"),
     ("chromadb", "chromadb"),
     ("sentence_transformers", "sentence-transformers"),
-    ("insightface", "insightface"),
-    ("onnxruntime", "onnxruntime"),
 ]
 
 
@@ -118,6 +117,91 @@ def _check_package(
         return CheckResult(status, f"{display_name} 未安装（{label}）")
     except Exception as exc:  # noqa: BLE001
         return CheckResult("warn", f"{display_name} 导入失败: {exc}")
+
+
+def _check_onnxruntime() -> CheckResult:
+    """检查 onnxruntime 是否安装且 InferenceSession 可用。
+
+    ``onnxruntime-gpu`` 在 CUDA/cuDNN 版本不匹配时，模块本身可以导入，
+    但 ``InferenceSession`` 属性不存在（C 扩展加载失败）。
+    本函数专门检测此问题并给出修复建议。
+    """
+    try:
+        import onnxruntime as ort  # type: ignore
+    except ImportError:
+        return CheckResult(
+            "warn",
+            "onnxruntime 未安装（可选依赖，RIFE 帧插值和 ONNX 加速需要）",
+        )
+    except Exception as exc:  # noqa: BLE001
+        return CheckResult("warn", f"onnxruntime 导入失败: {exc}")
+
+    version = getattr(ort, "__version__", "未知")
+
+    # 关键检查：InferenceSession 是否真正可用
+    if not hasattr(ort, "InferenceSession"):
+        # 判断是 GPU 版还是 CPU 版
+        is_gpu = "gpu" in version.lower() or "GPU" in str(
+            getattr(ort, "__package__", "")
+        )
+        pkg_name = "onnxruntime-gpu" if is_gpu else "onnxruntime"
+        return CheckResult(
+            "warn",
+            f"onnxruntime 已安装 (v{version})，但 InferenceSession 不可用"
+            f"（C 扩展加载失败，通常是 CUDA/cuDNN 版本不匹配）\n"
+            f"    修复: pip install {pkg_name}==1.17.1  # 或其他与你的 CUDA 版本兼容的版本",
+        )
+
+    # 检查可用的 Execution Provider
+    try:
+        providers = ort.get_available_providers()
+    except Exception:  # noqa: BLE001
+        providers = []
+
+    has_gpu = "CUDAExecutionProvider" in providers
+    if has_gpu:
+        return CheckResult(
+            "ok",
+            f"onnxruntime 已安装 (v{version}, GPU 加速可用)",
+        )
+    return CheckResult(
+        "ok",
+        f"onnxruntime 已安装 (v{version}, 仅 CPU)",
+    )
+
+
+def _check_insightface() -> CheckResult:
+    """检查 insightface 是否安装且可正常导入。
+
+    ``insightface`` 依赖 ``onnxruntime.InferenceSession``，当
+    ``onnxruntime-gpu`` 的 C 扩展加载失败时，``insightface`` 会报
+    ``AttributeError: module 'onnxruntime' has no attribute 'InferenceSession'``。
+    本函数检测此问题并给出修复建议。
+    """
+    try:
+        import insightface  # type: ignore # noqa: F401
+    except ImportError:
+        return CheckResult(
+            "warn",
+            "insightface 未安装（可选依赖，人脸检测和一致性域需要）",
+        )
+    except AttributeError as exc:
+        # 最常见的情况：onnxruntime.InferenceSession 不可用
+        if "InferenceSession" in str(exc) or "onnxruntime" in str(exc):
+            return CheckResult(
+                "warn",
+                "insightface 导入失败: onnxruntime 的 InferenceSession 不可用\n"
+                "    原因: onnxruntime-gpu 的 C 扩展加载失败（CUDA/cuDNN 版本不匹配）\n"
+                "    修复: pip install onnxruntime-gpu==1.17.1  # 降级到兼容版本",
+            )
+        return CheckResult("warn", f"insightface 导入失败: {exc}")
+    except Exception as exc:  # noqa: BLE001
+        return CheckResult("warn", f"insightface 导入失败: {exc}")
+
+    version = getattr(insightface, "__version__", None)
+    if version:
+        return CheckResult("ok", f"insightface 已安装 (v{version})")
+    return CheckResult("ok", "insightface 已安装")
 
 
 def _check_gpu() -> CheckResult:
@@ -214,9 +298,13 @@ def run_doctor() -> int:
     # GPU
     checks.append(_check_gpu())
 
-    # 可选依赖
+    # 可选依赖（简单检查）
     for import_name, display_name in _OPTIONAL_PACKAGES:
         checks.append(_check_package(import_name, display_name, required=False))
+
+    # insightface 和 onnxruntime 需要深度检查（验证关键 API 可用性）
+    checks.append(_check_insightface())
+    checks.append(_check_onnxruntime())
 
     # 节点与插件
     checks.append(_check_registered_nodes())
@@ -230,7 +318,11 @@ def run_doctor() -> int:
     error_count = 0
     for result in checks:
         symbol = _SYMBOLS.get(result.status, "?")
-        print(f"  {symbol}  {result.message}")
+        # 多行消息：首行带符号，后续行缩进对齐
+        lines = result.message.split("\n")
+        print(f"  {symbol}  {lines[0]}")
+        for line in lines[1:]:
+            print(f"     {line}")
         if result.status == "warn":
             warn_count += 1
         elif result.status == "error":
