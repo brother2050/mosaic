@@ -1061,7 +1061,7 @@ class SoVITSDecoder(Vocoder):
             if self._impl is not None:
                 try:
                     self._impl.to("cpu")
-                except Exception:
+                except Exception:  # noqa: BLE001
                     pass
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()

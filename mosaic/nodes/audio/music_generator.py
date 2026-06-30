@@ -179,7 +179,7 @@ class MusicGenerator(BaseAudioNode):
             if isinstance(waveform, np.ndarray) and waveform.dtype == np.float16:
                 waveform = waveform.astype(np.float32)
             actual_duration = self._get_duration(waveform, sample_rate)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             self._emit_error(exc)
             raise
 

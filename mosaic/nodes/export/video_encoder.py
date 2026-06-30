@@ -303,7 +303,7 @@ class VideoEncoder(Node):
             })
             return result
 
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             self._emit_error(exc)
             raise
 
@@ -513,7 +513,7 @@ class VideoEncoder(Node):
                     f"{err_msg}"
                 )
 
-        except Exception:
+        except Exception:  # noqa: BLE001
             proc.kill()
             proc.wait()
             raise

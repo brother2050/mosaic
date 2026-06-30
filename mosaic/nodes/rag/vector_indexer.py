@@ -246,7 +246,7 @@ class VectorIndexer(BaseRagNode):
             )
             return result
 
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             self._emit_error(exc)
             raise
 
@@ -360,7 +360,7 @@ class VectorIndexer(BaseRagNode):
         try:
             emb = self._compute_embeddings(["test"])
             return int(emb.shape[-1])
-        except Exception:
+        except Exception:  # noqa: BLE001
             return 0
 
     # ------------------------------------------------------------------

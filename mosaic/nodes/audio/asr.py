@@ -200,7 +200,7 @@ class ASR(BaseAudioNode):
                 )
 
             result = self._pipeline(audio_array, **pipe_kwargs)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             self._emit_error(exc)
             raise
 

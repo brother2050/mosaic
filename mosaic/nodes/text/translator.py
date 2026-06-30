@@ -197,7 +197,7 @@ class Translator(BaseTextNode):
                 translated = self._translate_generic(
                     text, source_language, target_language, max_new_tokens, temperature
                 )
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             self._emit_error(exc)
             raise
 

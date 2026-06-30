@@ -54,7 +54,7 @@ def _get_backend_instance(tts_registry: Any, name: str, scheduler: Scheduler) ->
     try:
         instance = backend_cls(scheduler=scheduler)
         return instance
-    except Exception:
+    except Exception:  # noqa: BLE001
         return None
 
 

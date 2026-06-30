@@ -39,12 +39,20 @@ classifiers = [
 dependencies = [
     # PyTorch: >=2.2.0 以兼容 numpy 2.x；<3.0 防止未来大版本破坏
     "torch>=2.2.0,<3.0.0",
+    # Torchvision: 图像预处理（BackgroundRemover 的 transforms 需要）
+    # 与 torch 同版本线，但允许 patch 版本独立
+    "torchvision>=0.17.0,<1.0.0",
     # Transformers: >=4.36.0 保证所需 API；<6.0.0 因 v6 可能有破坏性变更。
     # 代码已做 v5 兼容（dtype/torch_dtype 回退），支持 4.x 和 5.x
     "transformers>=4.36.0,<6.0.0",
     # Diffusers: >=0.27.0 引入所需 Pipeline；<1.0.0 防止大版本破坏。
     # enable_vae_slicing 已做防御性回退，兼容 0.40+
     "diffusers>=0.27.0,<1.0.0",
+    # Safetensors: TTS 权重转换器的 load_file/save_file 需要
+    "safetensors>=0.4.0,<1.0.0",
+    # PyYAML: CLI 管道文件解析（mosaic run --pipeline xxx.yaml）和
+    # HFModelManager 的 config 读写
+    "PyYAML>=6.0,<7.0",
     # SentencePiece: T5 tokenizer 的必需后端（CogVideoX、AudioLDM2 等
     # 使用 T5 的 Pipeline 缺少此库时，transformers 返回 Placeholder 类
     # 而非抛 ImportError，导致 diffusers 报 "cannot be loaded" 错误）

@@ -124,7 +124,7 @@ class TextGenerator(BaseTextNode):
                     do_sample=do_sample,
                 )
             )
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             self._emit_error(exc)
             raise
 

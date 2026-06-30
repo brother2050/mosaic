@@ -19,7 +19,6 @@
 
 from __future__ import annotations
 
-import collections
 import logging
 import threading
 import time
@@ -102,7 +101,7 @@ class Scheduler:
         self._node_memory: dict[str, float] = {}  # name -> 估算显存(GB)
         self._loaded_names: set = set()
         # LRU 访问顺序：最近访问的在右端
-        self._lru: deque[str] = collections.deque()
+        self._lru: deque[str] = deque()
         # 配置：未显式传入时回退到 MosaicEnv 集中读取的环境变量
         from mosaic.core.env import MosaicEnv
 
@@ -374,7 +373,7 @@ class Scheduler:
         name = node.name
         try:
             node.load()
-        except Exception:
+        except Exception:  # noqa: BLE001
             # 加载失败：若 node.load() 部分成功（已置 _loaded=True），卸载
             # 以保持节点状态与调度器记录一致。
             try:

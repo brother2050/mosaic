@@ -498,7 +498,7 @@ class SpeakerEncoder:
             if self._impl is not None:
                 try:
                     self._impl.to("cpu")
-                except Exception:
+                except Exception:  # noqa: BLE001
                     pass
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
@@ -636,7 +636,7 @@ class SpeakerEncoder:
             x = waveform.unsqueeze(0).unsqueeze(0)        # [1, 1, L]
             y = torchaudio.functional.resample(x, orig_sr, target_sr)
             return y.squeeze(0).squeeze(0)
-        except Exception:
+        except Exception:  # noqa: BLE001
             pass
 
         # 回退：线性插值

@@ -157,7 +157,7 @@ def _resolve_node_spec(name: str) -> NodeSpec | None:
 
     try:
         return node_class().describe()
-    except Exception:
+    except Exception:  # noqa: BLE001
         return NodeSpec(
             name=node_class.name,
             domain=node_class.domain,
@@ -457,7 +457,7 @@ def _cmd_create_node(args: argparse.Namespace) -> int:
                 model_name=args.model or "",
                 author=args.author or "",
             )
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             print(f"错误: 生成节点模板失败: {exc}")
             return 1
         print(f"节点模板已生成: {result}")
@@ -498,7 +498,7 @@ def _cmd_create_node(args: argparse.Namespace) -> int:
             model_name=model,
             author=author,
         )
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         print(f"错误: 生成节点模板失败: {exc}")
         return 1
     print(f"节点模板已生成: {result}")
@@ -602,7 +602,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
             if available:
                 print(f"可用节点: {', '.join(available)}")
             return 1
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             print(f"错误: 实例化节点 '{node_type}' 失败: {exc}")
             return 1
         elements.append(node)
@@ -613,7 +613,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
 
     try:
         result = pipe.execute_result(pipeline_input)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         print(f"错误: 管道执行失败: {exc}")
         return 1
 
@@ -664,7 +664,7 @@ def _cmd_doctor(args: argparse.Namespace) -> int:
     try:
         # run_doctor 返回退出码：0 表示无错误，1 表示存在 error 级别问题
         return run_doctor()
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         print(f"错误: 环境诊断失败: {exc}")
         return 1
 
@@ -708,7 +708,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     except KeyboardInterrupt:
         print("\n操作已取消。")
         return 130
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         print(f"错误: {exc}", file=sys.stderr)
         return 1
 

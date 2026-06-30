@@ -453,7 +453,7 @@ class AvatarDriver(BaseDigitalHumanNode):
                     "AvatarDriver requires one of 'driving_video', "
                     "'driving_audio' or 'expression_params'."
                 )
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             self._emit_error(exc)
             raise
 

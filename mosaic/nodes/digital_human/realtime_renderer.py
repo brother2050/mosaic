@@ -513,7 +513,7 @@ class RealtimeRenderer(BaseDigitalHumanNode):
                     f"rendered segment {seg_idx + 1}/{total_segments}",
                 )
 
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             self._emit_error(exc)
             raise
 

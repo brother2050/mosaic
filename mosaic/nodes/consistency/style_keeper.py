@@ -554,7 +554,7 @@ class StyleKeeper(BaseConsistencyNode):
             self._emit_progress(
                 current=1, total=1, message="Generation complete"
             )
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             self._emit_error(exc)
             raise
 

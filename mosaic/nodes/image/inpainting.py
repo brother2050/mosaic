@@ -204,7 +204,7 @@ class Inpainting(BaseImageNode):
                     f"The model returned None. This may indicate an issue with "
                     f"the input parameters or model state."
                 )
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             self._emit_error(exc)
             raise
 

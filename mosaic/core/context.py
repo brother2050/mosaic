@@ -240,7 +240,7 @@ class Context:
         for handler in self._handlers:
             try:
                 handler(event)
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001
                 # 回调失败不应中断管道，但需记录以便排查
                 self._logger.warning(
                     "Event callback for %r raised: %s",

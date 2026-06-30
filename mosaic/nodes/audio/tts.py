@@ -283,7 +283,7 @@ def _concat_audios(audios: list[AudioData]) -> AudioData:
                 import librosa  # type: ignore
 
                 wf = librosa.resample(wf, orig_sr=sr, target_sr=ref_sr)
-            except Exception:
+            except Exception:  # noqa: BLE001
                 pass
         if not isinstance(wf, np.ndarray):
             wf = np.array(wf, dtype=np.float32)
@@ -410,7 +410,7 @@ def _synthesize_edge_tts(
                 sr,
             )
         return waveform, sr
-    except Exception:
+    except Exception:  # noqa: BLE001
         # 回退：逐句保存临时文件用 librosa 解码
         import os
         import tempfile
@@ -569,7 +569,7 @@ class TTS(BaseAudioNode):
                         )
                     else:
                         backend_name = "transformers"
-                except Exception:
+                except Exception:  # noqa: BLE001
                     backend_name = "transformers"
 
         # ---- 内置后端 ----
@@ -589,7 +589,7 @@ class TTS(BaseAudioNode):
                 self._backend = "transformers"
                 self._logger.info("Transformers TTS pipeline loaded (model=%s, device=%s).", self._model_name, device)
                 return
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001
                 self._logger.warning("Transformers TTS failed for %s: %s. Falling back to edge-tts.", self._model_name, exc)
                 self._backend = "edge_tts"
                 return
@@ -607,7 +607,7 @@ class TTS(BaseAudioNode):
             self._backend = backend_name
             self._logger.info("TTS backend '%s' loaded successfully.", backend_name)
             return
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             self._logger.warning("Failed to load TTS backend '%s': %s. Falling back to edge-tts.", backend_name, exc)
             self._backend = "edge_tts"
 
@@ -623,7 +623,7 @@ class TTS(BaseAudioNode):
             for spec in tts_backend_registry.list_backends():
                 if spec.name not in backends:
                     backends.append(spec.name)
-        except Exception:
+        except Exception:  # noqa: BLE001
             pass
         return backends
 
@@ -755,7 +755,7 @@ class TTS(BaseAudioNode):
                 )
             else:  # transformers
                 waveform, sr = self._generate_transformers(sentences)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             self._emit_error(exc)
             raise
 
@@ -871,7 +871,7 @@ class TTS(BaseAudioNode):
         if self._tts_backend is not None:
             try:
                 self._tts_backend.unload()
-            except Exception:
+            except Exception:  # noqa: BLE001
                 pass
             self._tts_backend = None
         super().unload()

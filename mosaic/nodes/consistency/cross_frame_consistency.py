@@ -761,7 +761,7 @@ class CrossFrameConsistency(BaseConsistencyNode):
                 if consistency_scores
                 else 0.0
             )
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             self._emit_error(exc)
             raise
         finally:

@@ -209,7 +209,7 @@ class TestConcurrentLoadUnload:
                         sched.ensure_loaded(node)
                         time.sleep(0.001)
                         sched.release(node)
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001
                 errors.append((worker_id, str(exc)))
 
         # 创建 3 个线程，各负责不同的节点子集

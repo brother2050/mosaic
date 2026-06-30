@@ -129,7 +129,7 @@ class TestNodeInterfaceCompliance:
                 assert n is not None, (
                     f"Node '{node_name}': context manager should return node instance."
                 )
-        except Exception:
+        except Exception:  # noqa: BLE001
             # 某些节点在 load 时可能因缺少依赖而失败，这不算接口违规
             # 但至少协议本身应被正确实现
             pass

@@ -315,7 +315,7 @@ class HunyuanVideo(BaseVideoNode):
                     f"HunyuanVideo returned no frames for prompt: {prompt[:50]}"
                 )
 
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             self._emit_error(exc)
             raise
 

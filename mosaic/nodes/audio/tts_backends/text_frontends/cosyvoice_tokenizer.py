@@ -451,7 +451,7 @@ class CosyVoiceTokenizer(TextFrontend):
             # 回退：从词表长度推断
             try:
                 llm_vocab = len(self._tokenizer)
-            except Exception:
+            except Exception:  # noqa: BLE001
                 llm_vocab = self.llm_vocab_size
         self.llm_vocab_size = int(llm_vocab)
 

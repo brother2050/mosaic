@@ -472,21 +472,21 @@ class CosyVoiceBackend(TTSBackend):
             try:
                 if hasattr(self._llm, "to"):
                     self._llm.to("cpu")
-            except Exception:
+            except Exception:  # noqa: BLE001
                 pass
         self._llm = None
 
         if self._speech_tokenizer is not None:
             try:
                 self._speech_tokenizer.unload_weights()
-            except Exception:
+            except Exception:  # noqa: BLE001
                 pass
         self._speech_tokenizer = None
 
         if self._speaker_encoder is not None:
             try:
                 self._speaker_encoder.unload_weights()
-            except Exception:
+            except Exception:  # noqa: BLE001
                 pass
         self._speaker_encoder = None
 

@@ -489,7 +489,7 @@ class AsyncTask:
                 self._completed_at - (self._started_at or 0),
             )
 
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             with self._lock:
                 if self._cancel_event.is_set():
                     self._status = TaskStatus.CANCELLED

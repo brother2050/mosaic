@@ -47,7 +47,7 @@ def _restore_real_transformers():
     if spec is not None:
         try:
             importlib.import_module("transformers")
-        except Exception:
+        except Exception:  # noqa: BLE001
             # 恢复失败，还原 mock
             sys.modules.update(saved)
     else:

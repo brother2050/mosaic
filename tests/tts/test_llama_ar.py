@@ -17,7 +17,7 @@ try:  # noqa: SIM105 - 仅用于探测依赖
     import transformers  # noqa: F401
 
     _HAS_TRANSFORMERS = True
-except Exception:
+except Exception:  # noqa: BLE001
     _HAS_TRANSFORMERS = False
 
 _needs_transformers = pytest.mark.skipif(

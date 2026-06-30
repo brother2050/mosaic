@@ -194,7 +194,7 @@ class ChatTokenizer(TextFrontend):
                     if tok:
                         self.vocab[tok] = idx
                         idx += 1
-        except Exception:
+        except Exception:  # noqa: BLE001
             self.vocab = {}
 
         self.inv_vocab = {v: k for k, v in self.vocab.items()}
@@ -395,7 +395,7 @@ class ChatTokenizer(TextFrontend):
         if isinstance(speaker_id, str):
             try:
                 return self._decode_speaker(speaker_id)
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001
                 # A3-3：解码失败时优雅降级，返回 None 并记录告警
                 self._logger.warning(
                     "Failed to decode speaker embedding (%.32s...): %s",

@@ -205,7 +205,7 @@ class SubtitleAligner(BaseSubtitleNode):
                     f"Supported: 'whisper', 'aeneas', 'dtw'."
                 )
 
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             self._emit_error(exc)
             raise
 
@@ -419,7 +419,7 @@ class SubtitleAligner(BaseSubtitleNode):
                 "aeneas not installed, falling back to original timestamps."
             )
             return list(segments), 0.0, 0.3
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             self._logger.warning("aeneas alignment failed: %s", exc)
             return list(segments), 0.0, 0.3
         finally:

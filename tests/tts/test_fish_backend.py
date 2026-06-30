@@ -19,7 +19,7 @@ try:  # noqa: SIM105
     import transformers  # noqa: F401
 
     _HAS_TRANSFORMERS = True
-except Exception:
+except Exception:  # noqa: BLE001
     _HAS_TRANSFORMERS = False
 
 from mosaic.nodes.audio.tts_backends.base import TTSBackendSpec
@@ -203,7 +203,7 @@ def loaded_fish(tmp_path: Any, monkeypatch: pytest.MonkeyPatch) -> Any:
     finally:
         try:
             backend.unload()
-        except Exception:
+        except Exception:  # noqa: BLE001
             pass
 
 

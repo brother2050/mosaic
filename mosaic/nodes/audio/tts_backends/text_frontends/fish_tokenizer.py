@@ -168,7 +168,7 @@ class FishTokenizer(TextFrontend):
                     if tok:
                         self.vocab[tok] = idx
                         idx += 1
-        except Exception:
+        except Exception:  # noqa: BLE001
             self.vocab = {}
 
         self.inv_vocab = {v: k for k, v in self.vocab.items()}

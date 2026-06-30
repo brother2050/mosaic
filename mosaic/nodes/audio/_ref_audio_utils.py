@@ -199,7 +199,7 @@ def _load_from_file(path: str, target_sr: int) -> tuple[np.ndarray, int]:
     except ImportError:
         # soundfile 未安装，静默回退到 librosa
         pass
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         # soundfile 已安装但加载失败（如不支持 mp3 等格式），回退到 librosa
         logger.warning(
             "soundfile failed to load %s: %s. "

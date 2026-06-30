@@ -84,7 +84,7 @@ def get_class_info(class_name: str, module_name: str) -> dict[str, Any]:
                     "docstring": inspect.getdoc(method) or "",
                     "signature": str(inspect.signature(method)),
                 })
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         info["error"] = str(e)
     return info
 

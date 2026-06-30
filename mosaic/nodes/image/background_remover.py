@@ -164,7 +164,7 @@ class BackgroundRemover(BaseImageNode):
                 result_image, mask = self._remove_bg_rembg(image)
             else:
                 result_image, mask = self._remove_bg_model(image)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             self._emit_error(exc)
             raise
 

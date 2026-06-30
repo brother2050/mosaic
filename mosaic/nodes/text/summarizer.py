@@ -201,7 +201,7 @@ class TextSummarizer(BaseTextNode):
                 summary = self._summarize_generic(
                     text, style, max_length, max_new_tokens, temperature
                 )
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             self._emit_error(exc)
             raise
 

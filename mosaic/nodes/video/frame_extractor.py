@@ -788,7 +788,7 @@ class FrameExtractor(BaseVideoNode):
             # 输出格式转换
             frames = self._convert_output_format(frames, output_format)
 
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             self._emit_error(exc)
             raise
 

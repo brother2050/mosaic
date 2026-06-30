@@ -45,12 +45,15 @@ safetensors；而 CosyVoice 的 LLM 体量较大且本身以 HuggingFace 格式�
 
 from __future__ import annotations
 
+import logging
 import os
 import re
 from datetime import datetime
 from typing import Any
 
 from mosaic.nodes.audio.tts_backends.weights.converter import WeightConverter
+
+logger = logging.getLogger(__name__)
 
 __all__ = ["CosyVoiceWeightConverter"]
 
@@ -320,7 +323,7 @@ class CosyVoiceWeightConverter(WeightConverter):
             except ImportError:
                 # safetensors 未安装，无法验证权重内容
                 return False
-            except Exception:
+            except Exception:  # noqa: BLE001
                 return False
 
         # 至少要有 text_frontend 引用或某个 safetensors
@@ -416,15 +419,13 @@ class CosyVoiceWeightConverter(WeightConverter):
         # 4. 逐组件打印映射关系
         result: dict[str, dict[str, str]] = {}
         for comp in components:
-            print(f"\n{'=' * 70}")
-            print(f"组件: {comp}")
-            print(f"{'=' * 70}")
+            logger.info("\n%s\n组件: %s\n%s", "=" * 70, comp, "=" * 70)
 
             if comp == "text_frontend":
                 # text_frontend 不拷贝权重，仅引用 LLM 模型路径
-                print("  (LLM 权重不拷贝，以 HuggingFace 路径引用)")
-                print(f"  llm_model_path = {llm_path}")
-                print(f"  输出文件: text_frontend_config.json")
+                logger.info("  (LLM 权重不拷贝，以 HuggingFace 路径引用)")
+                logger.info("  llm_model_path = %s", llm_path)
+                logger.info("  输出文件: text_frontend_config.json")
                 result[comp] = {}
                 continue
 
@@ -436,13 +437,13 @@ class CosyVoiceWeightConverter(WeightConverter):
 
                 # 获取 shape
                 shape = tuple(value.shape) if hasattr(value, "shape") else None
-                print(f"  {src_key}  ->  {tgt_key}    shape={shape}")
+                logger.info("  %s  ->  %s    shape=%s", src_key, tgt_key, shape)
                 comp_mapping[src_key] = tgt_key
 
             if not comp_mapping:
-                print("  (无匹配权重)")
+                logger.info("  (无匹配权重)")
             else:
-                print(f"  共 {len(comp_mapping)} 个权重")
+                logger.info("  共 %d 个权重", len(comp_mapping))
 
             result[comp] = comp_mapping
 

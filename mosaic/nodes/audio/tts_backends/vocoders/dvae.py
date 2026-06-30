@@ -393,7 +393,7 @@ def _get_dvae_class() -> Any:
                     self.to("cpu")
                     if torch.cuda.is_available():
                         torch.cuda.empty_cache()
-                except Exception:
+                except Exception:  # noqa: BLE001
                     pass
                 self._stream_buffer = None
                 self._is_loaded = False

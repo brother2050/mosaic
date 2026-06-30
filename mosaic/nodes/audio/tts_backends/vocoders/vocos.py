@@ -451,12 +451,12 @@ class VocosVocoder(Vocoder):
             if self._official is not None:
                 try:
                     self._official.to("cpu")
-                except Exception:
+                except Exception:  # noqa: BLE001
                     pass
             if self._impl is not None:
                 try:
                     self._impl.to("cpu")
-                except Exception:
+                except Exception:  # noqa: BLE001
                     pass
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
@@ -647,14 +647,14 @@ class VocosVocoder(Vocoder):
             else:
                 # 官方包不便于从单文件直接构造，回退到自实现
                 return None
-        except Exception:
+        except Exception:  # noqa: BLE001
             return None
 
         try:
             model = model.to(device=device, dtype=torch_dtype)
             model.eval()
             return model
-        except Exception:
+        except Exception:  # noqa: BLE001
             return None
 
     @staticmethod

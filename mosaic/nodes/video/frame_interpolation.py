@@ -904,7 +904,7 @@ class FrameInterpolator(BaseVideoNode):
             if total_work <= 0:
                 self._emit_progress(1, 1, "No interpolation needed")
 
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             self._emit_error(exc)
             raise
 

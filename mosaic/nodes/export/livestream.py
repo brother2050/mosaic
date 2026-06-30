@@ -249,7 +249,7 @@ class Livestreamer(Node):
             })
             return result
 
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             self._emit_error(exc)
 
             elapsed = time.perf_counter() - t0
@@ -408,7 +408,7 @@ class Livestreamer(Node):
                     err_msg,
                 )
 
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             self._logger.error("Streaming error: %s", exc)
             self._stop_stream_process()
         finally:

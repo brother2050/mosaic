@@ -891,13 +891,13 @@ class FlowMatchingModel(AcousticModel):
             if self._impl is not None:
                 try:
                     self._impl.to("cpu")
-                except Exception:
+                except Exception:  # noqa: BLE001
                     pass
             if self._llm is not None:
                 try:
                     if hasattr(self._llm, "to"):
                         self._llm.to("cpu")
-                except Exception:
+                except Exception:  # noqa: BLE001
                     pass
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()

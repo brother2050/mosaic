@@ -522,7 +522,7 @@ class VideoContinuation(BaseVideoNode):
                 merged_frames = list(original_frames) + list(gen_frames)
                 continuation_frames = list(gen_frames)
 
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             self._emit_error(exc)
             raise
 

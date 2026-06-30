@@ -172,7 +172,7 @@ class Upscaler(BaseImageNode):
 
             # 执行推理
             output = self._run_pipeline(**pipe_kwargs)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             self._emit_error(exc)
             raise
 

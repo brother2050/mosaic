@@ -184,7 +184,7 @@ def _safe_eq(v1: Any, v2: Any) -> bool:
     # 2) 其余类型：直接 == 比较
     try:
         result = v1 == v2
-    except Exception:
+    except Exception:  # noqa: BLE001
         # 比较本身抛异常（如不可比较类型）视为不相等
         return False
 
@@ -330,7 +330,7 @@ class MosaicData:
                     "Deserialized %s instance failed validation.",
                     target_cls.__name__,
                 )
-        except Exception as exc:  # pragma: no cover - 防御性：校验异常不应阻断反序列化
+        except Exception as exc:  # pragma: no cover - 防御性：校验异常不应阻断反序列化  # noqa: BLE001
             _logger.warning(
                 "Validation raised an exception for %s: %r",
                 target_cls.__name__,

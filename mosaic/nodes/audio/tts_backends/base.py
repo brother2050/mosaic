@@ -196,7 +196,7 @@ class TTSBackend(abc.ABC):
             self._destroy_pipeline()
             self.is_loaded = False
             raise
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             self._destroy_pipeline()
             self.is_loaded = False
             raise RuntimeError(

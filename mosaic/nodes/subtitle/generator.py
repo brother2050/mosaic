@@ -239,7 +239,7 @@ class SubtitleGenerator(BaseSubtitleNode):
                     BaseAudioNode._to_mono(waveform), sr
                 )
 
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             self._emit_error(exc)
             raise
         finally:

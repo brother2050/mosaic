@@ -431,7 +431,7 @@ class ImageToVideo(BaseVideoNode):
             # SVD-XT 输出 25 帧，超出请求帧数时截断
             frames = self._truncate_frames(frames, num_frames)
 
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             self._emit_error(exc)
             raise
 

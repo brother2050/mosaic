@@ -287,7 +287,7 @@ def test_file_not_found_error_handling(registry):
             keyword in error_msg.lower()
             for keyword in ["file", "path", "not found", "exist", "nonexistent"]
         ), f"Error message should mention file-related issue, got: {error_msg}"
-    except Exception:
+    except Exception:  # noqa: BLE001
         # 节点可能因缺少模型而失败，这是可接受的
         pass
 
@@ -349,7 +349,7 @@ def test_async_task_failure_status_update():
         result = task.wait(timeout=30)
         # 如果 wait 成功，检查结果
         assert not result.success, "Async task result should indicate failure"
-    except Exception:
+    except Exception:  # noqa: BLE001
         # 任务失败，状态应为 FAILED
         pass
 
@@ -390,7 +390,7 @@ def test_plugin_load_failure_doesnt_crash(plugin_manager):
             count = plugin_manager.load_plugins()
             # 不应崩溃，count 应为 0 或更多
             assert isinstance(count, int)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             # 如果 load_plugins 抛异常，说明防护不足
             pytest.fail(f"plugin_manager.load_plugins() should not crash: {exc}")
 
@@ -446,7 +446,7 @@ def test_nonexistent_tts_backend_friendly_error(registry):
         assert tts_node._backend in ("edge_tts", "edge-tts"), (
             f"Expected fallback to edge_tts, got {tts_node._backend}"
         )
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         # 即使失败，也应给出友好消息
         error_msg = str(exc)
         assert any(
@@ -548,7 +548,7 @@ def test_async_task_cancel(registry):
     # 等待任务完成
     try:
         task.wait(timeout=30)
-    except Exception:
+    except Exception:  # noqa: BLE001
         pass
 
     # 验证终态

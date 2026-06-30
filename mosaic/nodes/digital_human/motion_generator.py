@@ -753,7 +753,7 @@ class MotionGenerator(BaseDigitalHumanNode):
             if smooth and frame_count > 3:
                 keypoints = self._smooth_keypoints(keypoints, window=5)
 
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             self._emit_error(exc)
             raise
 

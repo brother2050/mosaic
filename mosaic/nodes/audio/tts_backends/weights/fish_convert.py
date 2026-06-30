@@ -37,12 +37,15 @@ vocoder、vq_decoder、audio_encoder 组件的权重保持原名不变。
 
 from __future__ import annotations
 
+import logging
 import os
 import re
 from datetime import datetime
 from typing import Any
 
 from mosaic.nodes.audio.tts_backends.weights.converter import WeightConverter
+
+logger = logging.getLogger(__name__)
 
 __all__ = ["FishWeightConverter"]
 
@@ -268,7 +271,7 @@ class FishWeightConverter(WeightConverter):
             except ImportError:
                 # safetensors 未安装，无法验证权重内容
                 return False
-            except Exception:
+            except Exception:  # noqa: BLE001
                 return False
 
         if not all_weights:
@@ -361,9 +364,7 @@ class FishWeightConverter(WeightConverter):
         # 4. 逐组件打印映射关系
         result: dict[str, dict[str, str]] = {}
         for comp in components:
-            print(f"\n{'=' * 70}")
-            print(f"组件: {comp}")
-            print(f"{'=' * 70}")
+            logger.info("\n%s\n组件: %s\n%s", "=" * 70, comp, "=" * 70)
 
             comp_mapping: dict[str, str] = {}
             for src_key, value in state_dict.items():
@@ -373,13 +374,13 @@ class FishWeightConverter(WeightConverter):
 
                 # 获取 shape
                 shape = tuple(value.shape) if hasattr(value, "shape") else None
-                print(f"  {src_key}  →  {tgt_key}    shape={shape}")
+                logger.info("  %s  →  %s    shape=%s", src_key, tgt_key, shape)
                 comp_mapping[src_key] = tgt_key
 
             if not comp_mapping:
-                print("  (无匹配权重)")
+                logger.info("  (无匹配权重)")
             else:
-                print(f"  共 {len(comp_mapping)} 个权重")
+                logger.info("  共 %d 个权重", len(comp_mapping))
 
             result[comp] = comp_mapping
 

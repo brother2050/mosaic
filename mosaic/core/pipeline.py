@@ -583,7 +583,7 @@ class Pipeline(Node):
             dn = self._dag[nid]
             try:
                 steps.append(dn.node.describe())
-            except Exception as exc:  # pragma: no cover - 防御性
+            except Exception as exc:  # pragma: no cover - 防御性  # noqa: BLE001
                 issues.append(f"{nid}: describe() failed: {exc}")
 
         # 类型匹配校验
@@ -869,7 +869,7 @@ class Pipeline(Node):
                         outputs[nid] = out
                         node_durations[nid] = duration
                         completed.add(nid)
-                    except Exception as exc:
+                    except Exception as exc:  # noqa: BLE001
                         if fail_fast:
                             # 设置取消信号：通知尚未启动的工作线程跳过执行
                             cancel_event.set()
@@ -924,7 +924,7 @@ class Pipeline(Node):
                 #（旧代码兼容）回退到直接 load。
                 self._ensure_node_loaded(dn.node)
                 out = dn.node.run(node_input)
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001
                 elapsed = time.perf_counter() - t0
                 node_durations[nid] = elapsed
                 if fail_fast:
@@ -1177,7 +1177,7 @@ class Pipeline(Node):
         for nid in order:
             try:
                 specs.append(self._dag[nid].node.describe())
-            except Exception:
+            except Exception:  # noqa: BLE001
                 continue
         return specs
 

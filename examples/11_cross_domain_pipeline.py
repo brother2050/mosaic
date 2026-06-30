@@ -231,7 +231,7 @@ def scenario_7_tts_backend_comparison():
             print(f"    采样率: {audio.sample_rate} Hz")
             print(f"    音频时长: {audio.duration:.2f}s")
             print(f"    合成耗时: {duration:.2f}s")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             print(f"    跳过（未安装/未配置）: {e}")
 
     print(f"\n✅ 已保存到 comparison_{{chattts,fish,sovits,cosyvoice}}.wav")

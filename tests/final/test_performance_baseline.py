@@ -145,7 +145,7 @@ def test_node_run_overhead_under_10ms():
     # 预热一次（避免首次调用的额外开销）
     try:
         node.run(input_data)
-    except Exception:
+    except Exception:  # noqa: BLE001
         pass
 
     # 运行 10 次并记录时间
@@ -154,7 +154,7 @@ def test_node_run_overhead_under_10ms():
         t0 = time.perf_counter()
         try:
             node.run(input_data)
-        except Exception:
+        except Exception:  # noqa: BLE001
             # 在 mock 环境下 run() 可能因缺少模型而失败，这是预期的
             pass
         times.append(time.perf_counter() - t0)

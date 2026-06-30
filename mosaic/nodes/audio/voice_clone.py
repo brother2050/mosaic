@@ -166,7 +166,7 @@ class VoiceClone(BaseAudioNode):
                 device,
             )
             return
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             self._logger.warning(
                 "Transformers TTS failed for %s: %s. "
                 "Falling back to edge-tts style matching.",
@@ -380,7 +380,7 @@ class VoiceClone(BaseAudioNode):
                 )
             else:  # transformers
                 waveform, sample_rate = self._generate_transformers(sentences)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             self._emit_error(exc)
             raise
 

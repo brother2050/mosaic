@@ -31,7 +31,7 @@ def _safe_execute(pipeline: Pipeline, input_data) -> PipelineResult:
     """安全执行管道，GPU 不可用时返回 PipelineResult 并捕获错误。"""
     try:
         return pipeline.execute_result(input_data, fail_fast=False)
-    except Exception:
+    except Exception:  # noqa: BLE001
         # GPU 不可用或其他运行时错误，返回空结果
         return PipelineResult(
             output=None,
@@ -302,7 +302,7 @@ def test_async_execution(registry):
     try:
         result = task.wait(timeout=30)
         assert isinstance(result, PipelineResult)
-    except Exception:
+    except Exception:  # noqa: BLE001
         # GPU 不可用或任务失败，验证状态
         assert task.status in ("failed", "completed", "cancelled")
 

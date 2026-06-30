@@ -508,7 +508,7 @@ class LipSyncer(BaseDigitalHumanNode):
                 total_frames,
                 parsing_mode,
             )
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             self._emit_error(exc)
             raise
 

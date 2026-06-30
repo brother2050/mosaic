@@ -236,7 +236,7 @@ class PluginManager:
 
             # Python 3.10+ 稳定 API：entry_points(group=...) 直接返回 EntryPoints
             eps = entry_points(group=self.ENTRY_POINT_GROUP)
-        except Exception:
+        except Exception:  # noqa: BLE001
             return 0
 
         for ep in eps:
@@ -262,7 +262,7 @@ class PluginManager:
                 self._plugins[node_class.name] = info
                 count += 1
                 logger.info("Loaded plugin from entry_point: %s", ep.name)
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001
                 logger.warning(
                     "Failed to load plugin entry_point %s: %s", ep.name, exc
                 )
@@ -342,7 +342,7 @@ class PluginManager:
                                 attr_value.name,
                                 fpath,
                             )
-                except Exception as exc:
+                except Exception as exc:  # noqa: BLE001
                     logger.warning(
                         "Failed to load plugin file %s: %s", fpath, exc
                     )
@@ -468,7 +468,7 @@ class PluginManager:
                 "Plugin %s class not found after reload.", name
             )
             return False
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             logger.warning("Failed to reload plugin %s: %s", name, exc)
             return False
 
@@ -520,7 +520,7 @@ class PluginManager:
                     module_path=node_class.__module__,
                 )
                 self._plugins[spec_name] = info
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001
                 logger.warning(
                     "Failed to mark builtin node %s: %s", spec_name, exc
                 )

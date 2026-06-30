@@ -271,7 +271,7 @@ class NodeRegistry:
         ):
             try:
                 module = importlib.import_module(mod_name)
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001
                 # 扫描不应因单个模块导入失败而中断，但需记录以便排查（B3）
                 self._logger.warning(
                     "Failed to import module %s during discovery: %s",
@@ -335,7 +335,7 @@ class NodeRegistry:
         try:
             instance = node_class()
             return instance.describe()
-        except Exception:
+        except Exception:  # noqa: BLE001
             return NodeSpec(
                 name=getattr(node_class, "name", "unknown"),
                 domain=getattr(node_class, "domain", "unknown"),

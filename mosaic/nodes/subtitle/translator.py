@@ -251,7 +251,7 @@ class SubtitleTranslator(BaseSubtitleNode):
             for i, seg in enumerate(new_segments, 1):
                 seg["index"] = i
 
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             self._emit_error(exc)
             raise
 

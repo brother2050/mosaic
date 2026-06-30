@@ -88,7 +88,7 @@ def registered_custom_node():
     # 清理：从注册表注销自定义节点
     try:
         registry.unregister(node_name)
-    except Exception:
+    except Exception:  # noqa: BLE001
         pass
 
 
@@ -201,7 +201,7 @@ def test_plugin_load_failure_isolation(registered_custom_node, plugin_manager):
         # 调用 load_plugins —— 不应崩溃
         try:
             plugin_manager.load_plugins()
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             pytest.fail(
                 f"plugin_manager.load_plugins() should not crash on bad plugin: {exc}"
             )

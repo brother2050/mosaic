@@ -344,7 +344,7 @@ def _register_builtin_backends() -> None:
         )
 
         tts_backend_registry.register("chattts", ChatTTSBackend)
-    except Exception:
+    except Exception:  # noqa: BLE001
         pass  # 依赖不可用时静默跳过
 
     try:
@@ -353,7 +353,7 @@ def _register_builtin_backends() -> None:
         )
 
         tts_backend_registry.register("fish", FishSpeechBackend)
-    except Exception:
+    except Exception:  # noqa: BLE001
         pass  # 依赖不可用时静默跳过
 
     try:
@@ -362,7 +362,7 @@ def _register_builtin_backends() -> None:
         )
 
         tts_backend_registry.register("sovits", GPTSoVITSBackend)
-    except Exception:
+    except Exception:  # noqa: BLE001
         pass  # 依赖不可用时静默跳过
 
     try:
@@ -371,7 +371,7 @@ def _register_builtin_backends() -> None:
         )
 
         tts_backend_registry.register("cosyvoice", CosyVoiceBackend)
-    except Exception:
+    except Exception:  # noqa: BLE001
         pass  # 依赖不可用时静默跳过
 
 
