@@ -344,6 +344,46 @@ def _resolve_voice(
     return voice
 
 
+def _decode_audio_bytes(audio_bytes: bytes, target_sr: int) -> Any:
+    """将音频字节流解码为 numpy 波形数组。
+
+    优先使用 soundfile，回退到 librosa。两种方式均失败时返回 None。
+    """
+    import io
+
+    # 优先使用 soundfile（内存解码，无需临时文件）
+    try:
+        import soundfile as sf  # type: ignore
+
+        waveform, _sr = sf.read(io.BytesIO(audio_bytes), dtype="float32")
+        return waveform
+    except Exception:  # noqa: BLE001
+        pass
+
+    # 回退：写临时文件用 librosa 解码
+    import os
+    import tempfile
+
+    tmp_path = tempfile.mktemp(suffix=".mp3")
+    try:
+        with open(tmp_path, "wb") as f:
+            f.write(audio_bytes)
+        try:
+            import librosa  # type: ignore
+
+            wf, _sr = librosa.load(tmp_path, sr=None)
+            return wf
+        except ImportError:
+            return None
+    except Exception:  # noqa: BLE001
+        return None
+    finally:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+
+
 def _synthesize_edge_tts(
     sentences: list[str], voice: str, speed: float, logger: Any = None
 ) -> tuple:
@@ -393,16 +433,17 @@ def _synthesize_edge_tts(
     # 单次事件循环并发合成全部句子
     all_audio: list[bytes] = asyncio.run(_synthesize_all())
 
-    combined_bytes = b"".join(all_audio)
+    # 逐句解码为 numpy 波形后拼接（避免多 WAV/MP3 字节流拼接后无法解析）
+    waveforms: list[Any] = []
+    sr = EDGE_TTS_SAMPLE_RATE
 
-    # 解码 mp3 字节流为 numpy 波形
-    try:
-        import soundfile as sf  # type: ignore
+    for audio_bytes in all_audio:
+        decoded = _decode_audio_bytes(audio_bytes, sr)
+        if decoded is not None:
+            waveforms.append(decoded)
 
-        waveform, _sr = sf.read(io.BytesIO(combined_bytes), dtype="float32")
-        # C2-3: edge-tts（Azure Neural TTS）输出固定为 24kHz，统一采样率
-        # 来源，避免 soundfile 实际读取值与 librosa 回退默认值不一致。
-        sr = EDGE_TTS_SAMPLE_RATE
+    if waveforms:
+        waveform = np.concatenate(waveforms) if len(waveforms) > 1 else waveforms[0]
         if logger is not None:
             logger.debug(
                 "edge-tts synthesized %d sentence(s) -> %d samples @ %dHz.",
@@ -411,38 +452,11 @@ def _synthesize_edge_tts(
                 sr,
             )
         return waveform, sr
-    except Exception:  # noqa: BLE001
-        # 回退：逐句保存临时文件用 librosa 解码
-        import os
-        import tempfile
 
-        waveforms: list[Any] = []
-        sr = EDGE_TTS_SAMPLE_RATE
-        for audio_bytes in all_audio:
-            tmp_path = tempfile.mktemp(suffix=".mp3")
-            with open(tmp_path, "wb") as f:
-                f.write(audio_bytes)
-            try:
-                import librosa  # type: ignore
-
-                wf, sr = librosa.load(tmp_path, sr=None)
-                waveforms.append(wf)
-            except ImportError:
-                pass
-            finally:
-                try:
-                    os.unlink(tmp_path)
-                except OSError:
-                    pass
-
-        if waveforms:
-            waveform = np.concatenate(waveforms)
-            return waveform, sr
-
-        raise ImportError(
-            "edge-tts requires 'soundfile' or 'librosa' to decode audio. "
-            "Install via `pip install soundfile` or `pip install librosa`."
-        )
+    raise ImportError(
+        "edge-tts requires 'soundfile' or 'librosa' to decode audio. "
+        "Install via `pip install soundfile` or `pip install librosa`."
+    )
 
 
 @registry.register

@@ -152,12 +152,22 @@ def _inject_mock_transformers():
 
 
 def _inject_mock_soundfile():
-    if "soundfile" not in sys.modules:
-        sf = types.ModuleType("soundfile")
-        sf.__spec__ = MagicMock()
-        sf.read = MagicMock(return_value=(np.zeros(100, dtype=np.float32), 22050))
-        sf.write = MagicMock()
-        sys.modules["soundfile"] = sf
+    """注入 mock soundfile（仅在真实 soundfile 不可用时）。
+
+    安装真实 soundfile 后，此 mock 不会覆盖真实模块，
+    确保 TTS 测试使用真实音频解码路径。
+    """
+    try:
+        import soundfile  # noqa: F401
+        return  # 真实 soundfile 可用，不注入 mock
+    except ImportError:
+        pass
+
+    sf = types.ModuleType("soundfile")
+    sf.__spec__ = MagicMock()
+    sf.read = MagicMock(return_value=(np.zeros(100, dtype=np.float32), 22050))
+    sf.write = MagicMock()
+    sys.modules["soundfile"] = sf
 
 
 def _inject_mock_edge_tts():

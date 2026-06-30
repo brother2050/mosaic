@@ -10,8 +10,11 @@
 
 from __future__ import annotations
 
+import io
+import struct
 import sys
 import types
+import wave
 from unittest.mock import MagicMock
 
 import numpy as np
@@ -23,6 +26,17 @@ from mosaic.core.types import MosaicData
 # ---------------------------------------------------------------------------
 # 辅助：为 TTS 测试提供 mock 环境
 # ---------------------------------------------------------------------------
+def _make_wav_bytes(num_samples: int = 100, sample_rate: int = 22050) -> bytes:
+    """生成最小有效 WAV 字节流（单声道 16-bit PCM），供 soundfile 解码。"""
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as wf:
+        wf.setnchannels(1)
+        wf.setsampwidth(2)
+        wf.setframerate(sample_rate)
+        wf.writeframes(struct.pack("<" + "h" * num_samples, *([0] * num_samples)))
+    return buf.getvalue()
+
+
 def _ensure_edge_tts_mock() -> None:
     """确保 edge_tts 模块已被 mock（与 conftest 共用，幂等）。
 
@@ -35,6 +49,7 @@ def _ensure_edge_tts_mock() -> None:
         return
 
     etc = types.ModuleType("edge_tts")
+    _wav_data = _make_wav_bytes()
 
     class _Communicate:
         """模拟 edge_tts.Communicate，支持 rate/pitch 等关键字参数。"""
@@ -47,7 +62,7 @@ def _ensure_edge_tts_mock() -> None:
             self.pitch = pitch
 
         async def stream(self):
-            yield {"type": "audio", "data": b"\x00" * 64}
+            yield {"type": "audio", "data": _wav_data}
 
     etc.Communicate = _Communicate
     etc.SubMaker = MagicMock()

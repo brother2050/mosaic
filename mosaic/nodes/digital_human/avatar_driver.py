@@ -315,7 +315,7 @@ class AvatarDriver(BaseDigitalHumanNode):
                 "unet": torch.load(unet_ckpt, map_location=device, weights_only=False),
             }
 
-        # wav2vec 音频特征提取器
+        # wav2vec 音频特征提取器（可选：加载失败时仅 debug 日志，不阻断）
         try:
             from transformers import (  # type: ignore
                 Wav2Vec2Model,
@@ -328,9 +328,9 @@ class AvatarDriver(BaseDigitalHumanNode):
             self._audio_encoder = Wav2Vec2Model.from_pretrained(
                 self._wav2vec2_model
             ).to(device)
-        except ImportError:
+        except Exception as exc:  # noqa: BLE001
             self._logger.debug(
-                "transformers not available; wav2vec audio encoder disabled."
+                "wav2vec audio encoder disabled: %s", exc,
             )
 
     def unload(self) -> None:
