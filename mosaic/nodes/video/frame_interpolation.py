@@ -53,6 +53,7 @@ import os
 import time
 from typing import Any
 
+from mosaic.core.onnx_utils import create_inference_session, is_onnxruntime_usable
 from mosaic.core.registry import registry
 from mosaic.core.types import MosaicData, VideoData
 
@@ -170,8 +171,19 @@ class FrameInterpolator(BaseVideoNode):
             )
 
     def _load_rife_model(self) -> None:
-        """加载 RIFE ONNX 模型（惰性导入 ``onnxruntime``，不需要 PyTorch）。"""
-        import onnxruntime as ort  # type: ignore
+        """加载 RIFE ONNX 模型。
+
+        使用 ``mosaic.core.onnx_utils`` 安全创建 InferenceSession，
+        自动处理 CUDA/cuDNN 版本不匹配问题。当 onnxruntime 不可用时，
+        自动回退到 linear 插值方法。
+        """
+        if not is_onnxruntime_usable():
+            self._logger.warning(
+                "onnxruntime 不可用（InferenceSession 加载失败），"
+                "自动回退到 linear 插值方法。"
+            )
+            self._method = "linear"
+            return
 
         model_path = self._model_name or _DEFAULT_RIFE_MODEL
         if not os.path.exists(model_path):
@@ -186,7 +198,9 @@ class FrameInterpolator(BaseVideoNode):
         else:
             providers = ["CPUExecutionProvider"]
 
-        self._pipeline = ort.InferenceSession(model_path, providers=providers)
+        self._pipeline = create_inference_session(
+            model_path, providers=providers
+        )
         self._logger.info(
             "RIFE ONNX model loaded (path=%s, providers=%s).",
             model_path,

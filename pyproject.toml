@@ -63,7 +63,12 @@ dependencies = [
 #   onnxruntime       — 仅 CPU
 #   onnxruntime-gpu   — GPU (CUDA)，包含 CPU 功能
 # 两者不能同时安装。用户根据硬件选择其一。
-# 参考: https://onnxruntime.ai/docs/get-started/with-python.html
+#
+# 版本约束说明（参考 https://onnxruntime.ai/docs/execution-providers/CUDA-ExecutionProvider）：
+#   onnxruntime-gpu 1.17.x  需要 CUDA 12.x + cuDNN 8.x（适合 PyTorch <= 2.3）
+#   onnxruntime-gpu 1.18.1+ 需要 CUDA 12.x + cuDNN 9.x（适合 PyTorch >= 2.4）
+#   onnxruntime-gpu 1.21.0+ 提供 preload_dlls() 可自动加载 PyTorch 的 CUDA/cuDNN 库
+#   cuDNN 8.x 与 9.x 互不兼容，版本不匹配会导致 InferenceSession 加载失败
 onnx = [
     # ONNX Runtime CPU 版本（帧插值 RIFE / 数字人推理）
     "onnxruntime>=1.16.0,<2.0.0",
@@ -71,6 +76,8 @@ onnx = [
 onnx-gpu = [
     # ONNX Runtime GPU 版本（CUDA 12.x），包含 CPU 功能
     # 安装前请确保未安装 onnxruntime（CPU 版本）
+    # PyTorch >= 2.4（cuDNN 9.x）用户推荐 1.19.0+
+    # PyTorch <= 2.3（cuDNN 8.x）用户请使用 1.17.x 或 1.18.0
     "onnxruntime-gpu>=1.16.0,<2.0.0",
 ]
 video = [

@@ -305,9 +305,20 @@ class RealtimeRenderer(BaseDigitalHumanNode):
     def _try_init_onnx(self) -> None:
         """尝试初始化 ONNX Runtime 会话以加速推理。
 
-        仅当安装了 ``onnxruntime`` 且存在导出的 ONNX 权重时启用；失败时
-        静默回退到 PyTorch 推理。
+        使用 ``mosaic.core.onnx_utils`` 验证 onnxruntime 是否真正可用
+        （不仅检查 import，还验证 InferenceSession 属性存在）。
+        失败时静默回退到 PyTorch 推理。
         """
+        from mosaic.core.onnx_utils import is_onnxruntime_usable
+
+        if not is_onnxruntime_usable():
+            self._logger.debug(
+                "onnxruntime 不可用（InferenceSession 加载失败），"
+                "使用 PyTorch 推理。"
+            )
+            self._use_onnx = False
+            return
+
         try:
             import onnxruntime as ort  # type: ignore
 

@@ -122,43 +122,27 @@ def _check_package(
 def _check_onnxruntime() -> CheckResult:
     """检查 onnxruntime 是否安装且 InferenceSession 可用。
 
-    ``onnxruntime-gpu`` 在 CUDA/cuDNN 版本不匹配时，模块本身可以导入，
-    但 ``InferenceSession`` 属性不存在（C 扩展加载失败）。
-    本函数专门检测此问题并给出修复建议。
+    使用 ``mosaic.core.onnx_utils.is_onnxruntime_usable`` 进行深度检查，
+    该函数不仅检查模块能否导入，还验证 ``InferenceSession`` 属性是否存在。
     """
-    try:
-        import onnxruntime as ort  # type: ignore
-    except ImportError:
-        return CheckResult(
-            "warn",
-            "onnxruntime 未安装（可选依赖，RIFE 帧插值和 ONNX 加速需要）",
-        )
-    except Exception as exc:  # noqa: BLE001
-        return CheckResult("warn", f"onnxruntime 导入失败: {exc}")
+    from mosaic.core.onnx_utils import OnnxRuntimeStatus
 
-    version = getattr(ort, "__version__", "未知")
+    usable, version, providers, error = OnnxRuntimeStatus.get()
 
-    # 关键检查：InferenceSession 是否真正可用
-    if not hasattr(ort, "InferenceSession"):
-        # 判断是 GPU 版还是 CPU 版
-        is_gpu = "gpu" in version.lower() or "GPU" in str(
-            getattr(ort, "__package__", "")
-        )
-        pkg_name = "onnxruntime-gpu" if is_gpu else "onnxruntime"
-        return CheckResult(
-            "warn",
-            f"onnxruntime 已安装 (v{version})，但 InferenceSession 不可用"
-            f"（C 扩展加载失败，通常是 CUDA/cuDNN 版本不匹配）\n"
-            f"    修复: pip install {pkg_name}==1.17.1  # 或其他与你的 CUDA 版本兼容的版本",
-        )
+    if not usable:
+        # 根据错误信息生成修复建议
+        if version and "InferenceSession" in (error or ""):
+            return CheckResult(
+                "warn",
+                f"onnxruntime 已安装 (v{version})，但 InferenceSession 不可用\n"
+                "    原因: C 扩展加载失败（CUDA/cuDNN 版本不匹配）\n"
+                "    修复: pip install onnxruntime  # CPU 版本（兼容性最好）\n"
+                "    或:   pip install onnxruntime-gpu==1.19.0  # PyTorch>=2.4 (cuDNN 9.x)\n"
+                "    或:   pip install onnxruntime-gpu==1.17.1  # PyTorch<=2.3 (cuDNN 8.x)",
+            )
+        return CheckResult("warn", f"onnxruntime 不可用: {error}")
 
-    # 检查可用的 Execution Provider
-    try:
-        providers = ort.get_available_providers()
-    except Exception:  # noqa: BLE001
-        providers = []
-
-    has_gpu = "CUDAExecutionProvider" in providers
+    has_gpu = providers and "CUDAExecutionProvider" in providers
     if has_gpu:
         return CheckResult(
             "ok",
