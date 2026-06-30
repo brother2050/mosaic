@@ -24,6 +24,7 @@ from typing import Any
 
 from mosaic.core._device_utils import (
     apply_optimizations,
+    auto_resolve_device_dtype,
     infer_device,
     resolve_device,
     resolve_dtype,
@@ -88,11 +89,14 @@ class BaseDigitalHumanNode(Node):
         **kwargs: Any,
     ) -> None:
         super().__init__(bus=bus, **kwargs)
-        self._device: str = device
-        self._dtype_str: str = dtype
         self._scheduler: Scheduler = scheduler or get_scheduler()
         self._logger = logging.getLogger(
             f"mosaic.nodes.digital_human.{self.name}"
+        )
+
+        # 自动解析设备与 dtype：CPU 环境下将 float16 降级为 float32
+        self._device, self._dtype_str = auto_resolve_device_dtype(
+            device, dtype, self._scheduler, self._logger,
         )
 
         # 运行时持有的 Pipeline / 模型

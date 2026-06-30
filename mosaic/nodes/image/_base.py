@@ -27,6 +27,7 @@ from typing import Any
 
 from mosaic.core._device_utils import (
     apply_optimizations,
+    auto_resolve_device_dtype,
     infer_device,
     resolve_dtype,
     run_diffusers_pipeline,
@@ -113,14 +114,18 @@ class BaseImageNode(Node):
     ) -> None:
         super().__init__(bus=bus, **kwargs)
         self._model_name: str = model
-        self._device: str = device
-        self._dtype_str: str = dtype
-        self._enable_attention_slicing: bool = enable_attention_slicing
-        self._enable_vae_slicing: bool = enable_vae_slicing
-        self._enable_model_cpu_offload: bool = enable_model_cpu_offload
         self._scheduler_name: str | None = scheduler_name
         self._scheduler: Scheduler = scheduler or get_scheduler()
         self._logger = logging.getLogger(f"mosaic.nodes.image.{self.name}")
+
+        # 自动解析设备与 dtype：CPU 环境下将 float16 降级为 float32
+        # （float16 在 CPU 上无法正确推理，会产生黑图）
+        self._device, self._dtype_str = auto_resolve_device_dtype(
+            device, dtype, self._scheduler, self._logger,
+        )
+        self._enable_attention_slicing: bool = enable_attention_slicing
+        self._enable_vae_slicing: bool = enable_vae_slicing
+        self._enable_model_cpu_offload: bool = enable_model_cpu_offload
 
         # 运行时持有的 diffusers Pipeline（load 后填充）
         self._pipeline: Any = None

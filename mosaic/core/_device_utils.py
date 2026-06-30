@@ -23,6 +23,7 @@ __all__ = [
     "resolve_dtype",
     "resolve_device",
     "infer_device",
+    "auto_resolve_device_dtype",
     "apply_optimizations",
     "run_diffusers_pipeline",
 ]
@@ -137,6 +138,50 @@ def infer_device(model: Any, scheduler: Any | None = None) -> str:
         return next(model.parameters()).device
     except (StopIteration, AttributeError, RuntimeError, TypeError):
         return fallback
+
+
+def auto_resolve_device_dtype(
+    device: str,
+    dtype: str,
+    scheduler: Any | None = None,
+    logger: Any | None = None,
+) -> tuple[str, str]:
+    """自动解析设备与 dtype：CPU 环境下将 float16/bfloat16 降级为 float32。
+
+    **float16 在 CPU 上无法正确推理**（PyTorch 限制），会产生黑图/垃圾输出。
+    本函数在设备降级为 CPU 时自动将 dtype 调整为 ``"float32"``，并发出告警。
+
+    Parameters
+    ----------
+    device:
+        用户指定的设备字符串（如 ``"cuda"``、``"cpu"``）。
+    dtype:
+        用户指定的精度字符串（如 ``"float16"``、``"float32"``）。
+    scheduler:
+        调度器实例，用于判断 GPU 可用性。
+    logger:
+        可选的日志器，用于输出降级告警。
+
+    Returns
+    -------
+    tuple[str, str]
+        ``(resolved_device, resolved_dtype)``
+    """
+    resolved_device = resolve_device(device, scheduler)
+    resolved_dtype = dtype
+
+    if resolved_device == "cpu" and dtype in ("float16", "fp16", "bfloat16", "bf16"):
+        resolved_dtype = "float32"
+        msg = (
+            "Device downgraded to CPU but dtype is %s — auto-switching to float32 "
+            "to avoid black/garbage images (fp16 on CPU is not supported by PyTorch)."
+        ) % dtype
+        if logger is not None:
+            logger.warning(msg)
+        else:
+            logger_mod.warning(msg)
+
+    return resolved_device, resolved_dtype
 
 
 def apply_optimizations(

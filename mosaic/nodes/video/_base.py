@@ -27,7 +27,12 @@ import logging
 import os
 from typing import Any
 
-from mosaic.core._device_utils import infer_device, resolve_device, resolve_dtype
+from mosaic.core._device_utils import (
+    auto_resolve_device_dtype,
+    infer_device,
+    resolve_device,
+    resolve_dtype,
+)
 from mosaic.core.events import EventBus, EventType, get_event_bus
 from mosaic.core.node import Node, NodeSpec
 from mosaic.core.scheduler import Scheduler, get_scheduler
@@ -118,10 +123,13 @@ class BaseVideoNode(Node):
     ) -> None:
         super().__init__(bus=bus, **kwargs)
         self._model_name: str = model
-        self._device: str = device
-        self._dtype_str: str = dtype
         self._scheduler: Scheduler = scheduler or get_scheduler()
         self._logger = logging.getLogger(f"mosaic.nodes.video.{self.name}")
+
+        # 自动解析设备与 dtype：CPU 环境下将 float16 降级为 float32
+        self._device, self._dtype_str = auto_resolve_device_dtype(
+            device, dtype, self._scheduler, self._logger,
+        )
 
         # 运行时持有的 Pipeline / 模型（load 后填充）
         self._pipeline: Any = None
