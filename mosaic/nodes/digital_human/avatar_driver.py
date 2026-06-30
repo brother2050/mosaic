@@ -138,6 +138,7 @@ class AvatarDriver(BaseDigitalHumanNode):
         method: str = "liveportrait",
         device: str = "cuda",
         dtype: str = "float16",
+        wav2vec2_model: str = "facebook/wav2vec2-base-960h",
         **kwargs: Any,
     ) -> None:
         super().__init__(device=device, dtype=dtype, **kwargs)
@@ -150,6 +151,7 @@ class AvatarDriver(BaseDigitalHumanNode):
             self._model_name: str = method_default
         else:
             self._model_name = model
+        self._wav2vec2_model: str = wav2vec2_model
 
         # 运行时子模块引用（load 后填充）
         self._components: dict[str, Any] | None = None
@@ -321,10 +323,10 @@ class AvatarDriver(BaseDigitalHumanNode):
             )
 
             self._processor = Wav2Vec2Processor.from_pretrained(
-                "facebook/wav2vec2-base-960h"
+                self._wav2vec2_model
             )
             self._audio_encoder = Wav2Vec2Model.from_pretrained(
-                "facebook/wav2vec2-base-960h"
+                self._wav2vec2_model
             ).to(device)
         except ImportError:
             self._logger.debug(

@@ -123,10 +123,18 @@ class BaseTextNode(Node):
         from transformers import AutoModelForCausalLM, AutoTokenizer  # type: ignore
         import torch  # type: ignore
 
+        from mosaic.nodes._pipeline_utils import _resolve_cache_dir
+
+        # 显式传递 cache_dir，确保 HF_HOME 对所有文本节点生效
+        cache_dir = _resolve_cache_dir()
+
         # 加载 tokenizer
+        tokenizer_kwargs: dict = {"trust_remote_code": self._trust_remote_code}
+        if cache_dir is not None:
+            tokenizer_kwargs["cache_dir"] = cache_dir
         self._tokenizer = AutoTokenizer.from_pretrained(
             self._model_name,
-            trust_remote_code=self._trust_remote_code,
+            **tokenizer_kwargs,
         )
         # 处理无 pad_token 的情况
         if self._tokenizer.pad_token is None:
@@ -145,6 +153,8 @@ class BaseTextNode(Node):
             "device_map": self._device_map,
             "trust_remote_code": self._trust_remote_code,
         }
+        if cache_dir is not None:
+            load_kwargs["cache_dir"] = cache_dir
         # 优先使用 dtype 参数（新版 transformers），回退 torch_dtype（旧版兼容）
         try:
             self._model = AutoModelForCausalLM.from_pretrained(

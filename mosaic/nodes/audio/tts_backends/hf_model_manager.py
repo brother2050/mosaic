@@ -102,10 +102,14 @@ class HFModelManager:
     ) -> str:
         """确保模型存在本地，不存在则从 HF 下载。
 
+        当 ``model_path`` 不是已存在的本地目录、且看起来像 HF 仓库 ID
+        （包含 ``/``）时，自动解析到 ``{HF_HOME}/tts_models/{backend_name}``
+        作为下载目录。这样 ``HF_HOME`` 环境变量对 TTS 后端同样生效。
+
         Parameters
         ----------
         model_path : str
-            本地模型目录路径。如果目录存在且非空，直接返回。
+            本地模型目录路径或 HF 仓库 ID。如果目录存在且非空，直接返回。
         repo_id : str | None
             HF 仓库 ID（如 ``"2Noise/ChatTTS"``）。
             如果为 ``None`` 且 ``backend_name`` 提供，则使用默认仓库。
@@ -132,22 +136,37 @@ class HFModelManager:
         if repo_id is None and backend_name is not None:
             repo_id = HFModelManager.DEFAULT_REPOS.get(backend_name)
         if repo_id is None:
-            raise FileNotFoundError(
-                f"Model path '{model_path}' does not exist and no "
-                f"repo_id or backend_name provided for download."
-            )
+            # model_path 可能就是 repo_id
+            if "/" in model_path and not os.path.isabs(model_path):
+                repo_id = model_path
+            else:
+                raise FileNotFoundError(
+                    f"Model path '{model_path}' does not exist and no "
+                    f"repo_id or backend_name provided for download."
+                )
+
+        # 如果 model_path 看起来是 repo ID（含 / 且非绝对路径），
+        # 解析到 HF_HOME 下的标准目录，使 HF_HOME 对 TTS 后端生效
+        if "/" in model_path and not os.path.isabs(model_path) and not os.path.isdir(model_path):
+            from mosaic.core.env import MosaicEnv
+            hf_home = MosaicEnv.get_hf_home()
+            dir_name = backend_name or repo_id.replace("/", "--")
+            actual_path = os.path.join(hf_home, "tts_models", dir_name)
+        else:
+            actual_path = model_path
 
         # 创建父目录
-        parent_dir = os.path.dirname(os.path.abspath(model_path))
+        parent_dir = os.path.dirname(os.path.abspath(actual_path))
         os.makedirs(parent_dir, exist_ok=True)
 
         # 下载
         logger.info(
-            "Model not found at %s. Downloading from HF repo %r ...",
+            "Model not found at %s. Downloading from HF repo %r to %s ...",
             model_path,
             repo_id,
+            actual_path,
         )
-        return HFModelManager._download(repo_id, model_path)
+        return HFModelManager._download(repo_id, actual_path)
 
     @staticmethod
     def _download(repo_id: str, local_dir: str) -> str:

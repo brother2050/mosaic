@@ -1637,6 +1637,7 @@ print(result.get("num_frames"))
 | `method` | str | `liveportrait` | 驱动方法（`liveportrait` / `sadtalker` / `musetalk`） |
 | `device` | str | `cuda` | 推理设备 |
 | `dtype` | str | `float16` | 推理精度 |
+| `wav2vec2_model` | str | `facebook/wav2vec2-base-960h` | wav2vec2 音频编码器模型（HF 仓库 ID 或本地路径） |
 
 #### run 输入
 
@@ -1696,6 +1697,7 @@ result.get("video").save("avatar.mp4")
 | `method` | str | `musetalk` | 方法 |
 | `device` | str | `cuda` | 推理设备 |
 | `dtype` | str | `float16` | 推理精度 |
+| `wav2vec2_model` | str | `facebook/wav2vec2-base-960h` | wav2vec2 音频编码器模型（HF 仓库 ID 或本地路径） |
 
 > **method 与模型对应关系**：
 > - `method="musetalk"`（默认）→ `KwaiVGI/MuseTalk`

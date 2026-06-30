@@ -201,11 +201,32 @@ snapshot_download('sentence-transformers/all-MiniLM-L6-v2')
 
 ### 自定义模型路径
 
-默认情况下，模型下载到 `~/.cache/huggingface/hub/`。如果需要将模型存放在其他位置，有以下三种方式：
+默认情况下，模型下载到 `~/.cache/huggingface/hub/`。Mosaic 提供以下方式自定义模型存储位置，**所有方式对所有节点统一生效**：
 
-**方式 1：节点构造函数传入本地路径（推荐）**
+**方式 1：设置 `HF_HOME` 环境变量（全局生效，推荐）**
 
-所有节点的 `model` 参数既接受 HuggingFace 仓库 ID，也接受本地目录路径。模型已在本地时，直接传路径即可：
+`HF_HOME` 是 Mosaic 统一支持的缓存根目录。设置后，**所有节点**（文本/图像/视频/音频/TTS 后端/RAG/数字人等）的模型都会下载到该目录下：
+
+```bash
+# 设置缓存根目录
+export HF_HOME=/data/hf_cache
+
+# 模型将下载到：
+#   /data/hf_cache/hub/           — 常规节点（text/image/video/audio/rag 等）
+#   /data/hf_cache/tts_models/    — TTS 后端（ChatTTS/Fish/SoVITS/CosyVoice）
+```
+
+```python
+# 也可在 Python 代码中设置（必须在 import mosaic 之前）
+import os
+os.environ["HF_HOME"] = "/data/hf_cache"
+```
+
+> **原理**：常规节点通过 `from_pretrained(cache_dir=...)` 显式传递缓存路径；TTS 后端在 `HFModelManager` 中将仓库 ID 解析到 `{HF_HOME}/tts_models/{后端名}` 目录。两种机制统一由 `HF_HOME` 控制。
+
+**方式 2：节点构造函数传入本地路径**
+
+所有节点的 `model` 参数既接受 HuggingFace 仓库 ID，也接受本地目录路径。模型已在本地时，直接传路径即可跳过下载：
 
 ```python
 from mosaic import Pipeline, MosaicData
@@ -218,41 +239,40 @@ pipeline.add(TextToImage(model="/data/models/sdxl-base"))
 result = pipeline.run(MosaicData(prompt="a cat"))
 ```
 
-TTS 后端同理，通过 `model_path` 指定：
+TTS 后端同理，通过 `model` 参数指定本地路径：
 
 ```python
 from mosaic.nodes.audio.tts import TTS
 
+# 传入本地路径（TTS 节点会将其透传给后端的 model_path）
 tts = TTS(backend="chattts", model="/data/models/chattts")
 result = tts.run(MosaicData(text="你好", language="zh"))
 ```
 
-**方式 2：设置 HF_HOME 环境变量**
+数字人域的 `AvatarDriver` 和 `LipSyncer` 默认使用 `facebook/wav2vec2-base-960h` 做音频特征提取，也可通过 `wav2vec2_model` 参数自定义：
 
-修改 HuggingFace 默认缓存根目录，所有自动下载的模型都会存到该位置：
+```python
+from mosaic.nodes.digital_human import AvatarDriver
 
-```bash
-# 设置缓存目录（所有 from_pretrained 下载的模型都会存到这里）
-export HF_HOME=/data/hf_cache
-
-# 或在 Python 中设置
-import os
-os.environ["HF_HOME"] = "/data/hf_cache"
+driver = AvatarDriver(
+    model="/data/models/liveportrait",
+    wav2vec2_model="/data/models/wav2vec2",  # 自定义 wav2vec2 路径
+)
 ```
 
 **方式 3：国内镜像加速下载**
 
-设置镜像端点加速模型下载（不影响已下载的模型）：
+设置镜像端点加速模型下载（不影响已下载的模型，对所有节点生效）：
 
 ```bash
-# 使用 HF 镜像
+# 方式 A：使用 HF 镜像（对所有节点生效）
 export HF_ENDPOINT=https://hf-mirror.com
 
-# 或使用 Mosaic 专用镜像变量
+# 方式 B：使用 Mosaic 专用镜像变量（TTS 后端优先读取）
 export MOSAIC_HF_MIRROR=https://hf-mirror.com
 ```
 
-> TTS 后端模型会自动使用镜像加速下载。常规节点（文本/图像/视频等）依赖 HuggingFace 原生 `HF_ENDPOINT` 机制。
+> `HF_ENDPOINT` 对所有节点生效（HuggingFace 库原生支持）。`MOSAIC_HF_MIRROR` 仅 TTS 后端读取，作为 `HF_ENDPOINT` 未设置时的备选。
 
 ---
 

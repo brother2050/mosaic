@@ -10,13 +10,37 @@
   首次加载失败后自动回退到 fp32。
 - **版本诊断**：加载失败时在错误消息中附带 diffusers/transformers 版本信息，
   并给出修复建议。
+- **cache_dir 支持**：显式读取 ``HF_HOME`` 环境变量并传递给
+  ``from_pretrained(cache_dir=...)``，确保自定义缓存路径对所有节点生效。
 """
 from __future__ import annotations
 
 import logging
+import os
 from typing import Any
 
 logger = logging.getLogger(__name__)
+
+
+def _resolve_cache_dir() -> str | None:
+    """解析 HuggingFace 缓存目录。
+
+    优先级与 HuggingFace 库一致：
+    1. ``HF_HUB_CACHE`` 环境变量
+    2. ``HF_HOME`` 环境变量下的 ``hub`` 子目录
+    3. ``None``（让 HF 库使用默认路径）
+
+    显式返回 ``cache_dir`` 而非依赖 HF 库隐式读取，确保行为可预测。
+    """
+    hf_hub_cache = os.environ.get("HF_HUB_CACHE")
+    if hf_hub_cache and hf_hub_cache.strip():
+        return hf_hub_cache.strip()
+
+    hf_home = os.environ.get("HF_HOME")
+    if hf_home and hf_home.strip():
+        return os.path.join(hf_home.strip(), "hub")
+
+    return None
 
 
 def _preimport_t5_components() -> None:
@@ -195,6 +219,11 @@ def safe_load_pipeline(
     """
     import torch  # type: ignore
 
+    # 显式传递 cache_dir，确保 HF_HOME 对所有节点生效
+    cache_dir = _resolve_cache_dir()
+    if cache_dir is not None and "cache_dir" not in kwargs:
+        kwargs["cache_dir"] = cache_dir
+
     # 解析 torch_dtype
     torch_dtype = kwargs.pop("torch_dtype", None)
     if torch_dtype is None and dtype_str is not None:
@@ -287,6 +316,10 @@ def safe_load_processor(
         加载失败时抛出，包含版本诊断信息。
     """
     try:
+        # 显式传递 cache_dir，确保 HF_HOME 对所有节点生效
+        cache_dir = _resolve_cache_dir()
+        if cache_dir is not None and "cache_dir" not in kwargs:
+            kwargs["cache_dir"] = cache_dir
         return processor_class.from_pretrained(model_name, **kwargs)
     except (ImportError, AttributeError, ValueError, OSError, EnvironmentError) as exc:
         raise RuntimeError(
@@ -325,6 +358,11 @@ def safe_load_model(
         加载失败时抛出，包含版本诊断信息。
     """
     # 优先使用 dtype=（新版 transformers），回退 torch_dtype=（旧版兼容）
+    # 显式传递 cache_dir，确保 HF_HOME 对所有节点生效
+    cache_dir = _resolve_cache_dir()
+    if cache_dir is not None and "cache_dir" not in kwargs:
+        kwargs["cache_dir"] = cache_dir
+
     if dtype is not None:
         try:
             return model_class.from_pretrained(model_name, dtype=dtype, **kwargs)
