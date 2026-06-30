@@ -83,9 +83,9 @@ pipe2 = Pipeline([TextGenerator(), TextToImage(), MultiFormatExporter()])
 # 复杂链路
 pipe = (
     TextGenerator()
-    | TextRewriter(style="formal")
+    | TextRewriter()
     | TextToImage()
-    | Upscaler(scale=2)
+    | Upscaler()
     | MultiFormatExporter()
 )
 ```
@@ -339,10 +339,10 @@ pipe = (
     | TextToImage(model="SDXL")
     | Upscaler(scale=2)
     | ImageToVideo(model="SVD-XT")
-    | VideoEncoder(output_path="output.mp4", fps=8)
+    | VideoEncoder()
 )
 
-result = pipe.run(MosaicData(prompt="A panda riding a bicycle on the moon"))
+result = pipe.run(MosaicData(prompt="A panda riding a bicycle on the moon", fps=8, output_path="output.mp4"))
 print(f"视频已保存: output.mp4")
 ```
 
@@ -404,12 +404,14 @@ pipe = (
     | TTS(backend="chattts")
     | SubtitleGenerator()
     | SubtitleAligner()
-    | VideoEncoder(output_path="video.mp4", fps=24)
+    | VideoEncoder()
 )
 
 result = pipe.run(MosaicData(
     prompt="A scenic mountain view",
     text="远处的山峰在云雾中若隐若现",
+    fps=24,
+    output_path="video.mp4",
 ))
 ```
 

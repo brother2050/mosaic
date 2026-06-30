@@ -139,9 +139,9 @@ result = pipeline.run(MosaicData(
     height=1024,
 ))
 
-# 查看结果
-image = result.get("image")
-image.save("panda.png")
+# 查看结果（TextToImage 输出 images 列表）
+images = result.get("images")
+images[0].save("panda.png")
 print(f"已保存到 panda.png")
 ```
 

@@ -271,23 +271,23 @@ from mosaic.nodes.image import TextToImage
 # 1. 创建一个 Pipeline
 pipeline = Pipeline()
 
-# 2. 添加节点（按顺序）
+# 2. 添加节点（构造函数仅传模型和加载相关参数）
 pipeline.add(TextToImage(
     model="stabilityai/stable-diffusion-xl-base-1.0",
+))
+
+# 3. 运行（run 接收 MosaicData 对象，生成参数在这里传）
+result = pipeline.run(MosaicData(
+    prompt="a cup of coffee on a wooden table, morning light",
     num_inference_steps=30,
     guidance_scale=7.5,
     width=1024,
     height=1024,
 ))
 
-# 3. 运行（run 接收 MosaicData 对象，不是关键字参数）
-result = pipeline.run(MosaicData(
-    prompt="a cup of coffee on a wooden table, morning light",
-))
-
-# 4. 查看结果
-image = result.get("image")
-image.save("coffee.png")
+# 4. 查看结果（TextToImage 输出 images 列表）
+images = result.get("images")
+images[0].save("coffee.png")
 print("Saved to coffee.png")
 ```
 

@@ -27,16 +27,16 @@ def example_1_text_to_image():
     print("\n=== 示例 1：文生图 ===")
 
     t2i = TextToImage(model="stabilityai/stable-diffusion-xl-base-1.0")
-    result = t2i.run(
+    result = t2i.run(MosaicData(
         prompt="A cute cat sitting on a windowsill, soft morning light, 4K",
         negative_prompt="blurry, low quality",
         seed=42,
-    )
+    ))
 
-    image = result.get("image")
-    image.save("output_text_to_image.png")
-    print(f"已生成：{image.size}, 保存到 output_text_to_image.png")
-    return image
+    images = result.get("images")
+    images[0].save("output_text_to_image.png")
+    print(f"已生成：{images[0].size}, 保存到 output_text_to_image.png")
+    return images[0]
 
 
 def example_2_image_to_image():
@@ -68,12 +68,12 @@ def example_3_inpainting():
     image = ImageData.from_file("room.jpg")
     mask = ImageData.from_file("mask.png")  # 白色区域为重绘区
 
-    result = inpaint.run(
+    result = inpaint.run(MosaicData(
         image=image,
-        mask=mask,
+        mask_image=mask,
         prompt="a beautiful flower garden",
         seed=42,
-    )
+    ))
 
     result.get("image").save("output_inpainting.png")
     print("已重绘指定区域")
@@ -86,7 +86,7 @@ def example_4_upscaler():
     upscaler = Upscaler(model="stabilityai/stable-diffusion-x4-upscaler")
     low_res = ImageData.from_file("low_res.jpg")
 
-    result = upscaler.run(MosaicData(image=low_res, scale=4))
+    result = upscaler.run(MosaicData(image=low_res, scale_factor=4))
     image = result.get("image")
     image.save("output_upscaled.png")
     print(f"已放大：{low_res.size} → {image.size}")
@@ -127,13 +127,14 @@ def example_7_combined_pipeline():
     pipe = (
         TextToImage(model="stabilityai/stable-diffusion-xl-base-1.0")
         | BackgroundRemover(model="briaai/RMBG-2.0")
-        | Upscaler(scale=4)
+        | Upscaler()
     )
 
-    result = pipe.run(
+    result = pipe.run(MosaicData(
         prompt="a beautiful flower, isolated on white background",
         seed=42,
-    )
+        scale_factor=4,
+    ))
 
     result.get("image").save("output_combined.png")
     print("已生成去背景并 4x 超分的高清图")
