@@ -16,6 +16,7 @@ import sys
 sys.path.insert(0, "/workspace/mosaic")
 
 from mosaic.nodes.audio import TTS
+from mosaic import MosaicData
 
 
 def example_1_basic():
@@ -87,10 +88,10 @@ def example_4_precompute_speaker():
 
     # 后续：直接复用，节省时间
     tts_cached = TTS(backend="sovits", speaker_features=features)
-    result = tts_cached.run(text="第一次复用", language="zh")
+    result = tts_cached.run(MosaicData(text="第一次复用", language="zh"))
     result.get("audio").save("output_sovits_cached_1.wav")
 
-    result = tts_cached.run(text="第二次复用", language="zh")
+    result = tts_cached.run(MosaicData(text="第二次复用", language="zh"))
     result.get("audio").save("output_sovits_cached_2.wav")
 
     print("已使用缓存特征合成两次，无需重新提取")

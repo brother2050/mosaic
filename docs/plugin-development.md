@@ -636,11 +636,12 @@ class TestSentimentAnalyzer:
 ```python
 # 安装：pip install mosaic-plugin-sentiment
 from mosaic import Pipeline
+from mosaic.core.types import MosaicData
 from mosaic_plugin_sentiment.nodes import SentimentAnalyzer
 from mosaic.nodes.text import TextGenerator
 
 pipe = TextGenerator() | SentimentAnalyzer()
-result = pipe.run(prompt="Write a product review, then analyze it")
+result = pipe.run(MosaicData(prompt="Write a product review, then analyze it"))
 print(result.get("sentiment"))
 ```
 
@@ -754,9 +755,10 @@ TTS.register_backend("espeak", EspeakBackend)
 
 ```python
 from mosaic.nodes.audio import TTS
+from mosaic.core.types import MosaicData
 
 tts = TTS(backend="espeak", voice="zh")
-audio = tts.run({"text": "你好世界", "language": "zh"}).get("audio")
+audio = tts.run(MosaicData(text="你好世界", language="zh")).get("audio")
 audio.save("hello.wav")
 ```
 

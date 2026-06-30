@@ -36,7 +36,7 @@ def example_1_subtitle_generation():
     gen = SubtitleGenerator()
     audio = AudioData.from_file("speech.wav")
 
-    result = gen.run(audio=audio, language="zh")
+    result = gen.run(MosaicData(audio=audio, language="zh"))
     subtitle = result.get("subtitle")
 
     print(f"字幕段数: {len(result.get('segments', []))}")
@@ -112,7 +112,7 @@ def example_5_rag_with_existing_index():
     print("\n=== 示例 5：使用已有索引的 RAG 检索 ===")
 
     retriever = Retriever(index_path="./existing_index", top_k=5)
-    result = retriever.run(query="Mosaic 的 TTS 后端有哪些？")
+    result = retriever.run(MosaicData(query="Mosaic 的 TTS 后端有哪些？"))
 
     print(f"检索到 {len(result.get('documents', []))} 个相关文档")
     for doc in result.get("documents", [])[:3]:
@@ -133,7 +133,7 @@ def example_6_subtitle_rag_video_qa():
         | SubtitleGenerator()
         | VectorIndexer(embedding_model="BAAI/bge-m3", index_path="./video_index")
     )
-    index_pipe.run(audio=AudioData.from_file("tutorial_video.wav"))
+    index_pipe.run(MosaicData(audio=AudioData.from_file("tutorial_video.wav")))
     print("  视频索引已建立")
 
     # 第 2 步：用户提问

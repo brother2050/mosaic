@@ -363,7 +363,7 @@ class StreamAdapter(Protocol):
    │
    │ text="你好"
    ▼
-Pipeline.run({"text": "你好"})
+Pipeline.run(MosaicData(text="你好"))
    │
    │ MosaicData(text="你好")
    ▼
@@ -548,11 +548,11 @@ token:  [t1] [t2] [t3] [t4] [t5] ...
          ~100ms
 ```
 
-**实现**：基于 `transformers.TextIteratorStreamer`，在后台线程中运行模型推理，主线程中逐个 yield token。`Chat` 和 `TextGenerator` 节点均支持 `stream=True` 参数，通过 `MosaicData.stream` 字段透传给 Pipeline。
+**实现**：基于 `transformers.TextIteratorStreamer`，在后台线程中运行模型推理，主线程中逐个 yield token。`Chat` 和 `TextGenerator` 节点均提供 `stream()` 方法（与 `run()` 并列），在节点层面调用即可逐 token 获取输出。
 
 **使用方式**：
 ```python
-chat = Chat(model="Qwen/Qwen2.5-1.5B-Instruct", stream=True)
+chat = Chat(model="Qwen/Qwen2.5-1.5B-Instruct")
 for chunk in chat.stream(MosaicData(messages=[...], temperature=0.8)):
     print(chunk, end="", flush=True)
 ```

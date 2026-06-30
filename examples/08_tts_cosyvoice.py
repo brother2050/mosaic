@@ -16,6 +16,7 @@ import sys
 sys.path.insert(0, "/workspace/mosaic")
 
 from mosaic.nodes.audio import TTS
+from mosaic import MosaicData
 
 
 def example_1_basic():
@@ -23,7 +24,7 @@ def example_1_basic():
     print("\n=== 示例 1：基础合成（24kHz）===")
 
     tts = TTS(backend="cosyvoice", language="zh")
-    result = tts.run(text="CosyVoice 提供最高质量的语音合成。")
+    result = tts.run(MosaicData(text="CosyVoice 提供最高质量的语音合成。"))
 
     audio = result.get("audio")
     audio.save("output_cosyvoice_basic.wav")
@@ -61,7 +62,7 @@ def example_3_ode_steps_benchmark():
             language="zh",
             ode_steps=steps,
         )
-        result = tts.run(text=text, language="zh")
+        result = tts.run(MosaicData(text=text, language="zh"))
         audio = result.get("audio")
         audio.save(f"output_cosyvoice_ode_{steps}.wav")
         print(f"  步数 {steps:2d}: {audio.duration:.2f}s")

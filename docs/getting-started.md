@@ -136,7 +136,7 @@ pip install mosaic
 `text_to_image.py`：
 
 ```python
-from mosaic import Pipeline
+from mosaic import Pipeline, MosaicData
 from mosaic.nodes.image import TextToImage
 
 # 1. 创建一个 Pipeline
@@ -151,12 +151,12 @@ pipeline.add(TextToImage(
     height=1024,
 ))
 
-# 3. 运行
-result = pipeline.run(prompt="a cup of coffee on a wooden table, morning light")
+# 3. 运行（run 接收 MosaicData 对象，不是关键字参数）
+result = pipeline.run(MosaicData(
+    prompt="a cup of coffee on a wooden table, morning light",
+))
 
 # 4. 查看结果
-print(result)
-# PipelineResult(steps=1, outputs={'image': <PIL.Image ...>})
 image = result.get("image")
 image.save("coffee.png")
 print("Saved to coffee.png")
@@ -165,7 +165,6 @@ print("Saved to coffee.png")
 **预期输出**
 
 ```
-PipelineResult(steps=1, outputs={'image': <PIL.Image.Image ...>})
 Saved to coffee.png
 ```
 
@@ -182,7 +181,7 @@ pip install "mosaic[audio]"  # edge-tts 后端
 `text_to_speech.py`：
 
 ```python
-from mosaic import Pipeline
+from mosaic import Pipeline, MosaicData
 from mosaic.nodes.audio import TTS
 
 pipeline = Pipeline()
@@ -192,7 +191,7 @@ pipeline.add(TTS(
     language="zh",
 ))
 
-result = pipeline.run({"text": "你好，欢迎使用 Mosaic 框架！"})
+result = pipeline.run(MosaicData(text="你好，欢迎使用 Mosaic 框架！"))
 audio = result.get("audio")
 audio.save("hello.wav")
 print(f"已生成音频: {audio.duration:.2f} 秒, {audio.sample_rate} Hz")
@@ -222,24 +221,20 @@ pipeline.add(TTS(backend="sovits"))     # 32000Hz, 极少样本克隆
 `Chat` 和 `TextGenerator` 支持流式输出，逐 token 实时打印，延迟低至 100ms：
 
 ```python
-from mosaic import Pipeline
+from mosaic import MosaicData
 from mosaic.nodes.text import Chat
 
-pipeline = Pipeline()
-pipeline.add(Chat(
-    model="Qwen/Qwen2.5-1.5B-Instruct",
-    stream=True,  # 启用流式
-))
+chat = Chat(model="Qwen/Qwen2.5-1.5B-Instruct")
 
-# 流式运行，逐 token 打印
-for chunk in pipeline.stream(MosaicData(
+# 流式对话，逐 token 打印（在节点上调用 stream 方法）
+for chunk in chat.stream(MosaicData(
     messages=[{"role": "user", "content": "用 Python 写一首诗"}],
     temperature=0.8,
 )):
     print(chunk, end="", flush=True)
 ```
 
-> `stream=True` 时 `pipeline.stream()` 返回生成器，逐个 yield token。`stream=False` 时 `pipeline.run()` 返回完整结果。
+> 流式生成在**节点层面**调用 `chat.stream()` 或 `gen.stream()`，返回生成器逐个 yield 文本片段。非流式则调用 `run()` 返回完整 `MosaicData` 结果。
 
 ---
 
@@ -252,6 +247,7 @@ pip install "mosaic[video]"
 `text_to_video.py`：
 
 ```python
+from mosaic import MosaicData
 from mosaic.nodes.video import WanVideo
 
 wan = WanVideo(
@@ -260,11 +256,11 @@ wan = WanVideo(
     enable_vae_tiling=True,
 )
 
-result = wan.run({
-    "prompt": "a cat walking on the beach, sunset",
-    "num_frames": 81,   # 约 5 秒 @ 16fps
-    "fps": 16,
-})
+result = wan.run(MosaicData(
+    prompt="a cat walking on the beach, sunset",
+    num_frames=81,   # 约 5 秒 @ 16fps
+    fps=16,
+))
 
 video = result.get("video")  # VideoData 对象
 print(f"已生成视频: {result.get('num_frames')} 帧, {result.get('duration'):.2f} 秒")
@@ -363,7 +359,7 @@ TTS 节点本身是一个**路由器**，真正执行合成的是后端实例。
 from mosaic.nodes.audio import TTS
 
 tts = TTS(backend="chattts")   # 后端：chattts / fish / sovits / cosyvoice / edge_tts
-result = tts.run({"text": "你好", "language": "zh"})
+result = tts.run(MosaicData(text="你好", language="zh"))
 audio = result.get("audio")  # AudioData 对象
 ```
 

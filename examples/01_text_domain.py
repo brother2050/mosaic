@@ -44,11 +44,11 @@ def example_2_chat():
 
     chat = Chat(system_prompt="你是一个 Python 教学助手")
 
-    r1 = chat.run(message="什么是装饰器？")
+    r1 = chat.run(MosaicData(message="什么是装饰器？"))
     print(f"用户：什么是装饰器？")
     print(f"助手：{r1.get('reply')}\n")
 
-    r2 = chat.run(message="能举个例子吗？")
+    r2 = chat.run(MosaicData(message="能举个例子吗？"))
     print(f"用户：能举个例子吗？")
     print(f"助手：{r2.get('reply')}\n")
 
@@ -81,7 +81,7 @@ def example_4_translator():
         ("今天天气真好", "ja"),
         ("Hello world", "zh"),
     ]:
-        result = translator.run(text=text, target_lang=target)
+        result = translator.run(MosaicData(text=text, target_lang=target))
         print(f"{text} → [{target}]: {result.get('text')}")
 
     print()
@@ -115,7 +115,7 @@ def example_6_classifier():
     classifier = TextClassifier()
 
     # 情感分析
-    result = classifier.run(text="这家餐厅的食物非常棒！", mode="sentiment")
+    result = classifier.run(MosaicData(text="这家餐厅的食物非常棒！", mode="sentiment"))
     print(f"情感分析：{result.get('label')} ({result.get('scores')})")
 
     # 零样本分类

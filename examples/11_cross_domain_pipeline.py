@@ -221,7 +221,7 @@ def scenario_7_tts_backend_comparison():
         try:
             tts = TTS(backend=backend, language="zh")
             start = time.time()
-            result = tts.run(text=text, language="zh")
+            result = tts.run(MosaicData(text=text, language="zh"))
             duration = time.time() - start
             audio = result.get("audio")
             audio.save(f"comparison_{backend}.wav")

@@ -86,7 +86,7 @@ def example_4_upscaler():
     upscaler = Upscaler(model="stabilityai/stable-diffusion-x4-upscaler")
     low_res = ImageData.from_file("low_res.jpg")
 
-    result = upscaler.run(image=low_res, scale=4)
+    result = upscaler.run(MosaicData(image=low_res, scale=4))
     image = result.get("image")
     image.save("output_upscaled.png")
     print(f"已放大：{low_res.size} → {image.size}")
@@ -99,7 +99,7 @@ def example_5_background_remover():
     remover = BackgroundRemover(model="briaai/RMBG-2.0")
     image = ImageData.from_file("portrait.jpg")
 
-    result = remover.run(image=image)
+    result = remover.run(MosaicData(image=image))
     result.get("image").save("output_no_bg.png")
     print("已移除背景（输出 RGBA 透明）")
 

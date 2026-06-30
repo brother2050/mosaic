@@ -25,7 +25,7 @@ def example_1_basic_synthesis():
     print("\n=== 示例 1：基础合成（24kHz）===")
 
     tts = TTS(backend="chattts", language="zh")
-    result = tts.run(text="你好，欢迎使用 Mosaic 框架！", seed=42)
+    result = tts.run(MosaicData(text="你好，欢迎使用 Mosaic 框架！", seed=42))
 
     audio = result.get("audio")
     audio.save("output_chattts_basic.wav")
@@ -74,14 +74,14 @@ def example_3_random_voices():
     tts = TTS(backend="chattts", language="zh")
 
     # 相同 seed 总是生成相同音色
-    audio1 = tts.run(text="同一句话", seed=42).get("audio")
-    audio2 = tts.run(text="同一句话", seed=42).get("audio")
+    audio1 = tts.run(MosaicData(text="同一句话", seed=42)).get("audio")
+    audio2 = tts.run(MosaicData(text="同一句话", seed=42)).get("audio")
     assert audio1.duration > 0 and audio2.duration > 0
     print("Seed 42 两次生成音色一致")
 
     # 不同 seed 音色不同
     for seed in [42, 123, 999, 2024, 8888]:
-        audio = tts.run(text=f"这是第 {seed} 号声音", seed=seed).get("audio")
+        audio = tts.run(MosaicData(text=f"这是第 {seed} 号声音", seed=seed)).get("audio")
         audio.save(f"output_chattts_voice_{seed}.wav")
         print(f"Seed {seed} 已保存")
 

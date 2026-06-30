@@ -2,7 +2,7 @@
 
 > 全部 42 节点 + 4 个 TTS 后端的完整 API 参考。
 
-所有节点的 `run` 方法签名统一为 `run(self, input_data: MosaicData) -> MosaicData`，参数通过 `input_data.get(key)` 读取。调用示例统一使用 `result = node.run(MosaicData(prompt="..."))` 或 `result = node.run({"prompt": "..."})`，输出字段通过 `result.get("key")` 获取。
+所有节点的 `run` 方法签名统一为 `run(self, input_data: MosaicData) -> MosaicData`，参数通过 `input_data.get(key)` 读取。调用示例统一使用 `result = node.run(MosaicData(prompt="..."))`，输出字段通过 `result.get("key")` 获取。
 
 ## 目录
 

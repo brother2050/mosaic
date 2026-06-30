@@ -125,32 +125,37 @@ mosaic doctor       # 环境诊断
 ### 示例 1：文字描述 → 图片
 
 ```python
-from mosaic import Pipeline
-from mosaic.nodes.text import Chat
+from mosaic import Pipeline, MosaicData
 from mosaic.nodes.image import TextToImage
-from mosaic.nodes.export import MultiFormatExporter
 
 # 构建流水线
 pipeline = Pipeline()
-pipeline.add(Chat(model="Qwen/Qwen2.5-7B-Instruct"))
 pipeline.add(TextToImage(model="stabilityai/stable-diffusion-xl-base-1.0"))
-pipeline.add(MultiFormatExporter())
 
-# 运行
-result = pipeline.run(prompt="画一只在月球上骑自行车的熊猫")
-print(f"输出: {result}")
+# 运行（run 接收 MosaicData 对象）
+result = pipeline.run(MosaicData(
+    prompt="画一只在月球上骑自行车的熊猫",
+    width=1024,
+    height=1024,
+))
+
+# 查看结果
+image = result.get("image")
+image.save("panda.png")
+print(f"已保存到 panda.png")
 ```
 
 ### 示例 2：文本 → 语音（ChatTTS 流式）
 
 ```python
 import asyncio
+from mosaic import MosaicData
 from mosaic.nodes.audio import TTS
 
 tts = TTS(backend="chattts")
 
 # 阻塞合成
-result = tts.run({"text": "你好，欢迎使用 Mosaic！", "language": "zh"})
+result = tts.run(MosaicData(text="你好，欢迎使用 Mosaic！", language="zh"))
 audio = result.get("audio")  # AudioData 对象
 
 # 流式合成（首批延迟 ~50ms）
@@ -164,6 +169,7 @@ asyncio.run(stream_demo())
 ### 示例 3：文字 → 视频（Wan2.1）
 
 ```python
+from mosaic import MosaicData
 from mosaic.nodes.video import WanVideo
 
 wan = WanVideo(
@@ -172,11 +178,11 @@ wan = WanVideo(
     enable_vae_tiling=True,
 )
 
-result = wan.run({
-    "prompt": "一只猫在海滩上散步，夕阳西下",
-    "num_frames": 81,
-    "fps": 16,
-})
+result = wan.run(MosaicData(
+    prompt="一只猫在海滩上散步，夕阳西下",
+    num_frames=81,
+    fps=16,
+))
 video = result.get("video")  # VideoData 对象
 ```
 

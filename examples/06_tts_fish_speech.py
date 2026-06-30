@@ -16,6 +16,7 @@ import sys
 sys.path.insert(0, "/workspace/mosaic")
 
 from mosaic.nodes.audio import TTS
+from mosaic import MosaicData
 
 
 def example_1_basic():
@@ -23,7 +24,7 @@ def example_1_basic():
     print("\n=== 示例 1：基础合成（22.05kHz）===")
 
     tts = TTS(backend="fish", language="zh")
-    result = tts.run(text="你好世界，这是 Fish Speech 合成。")
+    result = tts.run(MosaicData(text="你好世界，这是 Fish Speech 合成。"))
 
     audio = result.get("audio")
     audio.save("output_fish_basic.wav")
@@ -44,7 +45,7 @@ def example_2_multilingual():
     ]
 
     for lang, text in texts:
-        result = tts.run(text=text, language=lang)
+        result = tts.run(MosaicData(text=text, language=lang))
         audio = result.get("audio")
         audio.save(f"output_fish_{lang}.wav")
         print(f"[{lang}] {text} → {audio.duration:.2f}s")
@@ -61,7 +62,7 @@ def example_3_voice_cloning():
     )
 
     # 任意新文本都会用参考音频的音色
-    result = tts.run(text="这是用参考音频克隆的声音，合成新文本。", language="zh")
+    result = tts.run(MosaicData(text="这是用参考音频克隆的声音，合成新文本。", language="zh"))
     audio = result.get("audio")
     audio.save("output_fish_cloned.wav")
     print(f"已克隆：{audio.duration:.2f}s")
@@ -118,8 +119,8 @@ def example_6_comparison():
     tts_chat = TTS(backend="chattts", language="zh")
     tts_fish = TTS(backend="fish", language="zh")
 
-    audio_chat = tts_chat.run(text=text, seed=42).get("audio")
-    audio_fish = tts_fish.run(text=text).get("audio")
+    audio_chat = tts_chat.run(MosaicData(text=text, seed=42)).get("audio")
+    audio_fish = tts_fish.run(MosaicData(text=text)).get("audio")
 
     print(f"ChatTTS: {audio_chat.sample_rate}Hz, {audio_chat.duration:.2f}s")
     print(f"Fish:    {audio_fish.sample_rate}Hz, {audio_fish.duration:.2f}s")

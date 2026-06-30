@@ -31,7 +31,7 @@ def example_1_avatar_driver():
     # 假设已有驱动数据（姿态/表情）
     motion = {"pose": "smile", "head_rotation": 15}
 
-    result = driver.run(avatar=avatar, motion=motion)
+    result = driver.run(MosaicData(avatar=avatar, motion=motion))
     result.get("output_image").save("output_avatar_driven.jpg")
     print("已生成驱动的数字人形象")
 
@@ -44,7 +44,7 @@ def example_2_lip_sync():
     video_frames = ImageData.load_video("talking_head_frames/")
     audio = AudioData.from_file("speech.wav")
 
-    result = lip_sync.run(video=video_frames, audio=audio)
+    result = lip_sync.run(MosaicData(video=video_frames, audio=audio))
     result.get("video").save("output_lipsync.mp4")
     print("已对口型同步")
 
@@ -121,7 +121,7 @@ def example_7_motion_to_video():
     print("\n=== 示例 7：动作 → 视频 ===")
 
     pipe = MotionGenerator(duration=3.0) | AvatarDriver()
-    result = pipe.run(prompt="a person walking forward")
+    result = pipe.run(MosaicData(prompt="a person walking forward"))
     print("已根据动作描述生成数字人视频")
 
 

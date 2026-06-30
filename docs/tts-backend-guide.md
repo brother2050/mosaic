@@ -203,14 +203,15 @@ audio = backend.synthesize("Hello, 世界", language="en")
 
 ```python
 from mosaic.nodes.audio.tts import TTS
+from mosaic import MosaicData
 
 # 显式指定后端
 tts = TTS(backend="cosyvoice", model="/data/cosyvoice")
-audio = tts.run({"text": "你好，世界", "language": "zh"})
+audio = tts.run(MosaicData(text="你好，世界", language="zh"))
 
 # 自动选择
 tts = TTS(backend="auto", model="auto")
-audio = tts.run({"text": "你好", "language": "zh", "quality": True})
+audio = tts.run(MosaicData(text="你好", language="zh", quality=True))
 ```
 
 ## 注意事项

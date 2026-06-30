@@ -27,7 +27,7 @@ def example_1_asr():
     asr = ASR(model="openai/whisper-large-v3")
     audio = AudioData.from_file("speech.wav")
 
-    result = asr.run(audio=audio, language="zh")
+    result = asr.run(MosaicData(audio=audio, language="zh"))
 
     print(f"识别文本：{result.get('text')}")
     print(f"检测语言：{result.get('language')}")

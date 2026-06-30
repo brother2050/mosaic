@@ -20,7 +20,7 @@
 最简单的管道就是按顺序添加节点：
 
 ```python
-from mosaic import Pipeline
+from mosaic import Pipeline, MosaicData
 from mosaic.nodes.text import TextGenerator
 from mosaic.nodes.image import TextToImage
 
@@ -36,7 +36,7 @@ pipeline = Pipeline([
 ])
 
 # 运行
-result = pipeline.run({"prompt": "画一只在月球上骑车的熊猫"})
+result = pipeline.run(MosaicData(prompt="画一只在月球上骑车的熊猫"))
 print(result.get("image"))  # ImageData
 ```
 
@@ -97,7 +97,7 @@ pipe = (
 `Branch` 让一个输入同时被多个节点处理，`Merge` 把多个输出合并：
 
 ```python
-from mosaic import Pipeline, Branch, Merge
+from mosaic import Pipeline, Branch, Merge, MosaicData
 from mosaic.nodes.image import TextToImage
 from mosaic.nodes.audio import TTS
 from mosaic.nodes.subtitle import SubtitleGenerator
@@ -114,7 +114,7 @@ pipeline.add(Branch([
 # 三路输出合并为一个 MosaicData
 pipeline.add(Merge())
 
-result = pipeline.run({"text": "一段文本"})
+result = pipeline.run(MosaicData(text="一段文本"))
 print(result.get("image"))    # ImageData
 print(result.get("audio"))    # AudioData
 print(result.get("subtitle")) # SubtitleData
@@ -147,7 +147,7 @@ Merge(strategy="first")     # 保留第一个非空
 基于数据动态选择唯一路径：
 
 ```python
-from mosaic import Pipeline, Branch, Merge
+from mosaic import Pipeline, Branch, Merge, MosaicData
 
 pipeline = Pipeline()
 pipeline.add(Branch([
@@ -157,7 +157,7 @@ pipeline.add(Branch([
 pipeline.add(Merge())
 
 # 根据 input.mode 选择不同路径
-result = pipeline.run({"text": "hello", "mode": "image"})
+result = pipeline.run(MosaicData(text="hello", mode="image"))
 # 仅执行 TextToImage
 ```
 
@@ -170,7 +170,7 @@ result = pipeline.run({"text": "hello", "mode": "image"})
 把长管道拆成多段执行，逐步检查：
 
 ```python
-from mosaic import Pipeline
+from mosaic import Pipeline, MosaicData
 
 # 段 1：生成文本
 text_step = TextGenerator(model="Qwen2.5-7B")
@@ -186,7 +186,7 @@ img_result.get("image").save("cat.png")
 ### 方式 2：使用 on_intermediate 回调
 
 ```python
-from mosaic import Pipeline
+from mosaic import Pipeline, MosaicData
 
 def log_intermediate(event):
     print(f"中间产物: {event.node} → {event.key}={event.value}")
@@ -198,13 +198,13 @@ pipeline = Pipeline([
 ])
 
 pipeline.on(EventType.INTERMEDIATE, log_intermediate)
-result = pipeline.run({"prompt": "..."})
+result = pipeline.run(MosaicData(prompt="..."))
 ```
 
 ### 方式 3：dry_run 验证
 
 ```python
-from mosaic import Pipeline
+from mosaic import Pipeline, MosaicData
 
 pipeline = Pipeline([TextGenerator(), TextToImage()])
 
@@ -281,7 +281,9 @@ task.cancel()
 `Pipeline.run()` 返回 `PipelineResult`：
 
 ```python
-result = pipeline.run({"prompt": "..."})
+from mosaic import MosaicData
+
+result = pipeline.run(MosaicData(prompt="..."))
 
 # 节点输出（按节点名）
 result.get("text")           # MosaicData
@@ -301,7 +303,9 @@ text_data: MosaicData = result.get("text", default=MosaicData())
 ### 错误处理
 
 ```python
-result = pipeline.run({"prompt": "..."})
+from mosaic import MosaicData
+
+result = pipeline.run(MosaicData(prompt="..."))
 
 if not result.ok:
     for err in result.errors:
@@ -324,7 +328,7 @@ image = result.get("image").get("image_data")  # MosaicData -> ImageData
 ### 示例 1：文字 → 图像 → 视频
 
 ```python
-from mosaic import Pipeline
+from mosaic import Pipeline, MosaicData
 from mosaic.nodes.text import TextGenerator
 from mosaic.nodes.image import TextToImage, Upscaler
 from mosaic.nodes.video import ImageToVideo
@@ -338,13 +342,14 @@ pipe = (
     | VideoEncoder(output_path="output.mp4", fps=8)
 )
 
-result = pipe.run({"prompt": "A panda riding a bicycle on the moon"})
+result = pipe.run(MosaicData(prompt="A panda riding a bicycle on the moon"))
 print(f"视频已保存: output.mp4")
 ```
 
 ### 示例 2：TTS → 口型同步 → 数字人
 
 ```python
+from mosaic import MosaicData
 from mosaic.nodes.audio import TTS
 from mosaic.nodes.digital_human import LipSyncer, AvatarDriver
 from mosaic.nodes.image import TextToImage
@@ -356,15 +361,16 @@ pipe = (
     | LipSyncer()               # 口型同步
 )
 
-result = pipe.run({
-    "prompt": "a friendly digital assistant",
-    "text": "你好，我是数字人助手。",
-})
+result = pipe.run(MosaicData(
+    prompt="a friendly digital assistant",
+    text="你好，我是数字人助手。",
+))
 ```
 
 ### 示例 3：文档 → RAG → 回答
 
 ```python
+from mosaic import MosaicData
 from mosaic.nodes.rag import DocumentParser, VectorIndexer, Retriever, CitationGenerator
 from mosaic.nodes.text import TextGenerator
 
@@ -376,17 +382,18 @@ pipe = (
     | CitationGenerator()
 )
 
-result = pipe.run({
-    "file_path": "manual.pdf",
-    "query": "如何使用 Mosaic 的 Pipeline？",
-    "index_path": "./index",
-})
+result = pipe.run(MosaicData(
+    file_path="manual.pdf",
+    query="如何使用 Mosaic 的 Pipeline？",
+    index_path="./index",
+))
 print(result.get("answer"))  # 带引用的答案
 ```
 
 ### 示例 4：文本 → TTS → 字幕 → 视频编码
 
 ```python
+from mosaic import MosaicData
 from mosaic.nodes.audio import TTS
 from mosaic.nodes.subtitle import SubtitleGenerator, SubtitleAligner
 from mosaic.nodes.export import VideoEncoder
@@ -400,16 +407,16 @@ pipe = (
     | VideoEncoder(output_path="video.mp4", fps=24)
 )
 
-result = pipe.run({
-    "prompt": "A scenic mountain view",
-    "text": "远处的山峰在云雾中若隐若现",
-})
+result = pipe.run(MosaicData(
+    prompt="A scenic mountain view",
+    text="远处的山峰在云雾中若隐若现",
+))
 ```
 
 ### 示例 5：并行处理图像和音频
 
 ```python
-from mosaic import Pipeline, Branch, Merge
+from mosaic import Pipeline, Branch, Merge, MosaicData
 from mosaic.nodes.image import TextToImage, Upscaler
 from mosaic.nodes.audio import TTS
 from mosaic.nodes.subtitle import SubtitleGenerator
@@ -423,7 +430,7 @@ pipe = Pipeline([
     Merge(strategy="concat"),
 ])
 
-result = pipe.run({"text": "A poetic description of autumn"})
+result = pipe.run(MosaicData(text="A poetic description of autumn"))
 # 同时得到 image, audio, subtitle
 ```
 
@@ -507,13 +514,15 @@ pipe = (
 #### 预热常用模型
 
 ```python
+from mosaic import MosaicData
+
 # 启动时预热
 text_node = TextGenerator(model="Qwen2.5-7B")
 text_node.load()  # 立即加载
 
 # 后续管道运行更快
 pipe = Pipeline([text_node, TextToImage()])
-result = pipe.run({"prompt": "..."})
+result = pipe.run(MosaicData(prompt="..."))
 ```
 
 ### 4. 缓存与持久化
@@ -532,13 +541,14 @@ VectorIndexer(index_path="./my_index").run(documents)
 
 ```python
 import hashlib
+from mosaic import MosaicData
 
 def tts_with_cache(text):
     key = hashlib.md5(text.encode()).hexdigest()
     cache_path = f"./tts_cache/{key}.wav"
     if os.path.exists(cache_path):
         return AudioData.load(cache_path)
-    audio = TTS(backend="chattts").run({"text": text}).get("audio")
+    audio = TTS(backend="chattts").run(MosaicData(text=text)).get("audio")
     audio.save(cache_path)
     return audio
 ```
