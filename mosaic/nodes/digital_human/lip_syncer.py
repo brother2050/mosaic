@@ -172,7 +172,7 @@ class LipSyncer(BaseDigitalHumanNode):
         wav2vec2_model: str = "facebook/wav2vec2-base-960h",
         **kwargs: Any,
     ) -> None:
-        super().__init__(device=device, dtype=dtype, **kwargs)
+        super().__init__(device=device, dtype=dtype, model=model, **kwargs)
         self._method: str = (method or "musetalk").lower().strip()
         # 以 method 为主导解析默认模型；用户显式指定其他 model 时保留之
         method_default = _DEFAULT_MODELS.get(self._method)

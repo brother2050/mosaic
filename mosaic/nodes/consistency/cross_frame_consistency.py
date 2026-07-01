@@ -148,13 +148,18 @@ class CrossFrameConsistency(BaseConsistencyNode):
                 f"Unsupported method {method!r}. "
                 f"Expected one of {self._SUPPORTED_METHODS}."
             )
-        super().__init__(
-            device=device, dtype=dtype, scheduler=scheduler, bus=bus, **kwargs
-        )
         self._model_name: str = model
         self._method: str = method
         # 实际加载时使用的模型（story-diffusion 可能回退到 SD 1.5）
+        # super().__init__ 尚未设置 _logger，用临时 logger
+        import logging
+        self._logger = logging.getLogger("mosaic.nodes.consistency.cross-frame-consistency")
         self._effective_model_name: str = self._resolve_effective_model()
+        # 传入 effective_model_name 以便 auto_resolve_device_dtype 检测 SD 1.5
+        super().__init__(
+            device=device, dtype=dtype, scheduler=scheduler, bus=bus,
+            model=self._effective_model_name, **kwargs
+        )
 
         # 运行时状态
         self._kv_mode: str = "off"  # "off" / "anchor" / "share"

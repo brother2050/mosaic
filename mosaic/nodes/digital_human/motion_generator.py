@@ -539,7 +539,7 @@ class MotionGenerator(BaseDigitalHumanNode):
                 f"Unsupported method {method!r}. "
                 f"Choose from {_SUPPORTED_METHODS}."
             )
-        super().__init__(device=device, dtype=dtype, **kwargs)
+        super().__init__(device=device, dtype=dtype, model=model, **kwargs)
         self._method: str = method
         self._skeleton_type: str = skeleton_type
         # model 仅对 text2motion 有意义；preset/audio2motion 不需要

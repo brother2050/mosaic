@@ -170,7 +170,7 @@ class RealtimeRenderer(BaseDigitalHumanNode):
         dtype: str = "float16",
         **kwargs: Any,
     ) -> None:
-        super().__init__(device=device, dtype=dtype, **kwargs)
+        super().__init__(device=device, dtype=dtype, model=model, **kwargs)
         self._model_name: str = model
         self._target_fps: int = max(1, int(target_fps))
         self._resolution: tuple[int, int] = (

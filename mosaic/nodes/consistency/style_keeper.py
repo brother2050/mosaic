@@ -257,11 +257,11 @@ class StyleKeeper(BaseConsistencyNode):
                 f"Unsupported method {method!r}. "
                 f"Choose from {_SUPPORTED_METHODS}."
             )
-        super().__init__(device=device, dtype=dtype, **kwargs)
-        self._method: str = method
+        # 先解析基础模型，用于 auto_resolve_device_dtype 检测 SD 1.5
         self._model_name: str = model
-        # 解析基础模型（不同方法含义不同）
         self._base_model: str = self._resolve_base_model(model, method)
+        super().__init__(device=device, dtype=dtype, model=self._base_model, **kwargs)
+        self._method: str = method
         # 运行时：保存原始注意力处理器以便恢复
         self._orig_attn_procs: dict[str, Any] | None = None
 
@@ -822,8 +822,9 @@ class StyleKeeper(BaseConsistencyNode):
         if vae is None:
             raise RuntimeError("Pipeline has no VAE for image encoding.")
 
-        # VAE 被 upcast_pipeline_components 上转为 float32（防黑图），
-        # 输入 tensor 必须使用 VAE 的 dtype，而非 pipeline 的 dtype（可能为 float16），
+        # VAE 可能被 upcast_pipeline_components 上转为 float32（防黑图），
+        # 也可能保持 pipeline 的原始 dtype（如 float16）。
+        # 动态获取 VAE 的实际 dtype 以确保 tensor 匹配，
         # 否则触发 "mat1 and mat2 must have the same dtype"。
         vae_dtype = next(vae.parameters()).dtype
 

@@ -285,22 +285,25 @@ def upcast_pipeline_components(
 ) -> None:
     """上转 pipeline 的 VAE 为 float32，防止 float16 下的黑图/NaN 问题。
 
-    **仅上转 VAE**。VAE 只在最后 decode 阶段调用一次，diffusers 内部会
-    将 UNet 的 float16 latent 自动转为 float32 传给 VAE，因此不会产生
-    dtype 不匹配错误。
+    **仅上转 VAE**。VAE 只在最后 decode 阶段调用一次，对 SDXL/SD1.5/HunyuanVideo/
+    WanVideo/LTXVideo 等 diffusers pipeline 安全（decode 时内部做
+    ``latents.to(vae.dtype)``）。
 
     **不上转 text_encoder**。text_encoder 的输出直接传给 UNet，如果
     text_encoder 是 float32 而 UNet 是 float16，会触发
     ``RuntimeError: mat1 and mat2 must have the same dtype``。
-    对于 SD 1.5 等 text_encoder 对 fp16 敏感的模型，应整体加载为 float32
-    （通过 ``dtype="float32"`` 参数），而非单独上转某个组件。
+
+    **例外：CogVideoX 和 SVD 跳过 VAE 上转**。这两类 pipeline 的 decode_latents
+    不做 ``latents.to(vae.dtype)`` 转换，VAE 上转会导致 dtype 不匹配报错。
+    SVD 还依赖 diffusers 自身的 force_upcast→cast-back 机制，永久 float32 会
+    破坏该机制。
 
     Parameters
     ----------
     pipeline:
         diffusers Pipeline 实例。
     model_name:
-        模型名称（保留参数，当前未使用）。
+        模型名称，用于判断是否为需要跳过 VAE 上转的模型。
     logger:
         可选的日志器。
     """
@@ -309,8 +312,25 @@ def upcast_pipeline_components(
 
     import torch  # type: ignore
 
-    # VAE → float32（所有模型，幂等安全）
-    # VAE 在 pipeline 末端调用，diffusers 内部会处理 latent dtype 转换
+    # CogVideoX 和 SVD 跳过 VAE 上转：diffusers 不做 latents→vae.dtype 转换
+    pipeline_cls_name = type(pipeline).__name__
+    skip_vae_upcast = (
+        "CogVideoX" in pipeline_cls_name
+        or "StableVideoDiffusion" in pipeline_cls_name
+        or "cogvideo" in model_name.lower()
+        or "svd" in model_name.lower()
+        or "stable-video-diffusion" in model_name.lower()
+    )
+    if skip_vae_upcast:
+        if logger is not None:
+            logger.debug(
+                "Skipping VAE upcast for %s (diffusers doesn't convert "
+                "latents dtype in decode_latents).",
+                pipeline_cls_name,
+            )
+        return
+
+    # VAE → float32（仅对 decode 时做 latents.to(vae.dtype) 的 pipeline 安全）
     vae = getattr(pipeline, "vae", None)
     if vae is not None:
         try:
