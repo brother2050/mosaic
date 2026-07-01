@@ -171,6 +171,7 @@ class LipSyncer(BaseDigitalHumanNode):
         device: str = "cuda",
         dtype: str = "float16",
         wav2vec2_model: str = "facebook/wav2vec2-base-960h",
+        onnx_model_path: str | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(device=device, dtype=dtype, model=model, **kwargs)
@@ -184,10 +185,14 @@ class LipSyncer(BaseDigitalHumanNode):
         else:
             self._model_name = model
         self._wav2vec2_model: str = wav2vec2_model
+        self._onnx_model_path: str | None = onnx_model_path
 
         # 运行时子模块引用（load 后填充）
         self._discriminator: Any = None
         self._audio_encoder: Any = None
+        # ONNX Runtime 加速（可选，load 阶段惰性初始化）
+        self._onnx_session: Any = None
+        self._use_onnx: bool = False
 
     # ------------------------------------------------------------------
     # 模型加载 / 卸载
@@ -223,6 +228,7 @@ class LipSyncer(BaseDigitalHumanNode):
             )
 
         self._apply_optimizations()
+        self._try_init_onnx()
         self._loaded = True
         self._logger.info(
             "Lip-syncer loaded (method=%s, device=%s, dtype=%s).",
@@ -399,6 +405,77 @@ class LipSyncer(BaseDigitalHumanNode):
                 )
             self._model = components
 
+    def _try_init_onnx(self) -> None:
+        """尝试初始化 ONNX Runtime 会话以加速推理。
+
+        使用 ``mosaic.core.onnx_utils`` 验证 onnxruntime 是否真正可用
+        （不仅检查 import，还验证 InferenceSession 属性存在）。当可用
+        且提供了 ``onnx_model_path`` 时，实际创建推理会话并赋值给
+        :attr:`_onnx_session`；否则仅记录原因并回退到 PyTorch 推理。
+        """
+        from mosaic.core.onnx_utils import (
+            OnnxRuntimeStatus,
+            create_inference_session,
+            get_onnx_providers,
+            is_onnxruntime_usable,
+        )
+
+        # 1) 没有提供 ONNX 模型路径：直接返回，使用 PyTorch 推理
+        if not self._onnx_model_path:
+            self._logger.info(
+                "No onnx_model_path provided; ONNX acceleration disabled "
+                "(using PyTorch inference)."
+            )
+            self._use_onnx = False
+            self._onnx_session = None
+            return
+
+        # 2) 检测 onnxruntime 是否真正可用
+        if not is_onnxruntime_usable():
+            _, _version, _providers, error = OnnxRuntimeStatus.get()
+            self._logger.warning(
+                "ONNX runtime not available: %s; falling back to "
+                "PyTorch inference.",
+                error or "unknown reason",
+            )
+            self._use_onnx = False
+            self._onnx_session = None
+            return
+
+        # 3) 检查模型文件是否存在
+        import os
+
+        if not os.path.exists(self._onnx_model_path):
+            self._logger.warning(
+                "ONNX model file not found: %s; falling back to "
+                "PyTorch inference.",
+                self._onnx_model_path,
+            )
+            self._use_onnx = False
+            self._onnx_session = None
+            return
+
+        # 4) 创建 ONNX 推理会话
+        try:
+            providers = get_onnx_providers(self._device)
+            self._onnx_session = create_inference_session(
+                self._onnx_model_path, providers=providers
+            )
+            self._use_onnx = True
+            self._logger.info(
+                "ONNX session created for LipSyncer "
+                "(path=%s, providers=%s).",
+                self._onnx_model_path,
+                self._onnx_session.get_providers(),
+            )
+        except Exception as exc:  # noqa: BLE001
+            self._logger.warning(
+                "ONNX session creation failed: %s. Using PyTorch inference.",
+                exc,
+            )
+            self._onnx_session = None
+            self._use_onnx = False
+
     def unload(self) -> None:
         """释放口型同步模型与显存。"""
         if self._pipeline is not None:
@@ -412,6 +489,8 @@ class LipSyncer(BaseDigitalHumanNode):
         self._processor = None
         self._discriminator = None
         self._audio_encoder = None
+        self._onnx_session = None
+        self._use_onnx = False
         self._loaded = False
         try:
             import torch  # type: ignore
@@ -634,6 +713,87 @@ class LipSyncer(BaseDigitalHumanNode):
 
         根据 :attr:`_method` 分发到对应模型调用。
         """
+        # 优先尝试 ONNX Runtime 加速推理，失败时回退到 PyTorch 模型
+        if self._use_onnx and self._onnx_session is not None:
+            try:
+                import numpy as np  # type: ignore
+                from PIL import Image  # type: ignore
+
+                # 根据会话声明的输入名匹配 face / audio / frame 输入
+                session_inputs = self._onnx_session.get_inputs()
+                audio_kw = (
+                    "audio", "wave", "waveform", "mel", "sound",
+                    "driving", "driven",
+                )
+                image_kw = (
+                    "face", "image", "source", "avatar", "reference", "src",
+                )
+                frame_kw = (
+                    "frame", "index", "idx", "step", "time",
+                )
+                audio_input_name: str | None = None
+                image_input_name: str | None = None
+                frame_input_name: str | None = None
+                for inp in session_inputs:
+                    lname = inp.name.lower()
+                    if audio_input_name is None and any(
+                        kw in lname for kw in audio_kw
+                    ):
+                        audio_input_name = inp.name
+                    elif image_input_name is None and any(
+                        kw in lname for kw in image_kw
+                    ):
+                        image_input_name = inp.name
+                    elif frame_input_name is None and any(
+                        kw in lname for kw in frame_kw
+                    ):
+                        frame_input_name = inp.name
+
+                feeds: dict[str, Any] = {}
+                # 人脸图输入 -> NCHW float32
+                if image_input_name is not None:
+                    face_arr = np.asarray(
+                        face_crop.convert("RGB"), dtype=np.float32
+                    )
+                    # HWC -> CHW -> NCHW
+                    face_arr = face_arr.transpose(2, 0, 1)[np.newaxis, ...]
+                    feeds[image_input_name] = face_arr
+                # 音频波形 -> float32（1D 输入补 batch 维）
+                if audio_input_name is not None:
+                    audio_arr = np.asarray(waveform, dtype=np.float32)
+                    if audio_arr.ndim == 1:
+                        audio_arr = audio_arr[np.newaxis, :]
+                    feeds[audio_input_name] = audio_arr
+                # 帧索引输入 -> int64 标量数组
+                if frame_input_name is not None:
+                    feeds[frame_input_name] = np.array(
+                        [frame_idx], dtype=np.int64
+                    )
+
+                result = self._onnx_session.run(None, feeds)
+                # 取首个输出并转 PIL.Image
+                arr = np.asarray(result[0])
+                if arr.ndim == 4:
+                    arr = arr[0]
+                # 检测 NaN：上游推理异常时报错而非静默输出黑帧
+                if np.isnan(arr).any():
+                    raise RuntimeError(
+                        "NaN detected in ONNX output — audio-driven "
+                        "inference may have failed."
+                    )
+                if arr.dtype != np.uint8:
+                    arr = np.clip(arr, 0, 255).astype(np.uint8)
+                if arr.shape[-1] not in (3, 4):
+                    arr = np.stack([arr] * 3, axis=-1)
+                return Image.fromarray(arr)
+            except Exception as exc:  # noqa: BLE001
+                self._logger.debug(
+                    "ONNX inference failed in _sync_mouth: %s. "
+                    "Falling back to PyTorch model.",
+                    exc,
+                )
+
+        # PyTorch 模型推理（回退路径）
         if self._method == "musetalk":
             output = self._model(
                 face_image=face_crop,

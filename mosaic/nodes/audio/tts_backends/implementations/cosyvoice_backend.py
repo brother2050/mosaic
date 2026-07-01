@@ -162,7 +162,8 @@ class CosyVoiceBackend(TTSBackend):
         speaker_encoder_model : str
             说话人编码器类型，默认 ``"campp"``。
         hifi_gan_path : str | None
-            HiFi-GAN 权重路径；``None`` 时按 HF 布局查找 ``hift.pt``，
+            HiFi-GAN 权重路径；``None`` 时按 HF 布局查找 ``hift.pt`` /
+            ``hifi_gan.safetensors`` / ``hifi_gan.onnx`` / ``vocoder.onnx``，
             找不到再回退到旧目录 ``model_path/hifi_gan``。
         num_ode_steps : int
             ODE 求解步数，默认 ``10``。
@@ -311,7 +312,14 @@ class CosyVoiceBackend(TTSBackend):
             hifi_gan_weight_path = self._hifi_gan_path
         else:
             hifi_gan_weight_path = HFModelManager.find_file(
-                model_dir, ["hift.pt", "hifi_gan.safetensors", "vocoder.pt"]
+                model_dir,
+                [
+                    "hift.pt",
+                    "hifi_gan.safetensors",
+                    "vocoder.pt",
+                    "hifi_gan.onnx",
+                    "vocoder.onnx",
+                ],
             )
             if not hifi_gan_weight_path:
                 # 向后兼容：旧 model_path/hifi_gan 目录

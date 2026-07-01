@@ -26,6 +26,7 @@
 
 from __future__ import annotations
 
+import os
 import time
 from collections.abc import Callable, Iterator
 from typing import Any
@@ -86,6 +87,10 @@ class RealtimeRenderer(BaseDigitalHumanNode):
     dtype:
         推理精度，可选 ``"float16"`` / ``"float32"`` / ``"bfloat16"``，
         默认 ``"float16"``。
+    onnx_model_path:
+        可选的 ONNX 模型文件路径。提供时会在 :meth:`load` 阶段创建
+        ONNX Runtime 推理会话以加速渲染；为 ``None`` 或文件不存在时
+        回退到 PyTorch 推理。
     **kwargs:
         透传给 :class:`BaseDigitalHumanNode` 的参数（``scheduler`` /
         ``bus`` 等）。
@@ -169,6 +174,7 @@ class RealtimeRenderer(BaseDigitalHumanNode):
         tts_model: str | None = None,
         device: str = "cuda",
         dtype: str = "float16",
+        onnx_model_path: str | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(device=device, dtype=dtype, model=model, **kwargs)
@@ -180,6 +186,7 @@ class RealtimeRenderer(BaseDigitalHumanNode):
         )
         self._enable_tts: bool = bool(enable_tts)
         self._tts_model: str = tts_model or _DEFAULT_TTS_MODEL
+        self._onnx_model_path: str | None = onnx_model_path
 
         # 运行时组件
         self._tts_node: Any = None
@@ -328,39 +335,69 @@ class RealtimeRenderer(BaseDigitalHumanNode):
         """尝试初始化 ONNX Runtime 会话以加速推理。
 
         使用 ``mosaic.core.onnx_utils`` 验证 onnxruntime 是否真正可用
-        （不仅检查 import，还验证 InferenceSession 属性存在）。
-        失败时记录警告并回退到 PyTorch 推理。
+        （不仅检查 import，还验证 InferenceSession 属性存在）。当可用
+        且提供了 ``onnx_model_path`` 时，实际创建推理会话并赋值给
+        :attr:`_onnx_session`；否则仅记录原因并回退到 PyTorch 推理。
         """
-        from mosaic.core.onnx_utils import OnnxRuntimeStatus
+        from mosaic.core.onnx_utils import (
+            OnnxRuntimeStatus,
+            create_inference_session,
+            get_onnx_providers,
+            is_onnxruntime_usable,
+        )
 
-        usable, _version, _providers, error = OnnxRuntimeStatus.get()
-        if not usable:
+        # 1) 检测 onnxruntime 是否真正可用
+        if not is_onnxruntime_usable():
+            _, _version, _providers, error = OnnxRuntimeStatus.get()
             self._logger.warning(
                 "ONNX runtime not available: %s; falling back to "
                 "PyTorch inference.",
                 error or "unknown reason",
             )
             self._use_onnx = False
+            self._onnx_session = None
             return
 
-        try:
-            import onnxruntime as ort  # type: ignore
-
-            available = ort.get_available_providers()
+        # 2) 没有提供 ONNX 模型路径：仅记录可用性，不创建会话
+        if not self._onnx_model_path:
             self._logger.info(
-                "ONNX Runtime available (providers=%s).", available
-            )
-            self._use_onnx = True
-            # 实际会话在具备 ONNX 权重时才创建，这里仅标记可用性
-        except ImportError:
-            self._logger.debug(
-                "onnxruntime not installed; using PyTorch inference."
+                "ONNX Runtime available but no onnx_model_path provided; "
+                "ONNX acceleration disabled (using PyTorch inference)."
             )
             self._use_onnx = False
+            self._onnx_session = None
+            return
+
+        # 3) 检查模型文件是否存在
+        if not os.path.exists(self._onnx_model_path):
+            self._logger.warning(
+                "ONNX model file not found: %s; falling back to "
+                "PyTorch inference.",
+                self._onnx_model_path,
+            )
+            self._use_onnx = False
+            self._onnx_session = None
+            return
+
+        # 4) 创建 ONNX 推理会话
+        try:
+            providers = get_onnx_providers(self._device)
+            self._onnx_session = create_inference_session(
+                self._onnx_model_path, providers=providers
+            )
+            self._use_onnx = True
+            self._logger.info(
+                "ONNX session created for RealtimeRenderer "
+                "(path=%s, providers=%s).",
+                self._onnx_model_path,
+                self._onnx_session.get_providers(),
+            )
         except Exception as exc:  # noqa: BLE001
             self._logger.warning(
-                "ONNX Runtime init failed: %s. Using PyTorch inference.", exc
+                "ONNX session creation failed: %s. Using PyTorch inference.",
+                exc,
             )
+            self._onnx_session = None
             self._use_onnx = False
 
     def _safe_to_device(self, obj: Any, device: str) -> Any:
@@ -737,13 +774,63 @@ class RealtimeRenderer(BaseDigitalHumanNode):
         # 优先尝试 ONNX 会话
         if self._use_onnx and self._onnx_session is not None:
             try:
-                # ONNX 推理路径（具体输入取决于导出模型）
-                result = self._onnx_session.run(
-                    None, {"input": driving}
-                )
-                # 简化：取首个输出并转 PIL
                 import numpy as np  # type: ignore
                 from PIL import Image  # type: ignore
+
+                # driving 可能是 audio waveform 或 expression/keypoints params，
+                # 统一转为 float32 numpy 数组；1D 输入（audio waveform）补齐
+                # batch 维度（ONNX 模型通常期望带 batch 的输入）。
+                driving_arr = np.asarray(driving, dtype=np.float32)
+                if driving_arr.ndim == 1:
+                    driving_arr = driving_arr[np.newaxis, :]
+
+                # 根据会话声明的输入名与驱动模式构造 feeds dict：
+                #  * driving 输入名按 mode 选择（audio waveform / expression params）
+                #  * 若存在 source/image 类输入，注入预处理后的形象图（NCHW float32）
+                session_inputs = self._onnx_session.get_inputs()
+                if mode == "audio":
+                    driving_kw = (
+                        "audio", "mel", "wave", "sound", "driving", "driven",
+                    )
+                else:  # motion
+                    driving_kw = (
+                        "motion", "expression", "pose", "kp", "keypoint",
+                        "driving", "driven",
+                    )
+                image_kw = (
+                    "source", "image", "avatar", "reference", "src",
+                )
+
+                driving_input_name: str | None = None
+                image_input_name: str | None = None
+                for inp in session_inputs:
+                    lname = inp.name.lower()
+                    if driving_input_name is None and any(
+                        kw in lname for kw in driving_kw
+                    ):
+                        driving_input_name = inp.name
+                    elif image_input_name is None and any(
+                        kw in lname for kw in image_kw
+                    ):
+                        image_input_name = inp.name
+
+                # 兜底：未匹配到 driving 输入名时使用首个输入
+                if driving_input_name is None and session_inputs:
+                    driving_input_name = session_inputs[0].name
+
+                feeds: dict[str, Any] = {}
+                feeds[driving_input_name or "input"] = driving_arr
+                if image_input_name is not None:
+                    src_img = avatar_img.convert("RGB").resize(
+                        resolution, Image.Resampling.LANCZOS
+                    )
+                    src_arr = np.asarray(src_img, dtype=np.float32)
+                    # HWC -> CHW -> NCHW
+                    src_arr = src_arr.transpose(2, 0, 1)[np.newaxis, ...]
+                    feeds[image_input_name] = src_arr
+
+                result = self._onnx_session.run(None, feeds)
+                # 取首个输出并转 PIL.Image
                 arr = np.asarray(result[0])
                 if arr.ndim == 4:
                     arr = arr[0]
@@ -757,7 +844,9 @@ class RealtimeRenderer(BaseDigitalHumanNode):
                     arr = np.clip(arr, 0, 255).astype(np.uint8)
                 if arr.shape[-1] not in (3, 4):
                     arr = np.stack([arr] * 3, axis=-1)
-                img = Image.fromarray(arr).resize(resolution, Image.Resampling.LANCZOS)
+                img = Image.fromarray(arr).resize(
+                    resolution, Image.Resampling.LANCZOS
+                )
                 return img
             except Exception as exc:  # noqa: BLE001
                 self._logger.debug(
@@ -1192,6 +1281,7 @@ class RealtimeRenderer(BaseDigitalHumanNode):
         if self._enable_tts:
             model_info["tts_model"] = self._tts_model
         model_info["onnx_runtime"] = self._use_onnx
+        model_info["onnx_model_path"] = self._onnx_model_path
         # 性能指标标注
         model_info["performance"] = {
             "target_fps": self._target_fps,

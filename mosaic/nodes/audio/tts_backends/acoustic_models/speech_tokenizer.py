@@ -43,13 +43,22 @@ token 流，词表大小为 ``codebook_size``（``81 * 81 = 6561``）；当
 
 from __future__ import annotations
 
+import logging
 import os
 from typing import TYPE_CHECKING, Any
+
+from mosaic.core.onnx_utils import (
+    create_inference_session,
+    get_onnx_providers,
+    is_onnxruntime_usable,
+)
 
 if TYPE_CHECKING:  # 仅用于类型注解，运行时惰性导入
     from mosaic.core.types import AudioData
 
 __all__ = ["SpeechTokenizer"]
+
+logger = logging.getLogger(__name__)
 
 
 # 内部缓存的 nn.Module 子类（惰性创建）
@@ -336,6 +345,8 @@ class SpeechTokenizer:
         self._device: str = "cpu"
         self._dtype: str = "float16"
         self._is_loaded: bool = False
+        # ONNX Runtime 推理会话（加载 .onnx 权重时填充，PyTorch 路径为 None）
+        self._onnx_session: Any = None
 
     # ------------------------------------------------------------------
     # 代理转发
@@ -366,6 +377,12 @@ class SpeechTokenizer:
     ) -> None:
         """加载语音 Tokenizer 权重。
 
+        当 ``weights_path`` 指向 ``.onnx`` 文件时，优先使用
+        ``onnxruntime`` 加载并推理（跳过 PyTorch 实现）；若 onnxruntime
+        不可用，则记录 warning 并回退到 PyTorch 路径，在同目录查找
+        ``.pt`` / ``.safetensors`` 替代权重。非 ``.onnx`` 文件走原有
+        PyTorch 路径。
+
         Parameters
         ----------
         weights_path : str
@@ -380,6 +397,32 @@ class SpeechTokenizer:
         ImportError
             ``torch`` 未安装。
         """
+        # ONNX 路径：若权重为 .onnx 文件，使用 onnxruntime 加载
+        if os.path.isfile(weights_path) and weights_path.lower().endswith(".onnx"):
+            if is_onnxruntime_usable():
+                self._onnx_session = create_inference_session(
+                    weights_path, providers=get_onnx_providers(device)
+                )
+                self._device = device
+                self._dtype = dtype
+                self._is_loaded = True
+                logger.info(
+                    "SpeechTokenizer ONNX 模型已加载 "
+                    "(path=%s, providers=%s)",
+                    weights_path,
+                    self._onnx_session.get_providers(),
+                )
+                return
+            # onnxruntime 不可用 → 回退到 PyTorch 路径，尝试查找替代权重
+            logger.warning(
+                "onnxruntime 不可用，无法加载 ONNX 模型 %s，"
+                "尝试回退到 PyTorch 权重（.pt/.safetensors）。",
+                weights_path,
+            )
+            parent = os.path.dirname(weights_path)
+            if parent and os.path.isdir(parent):
+                weights_path = parent
+
         import torch
 
         dtype_map = {
@@ -416,6 +459,8 @@ class SpeechTokenizer:
 
     def unload_weights(self) -> None:
         """释放权重：将内部模型移至 CPU 并清空 CUDA 缓存。"""
+        # 释放 ONNX 推理会话
+        self._onnx_session = None
         try:
             import torch
 
@@ -464,11 +509,17 @@ class SpeechTokenizer:
                 "SpeechTokenizer is not loaded. Call load_weights() "
                 "before encode()."
             )
-        import torch
 
         waveform, sample_rate = self._coerce_audio(audio)
         if sample_rate != self.sample_rate:
             waveform = self._resample(waveform, sample_rate, self.sample_rate)
+
+        # ONNX 推理路径
+        if self._onnx_session is not None:
+            return self._encode_onnx(waveform)
+
+        import torch
+
         waveform = waveform.to(self._device)
 
         with torch.no_grad():
@@ -503,6 +554,19 @@ class SpeechTokenizer:
         from mosaic.core.types import AudioData
 
         tokens = torch.as_tensor(token_ids, dtype=torch.long)
+
+        # ONNX 推理路径
+        if self._onnx_session is not None:
+            tokens_np = tokens.detach().cpu().long().numpy()
+            if tokens_np.ndim == 1:
+                tokens_np = tokens_np[np.newaxis, :]        # [1, T]
+            feeds = self._build_onnx_feeds(self._onnx_session, tokens_np)
+            outputs = self._onnx_session.run(None, feeds)
+            waveform_np = np.asarray(outputs[0], dtype=np.float32)
+            if waveform_np.ndim == 2:
+                waveform_np = waveform_np[0]                 # [samples]
+            return AudioData(waveform=waveform_np, sample_rate=self.sample_rate)
+
         tokens = tokens.to(self._device)
 
         with torch.no_grad():
@@ -513,6 +577,77 @@ class SpeechTokenizer:
         if waveform_np.ndim == 2:
             waveform_np = waveform_np[0]
         return AudioData(waveform=waveform_np, sample_rate=self.sample_rate)
+
+    # ------------------------------------------------------------------
+    # 内部辅助：ONNX 推理
+    # ------------------------------------------------------------------
+    def _encode_onnx(self, waveform: Any) -> Any:
+        """ONNX 推理：将波形编码为 token ids。
+
+        Parameters
+        ----------
+        waveform : torch.Tensor
+            单声道波形 ``[samples]`` 或 ``[batch, samples]``。
+
+        Returns
+        -------
+        torch.Tensor
+            token ids（结构与 PyTorch 路径一致）。
+        """
+        import numpy as np
+        import torch
+
+        wav_np = waveform.detach().cpu().float().numpy()
+        if wav_np.ndim == 1:
+            wav_np = wav_np[np.newaxis, :]                  # [1, samples]
+
+        feeds = self._build_onnx_feeds(self._onnx_session, wav_np)
+        outputs = self._onnx_session.run(None, feeds)
+        # 取第一个输出作为 token ids，转回 torch.Tensor 保持接口一致
+        return torch.as_tensor(outputs[0])
+
+    @staticmethod
+    def _build_onnx_feeds(session: Any, data_np: Any) -> dict[str, Any]:
+        """构建 ONNX 推理输入字典。
+
+        将主数据（波形或 token ids）喂给第一个非 ``length`` 输入；若模型
+        含 ``length`` 输入（部分 codec / 说话人编码器导出），自动填充为
+        主数据最后一维的长度。
+
+        Parameters
+        ----------
+        session : onnxruntime.InferenceSession
+            ONNX 推理会话。
+        data_np : numpy.ndarray
+            主输入数据（波形或 token ids）。
+
+        Returns
+        -------
+        dict[str, Any]
+            供 ``session.run`` 使用的输入字典。
+        """
+        import numpy as np
+
+        feeds: dict[str, Any] = {}
+        inputs = session.get_inputs()
+        if not inputs:
+            return feeds
+
+        audio_inp: Any = None
+        len_inps: list[Any] = []
+        for inp in inputs:
+            if "len" in inp.name.lower():
+                len_inps.append(inp)
+            elif audio_inp is None:
+                audio_inp = inp
+        if audio_inp is None:
+            audio_inp = inputs[0]
+        feeds[audio_inp.name] = data_np
+
+        length = int(data_np.shape[-1]) if data_np.ndim else 0
+        for inp in len_inps:
+            feeds[inp.name] = np.array([length], dtype=np.int32)
+        return feeds
 
     # ------------------------------------------------------------------
     # 内部辅助：音频规整与重采样

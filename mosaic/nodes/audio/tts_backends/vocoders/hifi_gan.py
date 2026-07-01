@@ -49,12 +49,20 @@ MRF (Multi-ReceptiveFieldFusion)::
 
 from __future__ import annotations
 
+import logging
 import os
 from typing import Any
 
+from mosaic.core.onnx_utils import (
+    create_inference_session,
+    get_onnx_providers,
+    is_onnxruntime_usable,
+)
 from mosaic.nodes.audio.tts_backends.vocoders.base import Vocoder
 
 __all__ = ["HiFiGanVocoder"]
+
+logger = logging.getLogger(__name__)
 
 
 # 内部缓存的 nn.Module 子类（惰性创建）
@@ -347,6 +355,10 @@ class HiFiGanVocoder(Vocoder):
         self._dtype: str = "float16"
         self._is_loaded: bool = False
 
+        # ONNX Runtime 推理会话（load_weights 加载 .onnx 时填充；
+        # 非 None 时 decode / decode_chunk 走 ONNX 加速路径）
+        self._onnx_session: Any = None
+
         # 每帧 mel 对应的采样点数 = ∏(upsample_rates)
         self._samples_per_frame: int = 1
         for r in self.upsample_rates:
@@ -385,19 +397,26 @@ class HiFiGanVocoder(Vocoder):
     ) -> None:
         """加载 HiFi-GAN Generator 权重。
 
-        加载步骤：
+        支持两种加载路径：
 
-        1. 解析 dtype 字符串为 torch dtype，无 GPU 时设备降级为 CPU；
-        2. 惰性创建 Generator ``nn.Module`` 实例；
-        3. 读取权重（safetensors 优先，回退到 .pt/.pth/.bin）；
-        4. **过滤掉 Discriminator 权重**，剥离 ``generator.`` 等前缀后
-           ``strict=False`` 载入；
-        5. 移动到目标 device / dtype，切换为 eval。
+        * **ONNX 加速路径**：当 ``weights_path`` 为 ``.onnx`` 文件且
+          onnxruntime 可用时，创建 :class:`onnxruntime.InferenceSession`
+          存入 ``self._onnx_session``，跳过 PyTorch 实现。后续
+          :meth:`decode` / :meth:`decode_chunk` 走 ONNX 推理。
+        * **PyTorch 路径**（fallback）：惰性创建 Generator ``nn.Module``
+          实例，从 safetensors / pytorch checkpoint 载入权重
+          （``strict=False``），只加载 Generator 权重并过滤 Discriminator，
+          剥离 ``generator.`` / ``hifi_gan.`` / ``vocoder.`` 等前缀，移动到
+          目标 device / dtype 并切换为 eval。
+
+        当 ``.onnx`` 文件被指定但 onnxruntime 不可用时，记录 warning 并
+        回退到 PyTorch 路径。
 
         Parameters
         ----------
         weights_path : str
-            权重文件路径或目录。
+            权重文件路径或目录（``.onnx`` / ``.safetensors`` / ``.pt`` /
+            ``.pth`` / ``.bin`` 或目录）。
         device : str
             目标设备；无 GPU 时自动降级为 CPU。
         dtype : str
@@ -406,8 +425,34 @@ class HiFiGanVocoder(Vocoder):
         Raises
         ------
         ImportError
-            ``torch`` 未安装。
+            ``torch`` 未安装（仅 PyTorch 路径）。
         """
+        # ONNX Runtime 加速路径：.onnx 文件优先走 onnxruntime 推理
+        if os.path.isfile(weights_path) and weights_path.endswith(".onnx"):
+            if is_onnxruntime_usable():
+                providers = get_onnx_providers(device)
+                self._device = (
+                    "cuda"
+                    if "CUDAExecutionProvider" in providers
+                    else "cpu"
+                )
+                self._dtype = dtype
+                self._onnx_session = create_inference_session(
+                    weights_path, providers=providers
+                )
+                logger.info(
+                    "HiFi-GAN ONNX session loaded (path=%s, providers=%s).",
+                    weights_path,
+                    self._onnx_session.get_providers(),
+                )
+                self._is_loaded = True
+                return
+            logger.warning(
+                "onnxruntime 不可用，回退到 PyTorch 推理路径加载 HiFi-GAN "
+                "权重: %s",
+                weights_path,
+            )
+
         import torch
 
         dtype_map = {
@@ -444,7 +489,10 @@ class HiFiGanVocoder(Vocoder):
         self._is_loaded = True
 
     def unload_weights(self) -> None:
-        """释放权重：将内部模型移至 CPU 并清空 CUDA 缓存。"""
+        """释放权重：将内部模型移至 CPU 并清空 CUDA 缓存。
+
+        同时释放 ONNX Runtime 推理会话（若存在）。
+        """
         try:
             import torch
 
@@ -458,6 +506,7 @@ class HiFiGanVocoder(Vocoder):
         except ImportError:
             pass
         self._impl = None
+        self._onnx_session = None
         self._is_loaded = False
         self._mel_buffer = None
 
@@ -469,20 +518,42 @@ class HiFiGanVocoder(Vocoder):
 
         Parameters
         ----------
-        features : torch.Tensor
+        features : torch.Tensor | numpy.ndarray
             mel 频谱 ``[batch, mel_bins, frames]`` 或 ``[mel_bins, frames]``。
 
         Returns
         -------
-        tuple[torch.Tensor, int]
+        tuple[Any, int]
             ``(waveform, sample_rate)``，waveform 形状
-            ``[batch, samples]`` 或 ``[samples]``。
+            ``[batch, samples]`` 或 ``[samples]``。ONNX 路径返回
+            ``numpy.ndarray``，PyTorch 路径返回 ``torch.Tensor``。
         """
         if not self._is_loaded:
             raise RuntimeError(
                 "HiFiGanVocoder is not loaded. Call load_weights() "
                 "before decode()."
             )
+
+        # ONNX Runtime 加速路径
+        if self._onnx_session is not None:
+            import numpy as np
+
+            mel = self._mel_to_numpy(features)
+            squeeze = False
+            if mel.ndim == 2:
+                mel = mel[np.newaxis, ...]      # [1, mel_bins, frames]
+                squeeze = True
+
+            input_name = self._onnx_session.get_inputs()[0].name
+            outs = self._onnx_session.run(None, {input_name: mel})
+            waveform = outs[0]                  # [B, 1, samples] 或 [B, samples]
+            if waveform.ndim == 3:
+                waveform = waveform[:, 0, :]    # [B, samples]
+
+            if squeeze:
+                waveform = waveform[0]          # [samples]
+            return (waveform, self.sample_rate)
+
         import torch
 
         mel = features
@@ -508,19 +579,59 @@ class HiFiGanVocoder(Vocoder):
 
         Parameters
         ----------
-        features : torch.Tensor
+        features : torch.Tensor | numpy.ndarray
             一小块 mel 频谱。
 
         Returns
         -------
-        tuple[torch.Tensor, int]
-            ``(waveform, sample_rate)``。
+        tuple[Any, int]
+            ``(waveform, sample_rate)``。ONNX 路径返回 ``numpy.ndarray``，
+            PyTorch 路径返回 ``torch.Tensor``。
         """
         if not self._is_loaded:
             raise RuntimeError(
                 "HiFiGanVocoder is not loaded. Call load_weights() "
                 "before decode_chunk()."
             )
+
+        # ONNX Runtime 加速路径（保留 overlap-add 缓冲逻辑）
+        if self._onnx_session is not None:
+            import numpy as np
+
+            mel = self._mel_to_numpy(features)
+            squeeze = False
+            if mel.ndim == 2:
+                mel = mel[np.newaxis, ...]      # [1, mel_bins, frames]
+                squeeze = True
+
+            overlap = self._overlap_frames
+            prepended = 0
+            if self._mel_buffer is not None and overlap > 0:
+                mel = np.concatenate([self._mel_buffer, mel], axis=-1)
+                prepended = overlap
+
+            input_name = self._onnx_session.get_inputs()[0].name
+            outs = self._onnx_session.run(None, {input_name: mel})
+            waveform = outs[0]                  # [B, 1, samples] 或 [B, samples]
+            if waveform.ndim == 3:
+                waveform = waveform[:, 0, :]    # [B, samples]
+
+            # 跳过与重叠 mel 帧对应的样本
+            if prepended > 0:
+                skip = prepended * self._samples_per_frame
+                if skip < waveform.shape[-1]:
+                    waveform = waveform[..., skip:]
+
+            # 更新 mel 缓冲区：保留最近 overlap 帧
+            if overlap > 0 and mel.shape[-1] >= overlap:
+                self._mel_buffer = np.ascontiguousarray(
+                    mel[..., -overlap:]
+                )
+
+            if squeeze:
+                waveform = waveform[0]          # [samples]
+            return (waveform, self.sample_rate)
+
         import torch
 
         mel = features
@@ -620,6 +731,32 @@ class HiFiGanVocoder(Vocoder):
     # ------------------------------------------------------------------
     # 内部辅助
     # ------------------------------------------------------------------
+    @staticmethod
+    def _mel_to_numpy(mel: Any) -> Any:
+        """将 mel 频谱转换为连续的 ``numpy.float32`` 数组。
+
+        兼容 ``torch.Tensor`` 与 ``numpy.ndarray`` 输入。ONNX Runtime
+        推理要求输入为连续的 numpy 数组。
+
+        Parameters
+        ----------
+        mel : torch.Tensor | numpy.ndarray
+            mel 频谱，形状 ``[batch, mel_bins, frames]`` 或
+            ``[mel_bins, frames]``。
+
+        Returns
+        -------
+        numpy.ndarray
+            连续的 ``float32`` 数组，形状不变。
+        """
+        import numpy as np
+
+        if hasattr(mel, "detach"):
+            mel = mel.detach().cpu().numpy()
+        elif not isinstance(mel, np.ndarray):
+            mel = np.asarray(mel)
+        return np.ascontiguousarray(mel, dtype=np.float32)
+
     @staticmethod
     def _load_state_dict(weights_path: str) -> dict[str, Any]:
         """读取权重为 state_dict。"""

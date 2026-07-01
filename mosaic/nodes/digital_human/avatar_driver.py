@@ -140,6 +140,7 @@ class AvatarDriver(BaseDigitalHumanNode):
         device: str = "cuda",
         dtype: str = "float16",
         wav2vec2_model: str = "facebook/wav2vec2-base-960h",
+        onnx_model_path: str | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(device=device, dtype=dtype, model=model, **kwargs)
@@ -153,10 +154,14 @@ class AvatarDriver(BaseDigitalHumanNode):
         else:
             self._model_name = model
         self._wav2vec2_model: str = wav2vec2_model
+        self._onnx_model_path: str | None = onnx_model_path
 
         # 运行时子模块引用（load 后填充）
         self._components: dict[str, Any] | None = None
         self._audio_encoder: Any = None
+        # ONNX Runtime 加速（可选，load 阶段惰性初始化）
+        self._onnx_session: Any = None
+        self._use_onnx: bool = False
 
     # ------------------------------------------------------------------
     # 模型加载 / 卸载
@@ -192,6 +197,7 @@ class AvatarDriver(BaseDigitalHumanNode):
             )
 
         self._apply_optimizations()
+        self._try_init_onnx()
         self._loaded = True
         self._logger.info(
             "Avatar driver loaded (method=%s, device=%s, dtype=%s).",
@@ -335,6 +341,77 @@ class AvatarDriver(BaseDigitalHumanNode):
                 "wav2vec audio encoder disabled: %s", exc,
             )
 
+    def _try_init_onnx(self) -> None:
+        """尝试初始化 ONNX Runtime 会话以加速推理。
+
+        使用 ``mosaic.core.onnx_utils`` 验证 onnxruntime 是否真正可用
+        （不仅检查 import，还验证 InferenceSession 属性存在）。当可用
+        且提供了 ``onnx_model_path`` 时，实际创建推理会话并赋值给
+        :attr:`_onnx_session`；否则仅记录原因并回退到 PyTorch 推理。
+        """
+        from mosaic.core.onnx_utils import (
+            OnnxRuntimeStatus,
+            create_inference_session,
+            get_onnx_providers,
+            is_onnxruntime_usable,
+        )
+
+        # 1) 没有提供 ONNX 模型路径：直接返回，使用 PyTorch 推理
+        if not self._onnx_model_path:
+            self._logger.info(
+                "No onnx_model_path provided; ONNX acceleration disabled "
+                "(using PyTorch inference)."
+            )
+            self._use_onnx = False
+            self._onnx_session = None
+            return
+
+        # 2) 检测 onnxruntime 是否真正可用
+        if not is_onnxruntime_usable():
+            _, _version, _providers, error = OnnxRuntimeStatus.get()
+            self._logger.warning(
+                "ONNX runtime not available: %s; falling back to "
+                "PyTorch inference.",
+                error or "unknown reason",
+            )
+            self._use_onnx = False
+            self._onnx_session = None
+            return
+
+        # 3) 检查模型文件是否存在
+        import os
+
+        if not os.path.exists(self._onnx_model_path):
+            self._logger.warning(
+                "ONNX model file not found: %s; falling back to "
+                "PyTorch inference.",
+                self._onnx_model_path,
+            )
+            self._use_onnx = False
+            self._onnx_session = None
+            return
+
+        # 4) 创建 ONNX 推理会话
+        try:
+            providers = get_onnx_providers(self._device)
+            self._onnx_session = create_inference_session(
+                self._onnx_model_path, providers=providers
+            )
+            self._use_onnx = True
+            self._logger.info(
+                "ONNX session created for AvatarDriver "
+                "(path=%s, providers=%s).",
+                self._onnx_model_path,
+                self._onnx_session.get_providers(),
+            )
+        except Exception as exc:  # noqa: BLE001
+            self._logger.warning(
+                "ONNX session creation failed: %s. Using PyTorch inference.",
+                exc,
+            )
+            self._onnx_session = None
+            self._use_onnx = False
+
     def unload(self) -> None:
         """释放驱动模型与显存。"""
         if self._pipeline is not None:
@@ -348,6 +425,8 @@ class AvatarDriver(BaseDigitalHumanNode):
         self._processor = None
         self._components = None
         self._audio_encoder = None
+        self._onnx_session = None
+        self._use_onnx = False
         self._loaded = False
         try:
             import torch  # type: ignore
@@ -677,6 +756,99 @@ class AvatarDriver(BaseDigitalHumanNode):
         else:
             pipe_kwargs["driving_image"] = self._load_image(signal)
 
+        # 优先尝试 ONNX Runtime 加速推理，失败时回退到 PyTorch pipeline
+        if self._use_onnx and self._onnx_session is not None:
+            try:
+                import numpy as np  # type: ignore
+
+                # 根据会话声明的输入名匹配 driving / image 输入
+                session_inputs = self._onnx_session.get_inputs()
+                driving_kw = (
+                    "driving", "driven", "motion", "expression", "pose",
+                    "kp", "keypoint", "audio", "mel", "wave",
+                )
+                image_kw = (
+                    "source", "image", "avatar", "reference", "src",
+                )
+                driving_input_name: str | None = None
+                image_input_name: str | None = None
+                for inp in session_inputs:
+                    lname = inp.name.lower()
+                    if driving_input_name is None and any(
+                        kw in lname for kw in driving_kw
+                    ):
+                        driving_input_name = inp.name
+                    elif image_input_name is None and any(
+                        kw in lname for kw in image_kw
+                    ):
+                        image_input_name = inp.name
+                # 兜底：未匹配到 driving 输入名时使用首个输入
+                if driving_input_name is None and session_inputs:
+                    driving_input_name = session_inputs[0].name
+
+                feeds: dict[str, Any] = {}
+                # 驱动信号 -> numpy 数组
+                if isinstance(signal, dict):
+                    # 表情参数 -> 有序 float32 向量（补 batch 维）
+                    driving_arr = np.asarray(
+                        [
+                            float(params.get(k, 0.0))
+                            for k in ("smile", "mouth_open", "eye_openness")
+                        ],
+                        dtype=np.float32,
+                    )[np.newaxis, :]
+                else:
+                    drv_img = (
+                        signal
+                        if isinstance(signal, Image.Image)
+                        else self._load_image(signal)
+                    )
+                    drv_img = drv_img.convert("RGB")
+                    if drv_img.size != source_image.size:
+                        drv_img = drv_img.resize(
+                            source_image.size, Image.Resampling.LANCZOS
+                        )
+                    # HWC -> CHW -> NCHW
+                    driving_arr = np.asarray(
+                        drv_img, dtype=np.float32
+                    ).transpose(2, 0, 1)[np.newaxis, ...]
+                feeds[driving_input_name or "input"] = driving_arr
+
+                # 形象图输入 -> NCHW float32
+                if image_input_name is not None:
+                    src_arr = np.asarray(
+                        source_image.convert("RGB"), dtype=np.float32
+                    )
+                    # HWC -> CHW -> NCHW
+                    src_arr = src_arr.transpose(2, 0, 1)[np.newaxis, ...]
+                    feeds[image_input_name] = src_arr
+
+                result = self._onnx_session.run(None, feeds)
+                # 取首个输出并转 PIL.Image
+                arr = np.asarray(result[0])
+                if arr.ndim == 4:
+                    arr = arr[0]
+                # 检测 NaN：上游推理异常时报错而非静默输出黑帧
+                if np.isnan(arr).any():
+                    raise RuntimeError(
+                        "NaN detected in ONNX output — model inference "
+                        "may have failed."
+                    )
+                if arr.dtype != np.uint8:
+                    arr = np.clip(arr, 0, 255).astype(np.uint8)
+                if arr.shape[-1] not in (3, 4):
+                    arr = np.stack([arr] * 3, axis=-1)
+                driven = Image.fromarray(arr)
+                # 保证背景与源图一致
+                return self._compose_frame(source_image, driven, bbox)
+            except Exception as exc:  # noqa: BLE001
+                self._logger.debug(
+                    "ONNX inference failed in _render_liveportrait: %s. "
+                    "Falling back to PyTorch pipeline.",
+                    exc,
+                )
+
+        # PyTorch pipeline 推理（回退路径）
         output = self._run_pipeline(**pipe_kwargs)
         images = self._extract_images(output)
         if not images:
