@@ -26,6 +26,7 @@ __all__ = [
     "auto_resolve_device_dtype",
     "apply_optimizations",
     "run_diffusers_pipeline",
+    "upcast_pipeline_components",
 ]
 
 logger = logging.getLogger("mosaic.core._device_utils")
@@ -245,3 +246,67 @@ def run_diffusers_pipeline(pipeline: Any, **kwargs: Any) -> Any:
 
     with torch.inference_mode():
         return pipeline(**kwargs)
+
+
+# SD 1.5 系列：text_encoder 对 float16 敏感，需上转为 float32
+# SDXL 的 text_encoder 已兼容 float16，无需上转
+_SD15_MODEL_PATTERNS = (
+    "stable-diffusion-v1", "stable-diffusion-2-1", "stable-diffusion-x4",
+    "sd-v1", "sd15", "SD1.5",
+)
+
+
+def _is_sd15_model(model_name: str) -> bool:
+    """判断模型是否为 SD 1.5 系列（text_encoder 对 float16 敏感）。"""
+    return any(p in model_name for p in _SD15_MODEL_PATTERNS)
+
+
+def upcast_pipeline_components(
+    pipeline: Any,
+    model_name: str = "",
+    logger: Any | None = None,
+) -> None:
+    """统一上转 pipeline 组件，防止 float16 下的黑图/NaN 问题。
+
+    1. **VAE → float32**：所有模型。float16 下 VAE decode 产生 NaN → 黑图。
+    2. **text_encoder → float32**：仅 SD 1.5 系列。CLIPTextModel 对 float16 敏感，
+       特定 prompt 会触发 attention 溢出产生 NaN 文本嵌入。SDXL 兼容 float16。
+
+    Parameters
+    ----------
+    pipeline:
+        diffusers Pipeline 实例。
+    model_name:
+        模型名称，用于判断是否为 SD 1.5 系列。
+    logger:
+        可选的日志器。
+    """
+    if pipeline is None:
+        return
+
+    import torch  # type: ignore
+
+    # VAE → float32（所有模型，幂等安全）
+    vae = getattr(pipeline, "vae", None)
+    if vae is not None:
+        try:
+            vae.to(torch.float32)
+            if logger is not None:
+                logger.debug("VAE upcasted to float32 (black-image prevention).")
+        except Exception as exc:
+            if logger is not None:
+                logger.debug("VAE upcast skipped: %s", exc)
+
+    # text_encoder → float32（仅 SD 1.5 系列）
+    if _is_sd15_model(model_name):
+        text_encoder = getattr(pipeline, "text_encoder", None)
+        if text_encoder is not None:
+            try:
+                text_encoder.to(torch.float32)
+                if logger is not None:
+                    logger.debug(
+                        "text_encoder upcasted to float32 (SD 1.5 fp16 sensitivity)."
+                    )
+            except Exception as exc:
+                if logger is not None:
+                    logger.debug("text_encoder upcast skipped: %s", exc)

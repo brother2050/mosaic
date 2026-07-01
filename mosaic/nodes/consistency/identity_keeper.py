@@ -179,6 +179,25 @@ class IdentityKeeper(BaseConsistencyNode):
         variant = "fp16" if self._dtype_str in ("float16", "fp16") else None
         return torch_dtype, variant
 
+    def _safe_from_pretrained(self, pipeline_cls: Any, **kwargs: Any) -> Any:
+        """安全加载 pipeline：fp16 variant 失败时回退到 fp32。
+
+        与 ``safe_load_pipeline`` 类似的回退逻辑，但用于 identity_keeper
+        需要直接操作 pipeline 类的场景（如加载后挂载 IP-Adapter 权重）。
+        """
+        variant = kwargs.pop("variant", None)
+        try:
+            return pipeline_cls.from_pretrained(variant=variant, **kwargs) if variant else \
+                pipeline_cls.from_pretrained(**kwargs)
+        except (OSError, ValueError, RuntimeError) as exc:
+            if variant:
+                self._logger.warning(
+                    "fp16 variant load failed for %s: %s; retrying without variant.",
+                    self._model_name, exc,
+                )
+                return pipeline_cls.from_pretrained(**kwargs)
+            raise
+
     def _move_pipeline_to_device(self) -> None:
         """将 Pipeline 迁移到目标设备，CUDA 不可用时回退到 CPU。"""
         target = self._resolve_device()
@@ -207,8 +226,8 @@ class IdentityKeeper(BaseConsistencyNode):
         try:
             from diffusers import StableDiffusionXLInstantIDPipeline  # type: ignore
 
-            self._pipeline = StableDiffusionXLInstantIDPipeline.from_pretrained(
-                self._model_name,
+            self._pipeline = self._safe_from_pretrained(
+                StableDiffusionXLInstantIDPipeline,
                 torch_dtype=torch_dtype,
                 variant=variant,
             )
@@ -230,8 +249,8 @@ class IdentityKeeper(BaseConsistencyNode):
                 torch_dtype=torch_dtype,
                 variant=variant,
             )
-            self._pipeline = StableDiffusionXLControlNetPipeline.from_pretrained(
-                self._model_name,
+            self._pipeline = self._safe_from_pretrained(
+                StableDiffusionXLControlNetPipeline,
                 controlnet=controlnet,
                 torch_dtype=torch_dtype,
                 variant=variant,
@@ -255,8 +274,8 @@ class IdentityKeeper(BaseConsistencyNode):
         from mosaic.nodes._pipeline_utils import _build_error_message
 
         try:
-            self._pipeline = StableDiffusionXLPipeline.from_pretrained(
-                self._model_name,
+            self._pipeline = self._safe_from_pretrained(
+                StableDiffusionXLPipeline,
                 torch_dtype=torch_dtype,
                 variant=variant,
             )
@@ -299,8 +318,8 @@ class IdentityKeeper(BaseConsistencyNode):
         from mosaic.nodes._pipeline_utils import _build_error_message
 
         try:
-            self._pipeline = PhotoMakerPipeline.from_pretrained(
-                self._model_name,
+            self._pipeline = self._safe_from_pretrained(
+                PhotoMakerPipeline,
                 torch_dtype=torch_dtype,
                 variant=variant,
             )

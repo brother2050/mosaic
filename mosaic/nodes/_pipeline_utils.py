@@ -310,12 +310,16 @@ def safe_load_pipeline(
             )
 
     # 第二次尝试（不带 variant 或非 fp16 场景）
-    # 注意：回退后 torch_dtype 保持原值（float16），加载的是 fp32 权重再转 fp16。
-    # VAE 已通过 _upcast_vae_fp32 兜底，UNet/text_encoder 的 fp16 转换值与预量化
-    # variant 略有差异但在大多数模型上可接受。
+    # fp16 variant 回退：torch_dtype 从 float16 降级为 float32，避免加载
+    # fp32 权重后再转 fp16 引入数值偏差（对 SD 1.5 等模型尤其重要）。
     if pipe is None:
-        # 创建 kwargs 副本，避免修改原始 kwargs 影响缓存键
         fallback_kwargs = dict(kwargs)
+        if use_fp16_variant and torch_dtype == torch.float16:
+            fallback_kwargs["torch_dtype"] = torch.float32
+            logger.info(
+                "Retrying %s without fp16 variant; switching dtype to float32.",
+                model_name,
+            )
         try:
             pipe = pipeline_class.from_pretrained(model_name, **fallback_kwargs)
         except (ImportError, AttributeError, ValueError, OSError, RuntimeError) as exc:

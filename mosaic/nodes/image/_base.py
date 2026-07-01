@@ -31,6 +31,7 @@ from mosaic.core._device_utils import (
     infer_device,
     resolve_dtype,
     run_diffusers_pipeline,
+    upcast_pipeline_components,
 )
 from mosaic.core.events import EventBus, EventType, get_event_bus
 from mosaic.core.node import Node, NodeSpec
@@ -84,6 +85,9 @@ class BaseImageNode(Node):
         是否启用 VAE slicing 以节省显存，默认 ``True``。
     enable_model_cpu_offload:
         是否启用模型 CPU offload（逐模块迁移到 GPU），默认 ``False``。
+        注意：启用 cpu_offload 时 VAE 仍会被上转为 float32（防黑图），
+        decode 阶段显存峰值约为 float16 的 2 倍。显存紧张时可关闭此选项
+        并改用 dtype="float32" 整体降精度。
     scheduler_name:
         可选的调度器名称（如 ``"EulerDiscreteScheduler"``），``None``
         表示使用模型默认调度器。
@@ -148,30 +152,16 @@ class BaseImageNode(Node):
 
         self._logger.info("Loading pipeline for model %s ...", self._model_name)
         self._load_pipeline()
-        # SD 1.5 等 VAE 在 float16 下会产生 NaN → 黑图（diffusers 已知问题 #2520）。
-        # 将 VAE 上转为 float32 不影响推理速度（VAE 只在最后 decode 调用一次），
-        # 但彻底消除黑图风险。SDXL 的 VAE 已兼容 float16，upcast 为幂等操作。
-        self._upcast_vae_fp32()
+        # 上转 VAE + text_encoder（SD 1.5）为 float32，防止 float16 下产生黑图/NaN
+        upcast_pipeline_components(self._pipeline, self._model_name, self._logger)
         self._loaded = True
 
     def _upcast_vae_fp32(self) -> None:
-        """将 Pipeline 的 VAE 上转为 float32，防止 SD 1.5 等模型在 float16 下产生黑图。
+        """[已弃用] 请使用 upcast_pipeline_components()。
 
-        ``torch.float16`` 下 VAE decoder 的数值精度不足，可能在反量化/解码阶段
-        产生 NaN，导致输出全黑图像。将 VAE 独立保持为 float32 可避免此问题，
-        且不会显著增加显存占用（VAE 参数量远小于 UNet）。
+        保留仅为向后兼容（子类可能直接调用此方法）。
         """
-        if self._pipeline is None:
-            return
-        vae = getattr(self._pipeline, "vae", None)
-        if vae is not None:
-            try:
-                import torch  # type: ignore
-
-                vae.to(torch.float32)
-                self._logger.debug("VAE upcasted to float32 (black-image prevention).")
-            except Exception as exc:  # noqa: BLE001
-                self._logger.debug("VAE upcast skipped: %s", exc)
+        upcast_pipeline_components(self._pipeline, self._model_name, self._logger)
 
     @abc.abstractmethod
     def _load_pipeline(self) -> None:
@@ -266,7 +256,15 @@ class BaseImageNode(Node):
             seed = random.randint(0, 2**32 - 1)
         seed = int(seed) % (2**32)
 
-        device = self._infer_device()
+        # B2: pipeline 未加载时不应进入推理流程，此处防御性断言
+        if self._pipeline is None:
+            self._logger.warning(
+                "_prepare_seed called before pipeline loaded; using config device."
+            )
+
+        # B1: cpu_offload 时 UNet 在 CPU，_infer_device 返回 "cpu"，
+        # 但 pipeline 实际执行时会在 GPU。使用配置设备（self._device）更可靠。
+        device = self._device
         try:
             generator = torch.Generator(device=device)
             generator.manual_seed(seed)

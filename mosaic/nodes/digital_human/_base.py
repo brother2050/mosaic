@@ -29,6 +29,7 @@ from mosaic.core._device_utils import (
     resolve_device,
     resolve_dtype,
     run_diffusers_pipeline,
+    upcast_pipeline_components,
 )
 from mosaic.core.events import EventBus, EventType, get_event_bus
 from mosaic.core.node import Node, NodeSpec
@@ -149,18 +150,8 @@ class BaseDigitalHumanNode(Node):
         )
 
     def _upcast_vae_fp32(self) -> None:
-        """将 Pipeline 的 VAE 上转为 float32，防止 float16 下产生黑图。"""
-        if self._pipeline is None:
-            return
-        vae = getattr(self._pipeline, "vae", None)
-        if vae is not None:
-            try:
-                import torch  # type: ignore
-
-                vae.to(torch.float32)
-                self._logger.debug("VAE upcasted to float32 (black-image prevention).")
-            except Exception as exc:  # noqa: BLE001
-                self._logger.debug("VAE upcast skipped: %s", exc)
+        """[已弃用] 请使用 upcast_pipeline_components()。"""
+        upcast_pipeline_components(self._pipeline, self._model_name, self._logger)
 
     # ------------------------------------------------------------------
     # 人物图像处理工具
@@ -524,6 +515,12 @@ class BaseDigitalHumanNode(Node):
             orig_region * (1.0 - blend_ratio)
             + face_region * blend_ratio
         )
+        # D7: 检测 NaN，防止上游模型推理异常导致黑块
+        if np.isnan(blended).any():
+            self._logger.warning(
+                "NaN detected in face blend result; replacing with zeros."
+            )
+            blended = np.nan_to_num(blended, nan=0.0)
         blended = np.clip(blended, 0, 255).astype(np.uint8)
         blended_image = Image.fromarray(blended)
 

@@ -32,6 +32,7 @@ from mosaic.core._device_utils import (
     infer_device,
     resolve_device,
     resolve_dtype,
+    upcast_pipeline_components,
 )
 from mosaic.core.events import EventBus, EventType, get_event_bus
 from mosaic.core.node import Node, NodeSpec
@@ -152,23 +153,13 @@ class BaseVideoNode(Node):
 
         self._logger.info("Loading video model %s ...", self._model_name)
         self._load_model()
-        # VAE 在 float16 下可能产生 NaN → 黑图（同 image 域修复）
-        self._upcast_vae_fp32()
+        # 上转 VAE + text_encoder（SD 1.5）为 float32，防止 float16 下产生黑图/NaN
+        upcast_pipeline_components(self._pipeline, self._model_name, self._logger)
         self._loaded = True
 
     def _upcast_vae_fp32(self) -> None:
-        """将 Pipeline 的 VAE 上转为 float32，防止 float16 下产生黑图。"""
-        if self._pipeline is None:
-            return
-        vae = getattr(self._pipeline, "vae", None)
-        if vae is not None:
-            try:
-                import torch  # type: ignore
-
-                vae.to(torch.float32)
-                self._logger.debug("VAE upcasted to float32 (black-image prevention).")
-            except Exception as exc:  # noqa: BLE001
-                self._logger.debug("VAE upcast skipped: %s", exc)
+        """[已弃用] 请使用 upcast_pipeline_components()。"""
+        upcast_pipeline_components(self._pipeline, self._model_name, self._logger)
 
     @abc.abstractmethod
     def _load_model(self) -> None:
