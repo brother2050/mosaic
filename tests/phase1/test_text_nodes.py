@@ -95,9 +95,9 @@ class TestTextGenerator:
 
         gen = TextGenerator(model="Qwen/Qwen2.5-7B-Instruct")
         result = gen.run(MosaicData(prompt="Hello, world!"))
-        assert "generated_text" in result
-        assert isinstance(result["generated_text"], str)
-        assert len(result["generated_text"]) > 0
+        assert "prompt" in result
+        assert isinstance(result["prompt"], str)
+        assert len(result["prompt"]) > 0
 
     def test_custom_parameters(self, mock_transformers, text_scheduler):
         """T_GEN_02: 自定义参数（temperature、max_new_tokens）生效。"""
@@ -111,7 +111,7 @@ class TestTextGenerator:
             top_p=0.8,
             do_sample=False,
         ))
-        assert "generated_text" in result
+        assert "prompt" in result
         assert result["input_tokens"] > 0
         assert result["output_tokens"] > 0
 

@@ -44,7 +44,7 @@ class MockFastNode(Node):
 
     def run(self, input_data: MosaicData) -> MosaicData:
         return MosaicData(
-            generated_text="mock output",
+            prompt="mock output",
             input_tokens=10,
             output_tokens=20,
         )
@@ -79,7 +79,7 @@ class MockSlowNode(Node):
     def run(self, input_data: MosaicData) -> MosaicData:
         time.sleep(3.0)
         return MosaicData(
-            generated_text="slow output",
+            prompt="slow output",
             input_tokens=10,
             output_tokens=20,
         )

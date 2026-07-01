@@ -105,7 +105,7 @@
 
 | 用例 ID | 描述 | 预期结果 |
 |---------|------|----------|
-| T_GEN_01 | 基本生成，返回非空文本 | generated_text 非空字符串，input_tokens/output_tokens > 0 |
+| T_GEN_01 | 基本生成，返回非空文本 | prompt 非空字符串，input_tokens/output_tokens > 0 |
 | T_GEN_02 | 自定义参数生效 | max_new_tokens/temperature/top_p/do_sample 传入生效 |
 | T_GEN_03 | describe 返回正确的模型信息 | spec.name="text-generator"，model_info 含模型名称 |
 

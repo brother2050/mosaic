@@ -45,7 +45,7 @@ class TextGenerator(BaseTextNode):
     --------
     >>> gen = TextGenerator(model="Qwen/Qwen2.5-7B-Instruct")
     >>> result = gen(MosaicData(prompt="写一首关于春天的诗"))
-    >>> print(result["generated_text"])
+    >>> print(result["prompt"])
     """
 
     name: str = "text-generator"
@@ -70,7 +70,7 @@ class TextGenerator(BaseTextNode):
         Returns
         -------
         MosaicData
-            包含 ``generated_text`` (str)、``input_tokens`` (int)、
+            包含 ``prompt`` (str)、``input_tokens`` (int)、
             ``output_tokens`` (int)。
 
         Raises
@@ -131,7 +131,6 @@ class TextGenerator(BaseTextNode):
         elapsed = time.perf_counter() - t0
         result = MosaicData(
             prompt=generated_text,
-            generated_text=generated_text,
             input_tokens=input_tokens,
             output_tokens=output_tokens,
         )

@@ -47,7 +47,7 @@ class MockFastNode(Node):
         bus = get_event_bus()
         bus.emit(EventType.NODE_START, node_name=self.name)
         result = MosaicData(
-            generated_text="mock output",
+            prompt="mock output",
             input_tokens=10,
             output_tokens=20,
         )
@@ -84,7 +84,7 @@ class MockSlowNode(Node):
     def run(self, input_data: MosaicData) -> MosaicData:
         time.sleep(0.5)
         return MosaicData(
-            generated_text="slow output",
+            prompt="slow output",
             input_tokens=10,
             output_tokens=20,
         )

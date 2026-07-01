@@ -55,7 +55,7 @@ class MockTextGenerator(Node):
     def run(self, input_data: MosaicData) -> MosaicData:
         prompt = input_data.get("prompt", "default")
         return MosaicData(
-            generated_text=f"Generated: {prompt}",
+            prompt=f"Generated: {prompt}",
             input_tokens=10,
             output_tokens=20,
         )

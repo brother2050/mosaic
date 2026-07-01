@@ -57,7 +57,7 @@
 
 | 字段 | 类型 | 说明 |
 |---|---|---|
-| `generated_text` | str | 生成的文本 |
+| `prompt` | str | 生成的文本 |
 | `input_tokens` | int | 输入 token 数 |
 | `output_tokens` | int | 输出 token 数 |
 
@@ -69,7 +69,7 @@ from mosaic.nodes.text import TextGenerator
 
 gen = TextGenerator(model="Qwen/Qwen2.5-7B-Instruct")
 result = gen.run(MosaicData(prompt="写一首关于春天的诗", temperature=0.8))
-print(result.get("generated_text"))
+print(result.get("prompt"))
 ```
 
 #### 许可证

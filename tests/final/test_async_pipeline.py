@@ -55,7 +55,7 @@ class _MockFastNode(Node):
 
     def run(self, input_data: MosaicData) -> MosaicData:
         return MosaicData(
-            generated_text="mock output",
+            prompt="mock output",
             input_tokens=10,
             output_tokens=20,
         )
@@ -126,7 +126,7 @@ class _MockProgressNode(Node):
             total=10,
         )
         return MosaicData(
-            generated_text="progress output",
+            prompt="progress output",
             input_tokens=10,
             output_tokens=20,
         )
