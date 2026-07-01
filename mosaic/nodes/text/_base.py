@@ -181,13 +181,29 @@ class BaseTextNode(Node):
     def unload(self) -> None:
         """释放模型与 tokenizer。
 
-        本方法执行实际资源清理（清空模型/tokenizer 引用）。它由
-        ``Scheduler.release`` / ``Scheduler._evict`` 回调，不应在其中调用
-        ``scheduler.release(self)`` 以免递归。如需通过调度器释放显存，
-        请直接调用 ``scheduler.release(self)``。
+        本方法执行实际资源清理。它由 ``Scheduler.release`` /
+        ``Scheduler._evict`` 回调，不应在其中调用
+        ``scheduler.release(self)`` 以免递归。
+
+        将模型移至 CPU 再置空（``device_map="auto"`` 的模型可能不支持
+        ``.to("cpu")``，故用 try/except 兜底），随后 ``gc.collect()`` 与
+        ``empty_device_cache()`` 回收 GPU 显存，避免仅置空引用导致显存泄漏。
         """
-        self._model = None
-        self._tokenizer = None
+        if self._model is not None:
+            try:
+                # device_map="auto" 的模型可能不支持 .to("cpu")
+                self._model = self._model.to("cpu")
+            except Exception:
+                pass
+            self._model = None
+            import gc
+
+            gc.collect()
+            from mosaic.core._device_utils import empty_device_cache
+
+            empty_device_cache()
+        if self._tokenizer is not None:
+            self._tokenizer = None
         self._loaded = False
         self._logger.info("Model %s unloaded.", self._model_name)
 

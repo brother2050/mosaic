@@ -843,9 +843,19 @@ class RealtimeRenderer(BaseDigitalHumanNode):
                 )
                 return img
             except Exception as exc:  # noqa: BLE001
-                self._logger.debug(
-                    "ONNX inference failed at frame %d: %s.", frame_idx, exc
-                )
+                self._onnx_fail_count = getattr(self, "_onnx_fail_count", 0) + 1
+                if self._onnx_fail_count <= 3:
+                    self._logger.debug(
+                        "ONNX inference failed at frame %d (attempt %d): %s.",
+                        frame_idx, self._onnx_fail_count, exc,
+                    )
+                if self._onnx_fail_count >= 5:
+                    self._logger.warning(
+                        "ONNX inference failed %d times, disabling ONNX for "
+                        "this session.", self._onnx_fail_count,
+                    )
+                    self._use_onnx = False
+                    self._onnx_session = None
 
         # PyTorch pipeline 推理
         try:

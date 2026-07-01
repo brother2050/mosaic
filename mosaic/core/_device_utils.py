@@ -388,4 +388,6 @@ def empty_device_cache(device: str = "") -> None:
         if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
             torch.mps.empty_cache()
     except Exception:  # noqa: BLE001 - 显存清理失败不应中断推理
-        pass
+        logging.getLogger(__name__).debug(
+            "empty_device_cache failed", exc_info=True,
+        )

@@ -338,13 +338,12 @@ def safe_load_pipeline(
             ) from exc
 
     # 加载成功后存入缓存（from_pretrained 抛异常时不会到达此处）
-    # fp16 variant 回退后实际 dtype 为 float32，缓存键应反映实际 dtype
-    actual_cache_dtype = cache_dtype
-    if first_exc is not None and use_fp16_variant and torch_dtype == torch.float16:
-        # 仅当确实发生了 fp16 variant 回退（first_exc 不为 None）时，
-        # 实际 dtype 才是 float32
-        actual_cache_dtype = "float32"
-    model_cache.put(cache_cls, model_name, actual_cache_dtype, pipe, cache_device)
+    # 统一用请求的 cache_dtype 作为缓存键，保证 get/put/remove 三者一致：
+    # GET 用 cache_dtype 查询，PUT 用 cache_dtype 存储，unload 的 remove
+    # 用 self._dtype_str（与请求的 dtype_str 对应）。这样即使 fp16 variant
+    # 回退后实际加载的是 float32 权重，缓存键仍保持为请求的 dtype，避免
+    # 键不匹配导致的 GET 永久 miss 与缓存泄漏。
+    model_cache.put(cache_cls, model_name, cache_dtype, pipe, cache_device)
     return pipe
 
 

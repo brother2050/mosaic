@@ -783,11 +783,20 @@ class LipSyncer(BaseDigitalHumanNode):
                     arr = np.stack([arr] * 3, axis=-1)
                 return Image.fromarray(arr)
             except Exception as exc:  # noqa: BLE001
-                self._logger.debug(
-                    "ONNX inference failed in _sync_mouth: %s. "
-                    "Falling back to PyTorch model.",
-                    exc,
-                )
+                self._onnx_fail_count = getattr(self, "_onnx_fail_count", 0) + 1
+                if self._onnx_fail_count <= 3:
+                    self._logger.debug(
+                        "ONNX inference failed in _sync_mouth: %s. "
+                        "Falling back to PyTorch model.",
+                        exc,
+                    )
+                if self._onnx_fail_count >= 5:
+                    self._logger.warning(
+                        "ONNX inference failed %d times, disabling ONNX.",
+                        self._onnx_fail_count,
+                    )
+                    self._use_onnx = False
+                    self._onnx_session = None
 
         # PyTorch 模型推理（回退路径）
         if self._method == "musetalk":

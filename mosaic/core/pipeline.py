@@ -940,6 +940,12 @@ class Pipeline(Node):
         finally:
             if owns_executor:
                 executor.shutdown(wait=True)
+            # fail_fast 异常路径：释放所有已加载的非终点节点，避免 GPU 显存泄漏。
+            # 先 shutdown(wait=True) 确保自有线程池的工作线程已结束，避免在节点
+            # 仍被 worker 使用时释放。正常完成路径下非终点节点已被
+            # _release_unused_nodes_parallel 释放，此处为幂等兜底（is_loaded 检查后
+            # 跳过已释放节点；终点节点无后继，跳过不释放）。
+            self._cleanup_loaded_nodes()
 
         return outputs, errors, node_durations
 
@@ -959,69 +965,79 @@ class Pipeline(Node):
         node_durations: dict[str, float] = {}
         order = self._topological_order()
 
-        for nid in order:
-            dn = self._dag[nid]
-            node_input = self._gather_input(dn, outputs, input_data)
+        try:
+            for nid in order:
+                dn = self._dag[nid]
+                node_input = self._gather_input(dn, outputs, input_data)
 
-            ctx.emit(
-                Event(
-                    event_type="node_start",
-                    node_name=dn.node.name,
-                    payload={"input_keys": list(node_input.keys())},
+                ctx.emit(
+                    Event(
+                        event_type="node_start",
+                        node_name=dn.node.name,
+                        payload={"input_keys": list(node_input.keys())},
+                    )
                 )
-            )
-            t0 = time.perf_counter()
-            try:
-                # 不在此处直接调用 node.load()，交给 scheduler.ensure_loaded() 处理
-                # 以确保显存容量检查和 LRU 淘汰正常工作；无 scheduler 的节点
-                #（旧代码兼容）回退到直接 load。
-                self._ensure_node_loaded(dn.node)
-                out = dn.node.run(node_input)
-            except Exception as exc:  # noqa: BLE001
+                t0 = time.perf_counter()
+                try:
+                    # 不在此处直接调用 node.load()，交给 scheduler.ensure_loaded() 处理
+                    # 以确保显存容量检查和 LRU 淘汰正常工作；无 scheduler 的节点
+                    #（旧代码兼容）回退到直接 load。
+                    self._ensure_node_loaded(dn.node)
+                    out = dn.node.run(node_input)
+                except Exception as exc:  # noqa: BLE001
+                    elapsed = time.perf_counter() - t0
+                    node_durations[nid] = elapsed
+                    ctx.store_artifact(dn.node_id, MosaicData(), duration=elapsed)
+                    ctx.emit(
+                        Event(
+                            event_type="node_end",
+                            node_name=dn.node.name,
+                            payload={
+                                "output_keys": [],
+                                "elapsed_seconds": elapsed,
+                                "error": str(exc),
+                            },
+                        )
+                    )
+                    if fail_fast:
+                        raise
+                    errors.append(NodeError(
+                        node_id=nid,
+                        node_name=dn.node.name,
+                        error=exc,
+                        branch_name=dn.branch_name,
+                    ))
+                    # 失败节点输出为空 MosaicData，不阻塞后续
+                    outputs[nid] = MosaicData()
+                    # 串行模式：释放不再被需要的已加载节点
+                    self._release_unused_nodes_serial(nid, order, outputs)
+                    continue
                 elapsed = time.perf_counter() - t0
+                outputs[nid] = out
                 node_durations[nid] = elapsed
-                ctx.store_artifact(dn.node_id, MosaicData(), duration=elapsed)
+                ctx.store_artifact(nid, out, duration=elapsed)
                 ctx.emit(
                     Event(
                         event_type="node_end",
                         node_name=dn.node.name,
                         payload={
-                            "output_keys": [],
+                            "output_keys": list(out.keys()),
                             "elapsed_seconds": elapsed,
-                            "error": str(exc),
                         },
                     )
                 )
-                if fail_fast:
-                    raise
-                errors.append(NodeError(
-                    node_id=nid,
-                    node_name=dn.node.name,
-                    error=exc,
-                    branch_name=dn.branch_name,
-                ))
-                # 失败节点输出为空 MosaicData，不阻塞后续
-                out = MosaicData()
-            elapsed = time.perf_counter() - t0
-            outputs[nid] = out
-            node_durations[nid] = elapsed
-            ctx.store_artifact(nid, out, duration=elapsed)
-            ctx.emit(
-                Event(
-                    event_type="node_end",
-                    node_name=dn.node.name,
-                    payload={
-                        "output_keys": list(out.keys()),
-                        "elapsed_seconds": elapsed,
-                    },
-                )
-            )
 
-            # 串行模式：释放不再被需要的已加载节点（减少组合管道显存占用）
-            # 一个节点"不再被需要"的条件：它的所有后继都已执行完毕
-            self._release_unused_nodes_serial(nid, order, outputs)
+                # 串行模式：释放不再被需要的已加载节点（减少组合管道显存占用）
+                # 一个节点"不再被需要"的条件：它的所有后继都已执行完毕
+                self._release_unused_nodes_serial(nid, order, outputs)
 
-        return outputs, errors, node_durations
+            return outputs, errors, node_durations
+        except Exception:
+            # fail_fast 异常路径：释放所有已加载的非终点节点，避免 GPU 显存泄漏。
+            # 正常完成路径已在 try 内通过 return 返回，不会走到这里；
+            # fail_fast=False 时内部 except 已捕获并 continue，同样不会抛出。
+            self._cleanup_loaded_nodes()
+            raise
 
     def _release_unused_nodes_serial(
         self,
@@ -1076,6 +1092,28 @@ class Pipeline(Node):
             all_successors_done = all(s in outputs for s in dn.successors)
             if not all_successors_done:
                 continue
+            try:
+                scheduler = getattr(dn.node, "_scheduler", None)
+                if scheduler is not None and dn.node.is_loaded():
+                    scheduler.release(dn.node)
+            except Exception:  # noqa: BLE001
+                pass
+
+    def _cleanup_loaded_nodes(self) -> None:
+        """异常路径清理：释放所有已加载的非终点节点。
+
+        在 fail_fast 异常退出时调用，遍历 DAG 中所有非终点节点（有后继的
+        节点），通过节点自身的 scheduler 释放其 GPU 资源，避免显存泄漏。
+        终点节点（无后继）不释放，因为其输出可能仍被调用方使用。
+
+        释放逻辑与 ``_release_unused_nodes_serial`` /
+        ``_release_unused_nodes_parallel`` 一致：仅当节点拥有 scheduler
+        且当前处于已加载状态时才调用 ``scheduler.release``，释放失败时
+        静默忽略（异常路径下的清理不应引入新的异常）。
+        """
+        for nid, dn in self._dag.items():
+            if not dn.successors:
+                continue  # 终点节点不释放
             try:
                 scheduler = getattr(dn.node, "_scheduler", None)
                 if scheduler is not None and dn.node.is_loaded():

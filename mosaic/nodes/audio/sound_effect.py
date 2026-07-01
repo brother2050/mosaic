@@ -105,6 +105,37 @@ class SoundEffectGenerator(BaseAudioNode):
             device,
         )
 
+    def unload(self) -> None:
+        """释放 AudioLDM2 pipeline 并同步移除 model_cache 条目。
+
+        AudioLDM2 通过 ``safe_load_pipeline`` 加载并入 ``model_cache``
+        （未传 ``dtype_str``，缓存键 dtype 维度为 ``"default"``），故卸载时
+        需显式移除缓存条目（否则缓存强引用会阻止显存回收），再将 pipeline
+        移至 CPU、置空并清理 GPU 显存。
+        """
+        if self._model is not None:
+            from mosaic.core.model_cache import model_cache
+
+            # safe_load_pipeline 未传 dtype_str，缓存键 dtype 维度为 "default"
+            model_cache.remove(
+                type(self._model),
+                self._model_name,
+                "default",
+            )
+            try:
+                self._model = self._model.to("cpu")
+            except Exception:
+                pass
+            self._model = None
+            self._pipeline = None
+            from mosaic.core._device_utils import empty_device_cache
+
+            empty_device_cache()
+        if self._processor is not None:
+            self._processor = None
+        self._loaded = False
+        self._logger.info("AudioLDM2 pipeline %s unloaded.", self._model_name)
+
     def run(self, input_data: MosaicData) -> MosaicData:
         """执行音效生成。
 

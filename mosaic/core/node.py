@@ -256,10 +256,17 @@ class Node(abc.ABC):
         )
 
     def _emit_progress(self, current: int, total: int, message: str = "") -> None:
-        """发出 progress 事件。"""
+        """发出 progress 事件。
+
+        ``current``/``total``/``message`` 放在 payload 顶层，供
+        :class:`~mosaic.core.task.AsyncTask` 的进度回调直接读取。
+        """
         self._bus.emit(
             EventType.PROGRESS,
             node_name=self.name,
+            current=current,
+            total=total,
+            message=message,
             output_summary={
                 "progress": current / max(1, total),
                 "current": current,

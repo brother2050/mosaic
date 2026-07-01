@@ -838,11 +838,20 @@ class AvatarDriver(BaseDigitalHumanNode):
                 # 保证背景与源图一致
                 return self._compose_frame(source_image, driven, bbox)
             except Exception as exc:  # noqa: BLE001
-                self._logger.debug(
-                    "ONNX inference failed in _render_liveportrait: %s. "
-                    "Falling back to PyTorch pipeline.",
-                    exc,
-                )
+                self._onnx_fail_count = getattr(self, "_onnx_fail_count", 0) + 1
+                if self._onnx_fail_count <= 3:
+                    self._logger.debug(
+                        "ONNX inference failed in _render_liveportrait: %s. "
+                        "Falling back to PyTorch pipeline.",
+                        exc,
+                    )
+                if self._onnx_fail_count >= 5:
+                    self._logger.warning(
+                        "ONNX inference failed %d times, disabling ONNX.",
+                        self._onnx_fail_count,
+                    )
+                    self._use_onnx = False
+                    self._onnx_session = None
 
         # PyTorch pipeline 推理（回退路径）
         output = self._run_pipeline(**pipe_kwargs)

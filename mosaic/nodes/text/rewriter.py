@@ -81,8 +81,8 @@ class TextRewriter(BaseTextNode):
         self._emit_start()
         t0 = time.perf_counter()
         try:
-            # 校验输入
-            text = input_data.get("text")
+            # 校验输入（兼容上游输出 prompt 字段）
+            text = input_data.get("text") or input_data.get("prompt")
             if not isinstance(text, str):
                 raise ValueError(
                     f"TextRewriter requires 'text' (str), "

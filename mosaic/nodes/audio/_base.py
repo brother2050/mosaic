@@ -153,9 +153,23 @@ class BaseAudioNode(Node):
         本方法执行实际资源清理。它由 ``Scheduler.release`` /
         ``Scheduler._evict`` 回调，不应在其中调用
         ``scheduler.release(self)`` 以免递归。
+
+        将模型移至 CPU 再置空，并触发 ``empty_device_cache`` 回收 GPU
+        显存，避免仅置空引用导致显存泄漏。子类若通过 ``safe_load_model`` /
+        ``safe_load_pipeline`` 加载（入 ``model_cache``），应覆写本方法并
+        调用 ``model_cache.remove`` 以同步移除缓存条目。
         """
-        self._model = None
-        self._processor = None
+        if self._model is not None:
+            try:
+                self._model = self._model.to("cpu")
+            except Exception:
+                pass
+            self._model = None
+            from mosaic.core._device_utils import empty_device_cache
+
+            empty_device_cache()
+        if self._processor is not None:
+            self._processor = None
         self._loaded = False
         self._logger.info("Audio model %s unloaded.", self._model_name)
 

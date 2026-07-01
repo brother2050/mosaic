@@ -431,11 +431,8 @@ class HiFiGanVocoder(Vocoder):
         if os.path.isfile(weights_path) and weights_path.endswith(".onnx"):
             if is_onnxruntime_usable():
                 providers = get_onnx_providers(device)
-                self._device = (
-                    "cuda"
-                    if "CUDAExecutionProvider" in providers
-                    else "cpu"
-                )
+                # 统一用传入的 device（与 speech_tokenizer/speaker_encoder 一致）
+                self._device = device
                 self._dtype = dtype
                 self._onnx_session = create_inference_session(
                     weights_path, providers=providers

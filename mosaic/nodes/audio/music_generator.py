@@ -83,6 +83,9 @@ class MusicGenerator(BaseAudioNode):
             resolved_dtype = torch.float16 if "cuda" in device else torch.float32
         except (AttributeError, RuntimeError):
             resolved_dtype = torch.float32
+        # 缓存键中的 dtype 维度为 str(dtype)（见 safe_load_model），供
+        # unload 调用 model_cache.remove 时还原同一键
+        self._cache_dtype = str(resolved_dtype)
 
         self._processor = safe_load_processor(AutoProcessor, self._model_name)
         self._model = safe_load_model(
@@ -97,6 +100,34 @@ class MusicGenerator(BaseAudioNode):
             self._model_name,
             device,
         )
+
+    def unload(self) -> None:
+        """释放 MusicGen 模型并同步移除 model_cache 条目。
+
+        MusicGen 通过 ``safe_load_model`` 加载并入 ``model_cache``，故卸载时
+        需显式移除缓存条目（否则缓存强引用会阻止显存回收），再将模型移至
+        CPU、置空并清理 GPU 显存。
+        """
+        if self._model is not None:
+            from mosaic.core.model_cache import model_cache
+
+            model_cache.remove(
+                type(self._model),
+                self._model_name,
+                getattr(self, "_cache_dtype", "default"),
+            )
+            try:
+                self._model = self._model.to("cpu")
+            except Exception:
+                pass
+            self._model = None
+            from mosaic.core._device_utils import empty_device_cache
+
+            empty_device_cache()
+        if self._processor is not None:
+            self._processor = None
+        self._loaded = False
+        self._logger.info("MusicGen model %s unloaded.", self._model_name)
 
     def run(self, input_data: MosaicData) -> MosaicData:
         """执行音乐生成。
