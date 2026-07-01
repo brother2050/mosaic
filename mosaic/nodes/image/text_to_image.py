@@ -30,12 +30,23 @@ __all__ = ["TextToImage"]
 class TextToImage(BaseImageNode):
     """文生图节点。
 
-    根据文字提示词生成图片，基于 Stable Diffusion XL。
+    根据文字提示词生成图片，支持 SDXL、SD 1.5、Z-Image 等 diffusers 模型。
 
     Parameters
     ----------
     model:
         HuggingFace 模型标识，默认 ``"stabilityai/stable-diffusion-xl-base-1.0"``。
+    pipeline_class:
+        可选，手动指定 diffusers Pipeline 类。默认为 ``None``（使用
+        ``AutoPipelineForText2Image`` 自动识别）。对于未被 AutoPipeline
+        注册的模型（如 ``ZImagePipeline``），需显式传入：
+
+        >>> from diffusers import ZImagePipeline
+        >>> t2i = TextToImage(
+        ...     model="Tongyi-MAI/Z-Image-Turbo",
+        ...     dtype="bfloat16",
+        ...     pipeline_class=ZImagePipeline,
+        ... )
     **kwargs:
         透传给 :class:`BaseImageNode` 的参数。
 
@@ -67,19 +78,35 @@ class TextToImage(BaseImageNode):
     DEFAULT_NUM_IMAGES: int = 1
 
     def _load_pipeline(self) -> None:
-        """加载 StableDiffusionXLPipeline。"""
-        from diffusers import AutoPipelineForText2Image  # type: ignore
+        """加载 diffusers Pipeline。
+
+        优先使用用户指定的 ``pipeline_class``，否则使用
+        ``AutoPipelineForText2Image`` 自动识别。
+        """
         from mosaic.nodes._pipeline_utils import safe_load_pipeline
 
         torch_dtype = self._resolve_dtype()
 
-        self._pipeline = safe_load_pipeline(
-            AutoPipelineForText2Image,
-            self._model_name,
-            variant_fp16=self._dtype_str in ("float16", "fp16"),
-            dtype_str=self._dtype_str,
-            torch_dtype=torch_dtype,
-        )
+        if self._pipeline_class is not None:
+            # 用户显式指定了 Pipeline 类（如 ZImagePipeline）
+            self._pipeline = safe_load_pipeline(
+                self._pipeline_class,
+                self._model_name,
+                variant_fp16=self._dtype_str in ("float16", "fp16"),
+                dtype_str=self._dtype_str,
+                torch_dtype=torch_dtype,
+            )
+        else:
+            # 使用 AutoPipelineForText2Image 自动识别
+            from diffusers import AutoPipelineForText2Image  # type: ignore
+
+            self._pipeline = safe_load_pipeline(
+                AutoPipelineForText2Image,
+                self._model_name,
+                variant_fp16=self._dtype_str in ("float16", "fp16"),
+                dtype_str=self._dtype_str,
+                torch_dtype=torch_dtype,
+            )
 
         # 迁移到目标设备
         if self._enable_model_cpu_offload:
@@ -92,9 +119,10 @@ class TextToImage(BaseImageNode):
         self._switch_scheduler()
 
         self._logger.info(
-            "SDXL pipeline loaded (dtype=%s, device=%s).",
+            "Pipeline loaded (dtype=%s, device=%s, class=%s).",
             self._dtype_str,
             self._device,
+            type(self._pipeline).__name__,
         )
 
     def run(self, input_data: MosaicData) -> MosaicData:

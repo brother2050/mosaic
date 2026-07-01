@@ -114,10 +114,12 @@ class BaseImageNode(Node):
         scheduler_name: str | None = None,
         scheduler: Scheduler | None = None,
         bus: EventBus | None = None,
+        pipeline_class: Any = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(bus=bus, **kwargs)
         self._model_name: str = model
+        self._pipeline_class: Any = pipeline_class  # None → 使用 AutoPipeline
         self._scheduler_name: str | None = scheduler_name
         self._scheduler: Scheduler = scheduler or get_scheduler()
         self._logger = logging.getLogger(f"mosaic.nodes.image.{self.name}")
