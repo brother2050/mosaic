@@ -266,18 +266,24 @@ def upcast_pipeline_components(
     model_name: str = "",
     logger: Any | None = None,
 ) -> None:
-    """统一上转 pipeline 组件，防止 float16 下的黑图/NaN 问题。
+    """上转 pipeline 的 VAE 为 float32，防止 float16 下的黑图/NaN 问题。
 
-    1. **VAE → float32**：所有模型。float16 下 VAE decode 产生 NaN → 黑图。
-    2. **text_encoder → float32**：仅 SD 1.5 系列。CLIPTextModel 对 float16 敏感，
-       特定 prompt 会触发 attention 溢出产生 NaN 文本嵌入。SDXL 兼容 float16。
+    **仅上转 VAE**。VAE 只在最后 decode 阶段调用一次，diffusers 内部会
+    将 UNet 的 float16 latent 自动转为 float32 传给 VAE，因此不会产生
+    dtype 不匹配错误。
+
+    **不上转 text_encoder**。text_encoder 的输出直接传给 UNet，如果
+    text_encoder 是 float32 而 UNet 是 float16，会触发
+    ``RuntimeError: mat1 and mat2 must have the same dtype``。
+    对于 SD 1.5 等 text_encoder 对 fp16 敏感的模型，应整体加载为 float32
+    （通过 ``dtype="float32"`` 参数），而非单独上转某个组件。
 
     Parameters
     ----------
     pipeline:
         diffusers Pipeline 实例。
     model_name:
-        模型名称，用于判断是否为 SD 1.5 系列。
+        模型名称（保留参数，当前未使用）。
     logger:
         可选的日志器。
     """
@@ -287,6 +293,7 @@ def upcast_pipeline_components(
     import torch  # type: ignore
 
     # VAE → float32（所有模型，幂等安全）
+    # VAE 在 pipeline 末端调用，diffusers 内部会处理 latent dtype 转换
     vae = getattr(pipeline, "vae", None)
     if vae is not None:
         try:
@@ -296,17 +303,3 @@ def upcast_pipeline_components(
         except Exception as exc:
             if logger is not None:
                 logger.debug("VAE upcast skipped: %s", exc)
-
-    # text_encoder → float32（仅 SD 1.5 系列）
-    if _is_sd15_model(model_name):
-        text_encoder = getattr(pipeline, "text_encoder", None)
-        if text_encoder is not None:
-            try:
-                text_encoder.to(torch.float32)
-                if logger is not None:
-                    logger.debug(
-                        "text_encoder upcasted to float32 (SD 1.5 fp16 sensitivity)."
-                    )
-            except Exception as exc:
-                if logger is not None:
-                    logger.debug("text_encoder upcast skipped: %s", exc)
