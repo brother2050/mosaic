@@ -10,7 +10,7 @@ readme = "README.md"
 license = { text = "Apache-2.0" }
 requires-python = ">=3.10"
 authors = [
-    { name = "[Your Name]", email = "you@example.com" },
+    { name = "Mosaic Contributors" },
 ]
 keywords = [
     "multimodal",
@@ -42,14 +42,16 @@ dependencies = [
     # Torchvision: 图像预处理（BackgroundRemover 的 transforms 需要）
     # 与 torch 同版本线，但允许 patch 版本独立
     "torchvision>=0.17.0,<1.0.0",
-    # Transformers: >=4.36.0 保证所需 API；<6.0.0 因 v6 可能有破坏性变更。
-    # 代码已做 v5 兼容（dtype/torch_dtype 回退），支持 4.x 和 5.x
-    "transformers>=4.36.0,<6.0.0",
-    # Diffusers: >=0.27.0 引入所需 Pipeline；<1.0.0 防止大版本破坏。
-    # enable_vae_slicing 已做防御性回退，兼容 0.40+
-    "diffusers>=0.27.0,<1.0.0",
-    # Safetensors: TTS 权重转换器的 load_file/save_file 需要
-    "safetensors>=0.4.0,<1.0.0",
+    # Transformers: >=4.41.2（diffusers 0.38 要求）；<5.0.0 避免 v5 与
+    # chromadb/sentence-transformers 的依赖冲突（chromadb 0.x 强制
+    # transformers 4.x）。待 chromadb 1.0+ 稳定后可放开至 <6.0.0
+    "transformers>=4.41.2,<5.0.0",
+    # Diffusers: >=0.30.0 保证 VAE/scheduling API；<1.0.0 防止大版本破坏
+    "diffusers>=0.30.0,<1.0.0",
+    # Safetensors: diffusers 0.38 要求 >=0.8.0-rc.0
+    "safetensors>=0.4.2,<1.0.0",
+    # HuggingFace Hub: diffusers 0.38 要求 >=0.34.0
+    "huggingface-hub>=0.34.0,<2.0.0",
     # PyYAML: CLI 管道文件解析（mosaic run --pipeline xxx.yaml）和
     # HFModelManager 的 config 读写
     "PyYAML>=6.0,<7.0",
@@ -62,8 +64,8 @@ dependencies = [
     # NumPy: >=1.24.0 保证所需 API；<3.0.0 防止未来大版本破坏。
     # torch>=2.2.0 已兼容 numpy 2.x，故允许 numpy 2.x
     "numpy>=1.24.0,<3.0.0",
-    # Accelerate: device_map="auto" 和 enable_model_cpu_offload 所需
-    "accelerate>=0.20.0,<2.0.0",
+    # Accelerate: diffusers 0.38 要求 >=0.31.0
+    "accelerate>=0.31.0,<2.0.0",
 ]
 
 [project.optional-dependencies]

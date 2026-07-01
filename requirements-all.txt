@@ -1,0 +1,43 @@
+# Mosaic 全量依赖（含可选域：video/audio/rag/digital-human/consistency/export）
+# GPU 用户推荐使用此文件 + onnxruntime-gpu
+
+# 核心依赖
+-r requirements.txt
+
+# video 域
+imageio>=2.31.0,<3.0.0
+imageio-ffmpeg>=0.4.9,<1.0.0
+
+# audio 域
+soundfile>=0.12.0,<1.0.0
+librosa>=0.10.0,<1.0.0
+edge-tts>=6.1.0,<8.0.0
+
+# export 域
+imageio-ffmpeg>=0.4.9,<1.0.0
+soundfile>=0.12.0,<1.0.0
+
+# rag 域
+faiss-cpu>=1.7.4,<2.0.0
+chromadb>=0.4.0,<1.0.0
+pdfplumber>=0.10.0,<1.0.0
+python-docx>=1.1.0,<2.0.0
+beautifulsoup4>=4.12.0,<5.0.0
+sentence-transformers>=2.2.0,<4.0.0
+
+# digital-human 域
+trimesh>=3.23.0,<5.0.0
+insightface>=0.7.3,<1.0.0
+
+# consistency 域
+insightface>=0.7.3,<1.0.0
+scikit-image>=0.21.0,<1.0.0
+
+# ONNX Runtime（GPU 用户用 onnxruntime-gpu 替换）
+# onnxruntime>=1.16.0,<2.0.0          # CPU
+# onnxruntime-gpu>=1.16.0,<2.0.0      # GPU (CUDA 12.x)
+
+# 开发工具
+pytest>=7.4.0,<10.0.0
+ruff>=0.1.0,<1.0.0
+mypy>=1.7.0,<3.0.0

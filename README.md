@@ -67,10 +67,45 @@ Mosaic 是一个模块化、可组合的全模态生成式 AI 框架。它将文
 
 ## 安装
 
+### 前置条件
+
+- Python >= 3.10
+- PyTorch >= 2.2（需匹配 CUDA 版本，参考 [PyTorch 官网](https://pytorch.org/get-started/locally/)）
+
+```bash
+# GPU 用户（示例：CUDA 12.1）
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+
+# CPU 用户
+pip install torch torchvision
+```
+
 ### 基础安装
 
 ```bash
 pip install mosaic
+```
+
+### 从源码安装（开发模式，推荐）
+
+```bash
+git clone https://github.com/your-org/mosaic.git
+cd mosaic
+pip install -e ".[all]"
+```
+
+或直接使用 requirements 文件：
+
+```bash
+# 仅核心依赖
+pip install -r requirements.txt
+
+# 全量依赖（含 video/audio/rag/digital-human/consistency/export）
+pip install -r requirements-all.txt
+
+# ONNX Runtime（二选一）
+pip install onnxruntime            # CPU（RIFE 帧插值、数字人推理）
+pip install onnxruntime-gpu        # GPU（CUDA 12.x，需先卸载 onnxruntime）
 ```
 
 ### 按领域安装可选依赖
@@ -97,16 +132,11 @@ pip install mosaic[onnx]
 # 开发环境
 pip install mosaic[dev]
 
-# 全部安装
+# 全部安装（默认使用 CPU 版 ONNX Runtime）
 pip install mosaic[all]
-```
 
-### 从源码安装（开发模式）
-
-```bash
-git clone https://github.com/your-org/mosaic.git
-cd mosaic
-pip install -e ".[dev]"
+# 全部安装 + GPU 版 ONNX Runtime
+pip install mosaic[all,onnx-gpu]
 ```
 
 ### 验证安装
