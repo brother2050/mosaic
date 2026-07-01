@@ -211,6 +211,12 @@ def extract_frames_from_output(output: Any, logger: Any = None) -> list:
                     "no frames extracted."
                 )
         else:
+            # 检测 NaN：若上游 VAE 产生 NaN，此处报错而非静默输出黑帧
+            if np.isnan(arr).any():
+                raise RuntimeError(
+                    "NaN detected in video output tensor — likely VAE decode failure. "
+                    "Consider upcasting VAE to float32 or reducing resolution."
+                )
             # 归一化到 [0, 255]
             if arr.max() <= 1.0:
                 arr = (arr * 255).clip(0, 255).astype(np.uint8)

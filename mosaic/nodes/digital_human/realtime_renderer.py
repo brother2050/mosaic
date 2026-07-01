@@ -294,8 +294,9 @@ class RealtimeRenderer(BaseDigitalHumanNode):
                 exc,
             )
 
-        # 最终回退：占位渲染器（不持有真实模型）
+        # 占位渲染器（不持有真实模型）：标记为降级模式
         self._pipeline = None
+        self._placeholder_mode = True
 
     def _load_tts(self) -> None:
         """加载 TTS 节点（复用音频域 TTS）。"""
@@ -666,14 +667,28 @@ class RealtimeRenderer(BaseDigitalHumanNode):
                 )
                 if frame is not None:
                     return frame
+                # 模型返回 None：可能是模型加载但无法处理当前输入（如 CPU 环境），
+                # 或 VAE decode 失败。发出 warning（非静默），允许回退到 lightweight。
+                self._logger.warning(
+                    "Model driving returned None at frame %d — "
+                    "possible VAE decode failure or CPU limitation. "
+                    "Falling back to lightweight renderer.",
+                    frame_idx,
+                )
             except Exception as exc:  # noqa: BLE001
-                self._logger.debug(
+                self._logger.warning(
                     "Model driving failed at frame %d: %s. "
                     "Falling back to lightweight renderer.",
                     frame_idx, exc,
                 )
 
         # 轻量回退：基于驱动信号的图像变换
+        # 仅占位模式（模型加载失败）时静默使用；运行时回退发出 warning（见上方）
+        if not getattr(self, "_placeholder_mode", False) and self._pipeline is None:
+            self._logger.warning(
+                "Pipeline not loaded at frame %d; using placeholder renderer.",
+                frame_idx,
+            )
         return self._lightweight_render(
             avatar_img, driving, mode, resolution, frame_idx
         )
@@ -714,6 +729,12 @@ class RealtimeRenderer(BaseDigitalHumanNode):
                 arr = np.asarray(result[0])
                 if arr.ndim == 4:
                     arr = arr[0]
+                # 检测 NaN：若上游 VAE 产生 NaN，此处报错而非静默输出黑帧
+                if np.isnan(arr).any():
+                    raise RuntimeError(
+                        "NaN detected in video output tensor — likely VAE decode failure. "
+                        "Consider upcasting VAE to float32 or reducing resolution."
+                    )
                 if arr.dtype != np.uint8:
                     arr = np.clip(arr, 0, 255).astype(np.uint8)
                 if arr.shape[-1] not in (3, 4):

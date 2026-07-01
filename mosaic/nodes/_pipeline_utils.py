@@ -299,9 +299,9 @@ def safe_load_pipeline(
             ) from exc
         except (OSError, ValueError, RuntimeError) as exc:
             # fp16 variant 不可用（文件缺失/校验失败/部分版本抛 RuntimeError），
-            # 回退到 fp32。记录第一次失败信息，以便第二次也失败时能定位根因
-            # （见 E1）。EnvironmentError 在 Python 3 中是 OSError 别名，已移除
-            # 冗余；新增 RuntimeError 覆盖更多版本异常（见 E2）。
+            # 回退到无 variant 加载。此时 torch_dtype 仍为 float16，但加载的是
+            # fp32 权重再转 fp16（数值可能偏离预量化 variant）。对 VAE 已有
+            # _upcast_vae_fp32 兜底，但为安全起见，已知 fp16 不安全模型应转 fp32。
             first_exc = exc
             logger.warning(
                 "fp16 variant load failed for %s: %s; retrying without variant.",
@@ -310,9 +310,14 @@ def safe_load_pipeline(
             )
 
     # 第二次尝试（不带 variant 或非 fp16 场景）
+    # 注意：回退后 torch_dtype 保持原值（float16），加载的是 fp32 权重再转 fp16。
+    # VAE 已通过 _upcast_vae_fp32 兜底，UNet/text_encoder 的 fp16 转换值与预量化
+    # variant 略有差异但在大多数模型上可接受。
     if pipe is None:
+        # 创建 kwargs 副本，避免修改原始 kwargs 影响缓存键
+        fallback_kwargs = dict(kwargs)
         try:
-            pipe = pipeline_class.from_pretrained(model_name, **kwargs)
+            pipe = pipeline_class.from_pretrained(model_name, **fallback_kwargs)
         except (ImportError, AttributeError, ValueError, OSError, RuntimeError) as exc:
             if first_exc is not None:
                 # 两次加载均失败：同时记录 fp16 与 fp32 的错误，避免第一次失败

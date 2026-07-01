@@ -168,6 +168,9 @@ class IdentityKeeper(BaseConsistencyNode):
             self._load_photomaker()
 
         self._apply_optimizations()
+        # InstantID / IP-Adapter-Face / PhotoMaker 均基于 SDXL，VAE 已兼容 fp16，
+        # 但 upcast 为幂等操作，统一调用以防御未来引入 SD1.5 基础模型时的黑图风险。
+        self._upcast_vae_fp32()
         self._loaded = True
 
     def _resolve_dtype_and_variant(self) -> tuple[Any, str | None]:

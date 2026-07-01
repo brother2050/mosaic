@@ -197,6 +197,26 @@ class BaseConsistencyNode(Node):
             enable_vae_slicing=True,
         )
 
+    def _upcast_vae_fp32(self) -> None:
+        """将 Pipeline 的 VAE 上转为 float32，防止 SD 1.5 在 float16 下产生黑图。
+
+        ``torch.float16`` 下 VAE decoder 的数值精度不足，可能在反量化/解码阶段
+        产生 NaN，导致输出全黑图像（diffusers 已知问题 #2520）。将 VAE 独立保持
+        为 float32 可避免此问题，且不会显著增加显存占用（VAE 参数量远小于 UNet）。
+        SDXL 的 VAE 已兼容 float16，upcast 为幂等操作，安全调用。
+        """
+        if self._pipeline is None:
+            return
+        vae = getattr(self._pipeline, "vae", None)
+        if vae is not None:
+            try:
+                import torch  # type: ignore
+
+                vae.to(torch.float32)
+                self._logger.debug("VAE upcasted to float32 (black-image prevention).")
+            except Exception as exc:  # noqa: BLE001
+                self._logger.debug("VAE upcast skipped: %s", exc)
+
     # ------------------------------------------------------------------
     # 图像前后处理工具
     # ------------------------------------------------------------------

@@ -179,6 +179,11 @@ class Upscaler(BaseImageNode):
         elapsed = time.perf_counter() - t0
 
         result_image = output.images[0] if hasattr(output, "images") and output.images else None
+        if result_image is None:
+            raise RuntimeError(
+                f"Upscaler pipeline returned no image for model {self._model_name!r}. "
+                f"This may indicate a VAE decode failure."
+            )
         output_size = result_image.size if result_image else None
 
         result = MosaicData(

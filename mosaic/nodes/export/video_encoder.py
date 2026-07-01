@@ -456,6 +456,12 @@ class VideoEncoder(Node):
                     arr = np.array(img)
                 elif isinstance(frame, np.ndarray):
                     arr = frame
+                    # 检测 NaN：若上游 VAE 产生 NaN，此处报错而非静默输出黑帧
+                    if np.isnan(arr).any():
+                        raise RuntimeError(
+                            "NaN detected in video output tensor — likely VAE decode failure. "
+                            "Consider upcasting VAE to float32 or reducing resolution."
+                        )
                     # 防御性 dtype 转换：FFmpeg rawvideo 期望 uint8
                     if arr.dtype != np.uint8:
                         arr = np.clip(

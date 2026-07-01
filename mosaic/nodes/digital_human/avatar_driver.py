@@ -660,7 +660,11 @@ class AvatarDriver(BaseDigitalHumanNode):
 
         output = self._run_pipeline(**pipe_kwargs)
         images = self._extract_images(output)
-        driven = images[0] if images else source_image
+        if not images:
+            raise RuntimeError(
+                "LivePortrait returned no driven image — model inference may have failed."
+            )
+        driven = images[0]
         # 保证背景与源图一致
         return self._compose_frame(source_image, driven, bbox)
 

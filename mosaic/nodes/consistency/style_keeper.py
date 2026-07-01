@@ -312,6 +312,9 @@ class StyleKeeper(BaseConsistencyNode):
             self._load_reference_only()
 
         self._apply_optimizations()
+        # SD 1.5 (reference-only) 的 VAE 在 float16 下会产生 NaN → 黑图；
+        # SDXL (ip-adapter / style-aligned) 的 VAE 已兼容 fp16，upcast 幂等。
+        self._upcast_vae_fp32()
         self._loaded = True
 
     def _resolve_dtype_and_variant(self) -> tuple[Any, str | None]:

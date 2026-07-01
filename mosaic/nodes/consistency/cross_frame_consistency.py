@@ -219,6 +219,9 @@ class CrossFrameConsistency(BaseConsistencyNode):
         else:  # all-in-one
             self._load_all_in_one()
 
+        # SD 1.5 (story-diffusion) 的 VAE 在 float16 下会产生 NaN → 黑图；
+        # SDXL (consistory / all-in-one) 的 VAE 已兼容 fp16，upcast 幂等。
+        self._upcast_vae_fp32()
         self._loaded = True
 
     def _load_consistory(self) -> None:
@@ -726,13 +729,9 @@ class CrossFrameConsistency(BaseConsistencyNode):
                 )
 
                 if frame is None:
-                    from PIL import Image  # type: ignore
-
-                    frame = Image.new("RGB", (width, height), (0, 0, 0))
-                    self._logger.warning(
-                        "Frame %d generation returned no image; "
-                        "using placeholder.",
-                        i,
+                    raise RuntimeError(
+                        f"Frame {i} generation returned None for prompt: {full_prompt[:80]!r}. "
+                        f"This may indicate a VAE decode failure or pipeline error."
                     )
 
                 images.append(frame)

@@ -648,7 +648,11 @@ class LipSyncer(BaseDigitalHumanNode):
             )
 
         images = self._extract_images(output)
-        return images[0] if images else face_crop
+        if not images:
+            raise RuntimeError(
+                "Lip sync model returned no image — audio-driven inference may have failed."
+            )
+        return images[0]
 
     def _blend_mouth_only(
         self,

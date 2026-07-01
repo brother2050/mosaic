@@ -104,13 +104,16 @@ class TextToVideo(BaseVideoNode):
         self,
         model: str = "THUDM/CogVideoX-5b",
         device: str = "cuda",
-        dtype: str = "float16",
+        dtype: str = "auto",
         enable_attention_slicing: bool = True,
         enable_vae_slicing: bool = True,
         enable_vae_tiling: bool = True,
         enable_sequential_cpu_offload: bool = False,
         **kwargs: Any,
     ) -> None:
+        # CogVideoX-5b 以 bfloat16 训练，CogVideoX-2b 以 float16 训练
+        if dtype == "auto":
+            dtype = "bfloat16" if "5b" in model else "float16"
         super().__init__(model=model, device=device, dtype=dtype, **kwargs)
         self._enable_attention_slicing: bool = enable_attention_slicing
         self._enable_vae_slicing: bool = enable_vae_slicing
