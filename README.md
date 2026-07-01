@@ -83,60 +83,36 @@ pip install torch torchvision
 ### 基础安装
 
 ```bash
+# 从 PyPI 安装（仅核心依赖）
 pip install mosaic
-```
 
-### 从源码安装（开发模式，推荐）
-
-```bash
+# 从源码安装（开发模式，推荐）
 git clone https://github.com/your-org/mosaic.git
 cd mosaic
-pip install -e ".[all]"
+pip install -e .
 ```
 
-或直接使用 requirements 文件：
+### 按需安装可选依赖
 
 ```bash
-# 仅核心依赖
-pip install -r requirements.txt
-
-# 全量依赖（含 video/audio/rag/digital-human/consistency/export）
-pip install -r requirements-all.txt
-
-# ONNX Runtime（二选一）
-pip install onnxruntime            # CPU（RIFE 帧插值、数字人推理）
-pip install onnxruntime-gpu        # GPU（CUDA 12.x，需先卸载 onnxruntime）
-```
-
-### 按领域安装可选依赖
-
-```bash
-# 视频处理（diffusers 视频模型 + imageio）
-pip install mosaic[video]
-
-# 音频处理（soundfile + librosa + edge-tts）
-pip install mosaic[audio]
+# 媒体处理（视频读写 + 音频处理 + 数字人 + 一致性）
+pip install -e ".[media]"
 
 # RAG 检索增强（faiss + chromadb + sentence-transformers）
-pip install mosaic[rag]
+pip install -e ".[rag]"
 
-# 数字人（trimesh + insightface）
-pip install mosaic[digital-human]
-
-# 一致性域（insightface + scikit-image）
-pip install mosaic[consistency]
-
-# ONNX Runtime（CPU 版本，RIFE 帧插值）
-pip install mosaic[onnx]
+# ONNX Runtime（二选一）
+pip install -e ".[onnx]"        # CPU
+pip install -e ".[onnx-gpu]"   # GPU (CUDA 12.x)
 
 # 开发环境
-pip install mosaic[dev]
+pip install -e ".[dev]"
 
-# 全部安装（默认使用 CPU 版 ONNX Runtime）
-pip install mosaic[all]
+# 全量安装（默认 CPU ONNX）
+pip install -e ".[all]"
 
-# 全部安装 + GPU 版 ONNX Runtime
-pip install mosaic[all,onnx-gpu]
+# 全量安装 + GPU ONNX
+pip install -e ".[all,onnx-gpu]"
 ```
 
 ### 验证安装

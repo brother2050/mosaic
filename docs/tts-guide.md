@@ -155,14 +155,14 @@ TextFrontend → AcousticModel → Vocoder → StreamAdapter
 
 ```bash
 # 基础音频
-pip install "mosaic[audio]"
+pip install "mosaic[media]"
 ```
 
 ### ChatTTS
 
 ```bash
 # Mosaic 已包含代码，只需要安装基础依赖
-pip install "mosaic[audio]" vocos
+pip install "mosaic[media]" vocos
 
 # 权重：首次运行自动从 Hugging Face 下载（约 1.2GB）到 ~/.cache/huggingface/hub/
 # 也可手动指定模型目录：
@@ -177,7 +177,7 @@ pip install "mosaic[audio]" vocos
 
 ```bash
 # Mosaic 已包含代码，只需要安装基础依赖
-pip install "mosaic[audio]"
+pip install "mosaic[media]"
 
 # 权重：从 Hugging Face 下载
 # from huggingface_hub import snapshot_download
@@ -192,7 +192,7 @@ pip install "mosaic[audio]"
 
 ```bash
 # Mosaic 已包含代码，需要额外安装 GPT-SoVITS 依赖
-pip install "mosaic[audio]" chinese-text-splitter pypinyin
+pip install "mosaic[media]" chinese-text-splitter pypinyin
 
 # 预训练权重：从 https://huggingface.co/lj1995/GPT-SoVITS 下载
 # 将下载的文件放到你指定的 model_path 目录即可使用
@@ -209,7 +209,7 @@ pip install "mosaic[audio]" chinese-text-splitter pypinyin
 
 ```bash
 # Mosaic 已包含代码，只需要安装基础依赖
-pip install "mosaic[audio]"
+pip install "mosaic[media]"
 
 # 权重：从 Hugging Face 下载
 # from huggingface_hub import snapshot_download

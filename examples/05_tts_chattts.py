@@ -3,7 +3,7 @@ examples/05_tts_chattts.py
 ChatTTS 完整示例 —— 基础合成、韵律控制、随机音色、流式输出。
 
 依赖：
-    pip install "mosaic[audio]"
+    pip install "mosaic[media]"
     pip install chattts
     # 权重：首次运行自动从 HF Hub 下载（约 1.2GB）
 

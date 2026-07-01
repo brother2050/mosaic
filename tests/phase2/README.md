@@ -176,6 +176,6 @@
 
 - **通过率要求**：100%（所有测试用例必须通过，不允许有 FAIL 或 SKIP）
 - **执行环境**：需在有 GPU 的环境中执行（部分测试如 `T_IBASE_04` 需在无 GPU 环境中验证降级行为，可单独执行）
-- **依赖项**：确保所有模型文件已下载，Python 依赖已安装（参见 `requirements.txt`）
+- **依赖项**：确保所有模型文件已下载，Python 依赖已安装（参见 `pyproject.toml`）
 - **执行命令**：`pytest tests/phase2/ -v --tb=short`
 - **报告格式**：执行完成后生成 JUnit XML 报告（`pytest tests/phase2/ -v --tb=short --junitxml=phase2_results.xml`）

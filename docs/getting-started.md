@@ -40,16 +40,16 @@ pip install mosaic
 
 ```bash
 # 视频生成（Wan2.1 / HunyuanVideo / LTX-Video）
-pip install "mosaic[video]"
+pip install "mosaic[media]"
 
 # 音频（含 edge-tts 默认 TTS 后端）
-pip install "mosaic[audio]"
+pip install "mosaic[media]"
 
 # RAG 检索增强
 pip install "mosaic[rag]"
 
 # 数字人
-pip install "mosaic[digital-human]"
+pip install "mosaic[media]"
 
 # ONNX Runtime（CPU，RIFE 帧插值 / 部分数字人推理）
 pip install "mosaic[onnx]"
@@ -324,7 +324,7 @@ Saved to coffee.png
 ## 第二个示例：文字生成语音
 
 ```bash
-pip install "mosaic[audio]"  # edge-tts 后端
+pip install "mosaic[media]"  # edge-tts 后端
 ```
 
 `text_to_speech.py`：
@@ -391,7 +391,7 @@ for chunk in chat.stream(MosaicData(
 ## 第三个示例：文字生成视频
 
 ```bash
-pip install "mosaic[video]"
+pip install "mosaic[media]"
 ```
 
 `text_to_video.py`：

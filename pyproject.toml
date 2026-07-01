@@ -69,83 +69,44 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# ONNX Runtime 有两个互斥的 PyPI 包：
-#   onnxruntime       — 仅 CPU
-#   onnxruntime-gpu   — GPU (CUDA)，包含 CPU 功能
-# 两者不能同时安装。用户根据硬件选择其一。
-#
-# 版本约束说明（参考 https://onnxruntime.ai/docs/execution-providers/CUDA-ExecutionProvider）：
-#   onnxruntime-gpu 1.17.x  需要 CUDA 12.x + cuDNN 8.x（适合 PyTorch <= 2.3）
-#   onnxruntime-gpu 1.18.1+ 需要 CUDA 12.x + cuDNN 9.x（适合 PyTorch >= 2.4）
-#   onnxruntime-gpu 1.21.0+ 提供 preload_dlls() 可自动加载 PyTorch 的 CUDA/cuDNN 库
-#   cuDNN 8.x 与 9.x 互不兼容，版本不匹配会导致 InferenceSession 加载失败
+# ONNX Runtime（互斥，二选一）
+#   pip install -e ".[onnx]"        # CPU
+#   pip install -e ".[onnx-gpu]"    # GPU (CUDA)
 onnx = [
-    # ONNX Runtime CPU 版本（帧插值 RIFE / 数字人推理）
     "onnxruntime>=1.16.0,<2.0.0",
 ]
 onnx-gpu = [
-    # ONNX Runtime GPU 版本（CUDA 12.x），包含 CPU 功能
-    # 安装前请确保未安装 onnxruntime（CPU 版本）
-    # PyTorch >= 2.4（cuDNN 9.x）用户推荐 1.19.0+
-    # PyTorch <= 2.3（cuDNN 8.x）用户请使用 1.17.x 或 1.18.0
     "onnxruntime-gpu>=1.16.0,<2.0.0",
 ]
-video = [
+# 媒体处理（视频读写、音频处理、导出、数字人、一致性）
+media = [
     "imageio>=2.31.0,<3.0.0",
     "imageio-ffmpeg>=0.4.9,<1.0.0",
-    # 帧插值 (RIFE) 需要 ONNX Runtime，
-    # 请额外安装 mosaic[onnx] (CPU) 或 mosaic[onnx-gpu] (GPU)
-]
-audio = [
     "soundfile>=0.12.0,<1.0.0",
     "librosa>=0.10.0,<1.0.0",
-    # edge-tts: 微软 Azure TTS，免费、支持多语言和情感风格，无需 GPU
     "edge-tts>=6.1.0,<8.0.0",
+    "trimesh>=3.23.0,<5.0.0",
+    "insightface>=0.7.3,<1.0.0",
+    "scikit-image>=0.21.0,<1.0.0",
 ]
-export = [
-    # 视频编码与推流需要 FFmpeg
-    "imageio-ffmpeg>=0.4.9,<1.0.0",
-    # 音频导出需要 soundfile
-    "soundfile>=0.12.0,<1.0.0",
-]
+# RAG（检索增强生成）
 rag = [
     "faiss-cpu>=1.7.4,<2.0.0",
-    # ChromaDB 1.0 有重大破坏性变更 (Rust 重写、API 重构)，
-    # 项目代码基于 0.x API 编写
     "chromadb>=0.4.0,<1.0.0",
-    # 文档解析库
     "pdfplumber>=0.10.0,<1.0.0",
     "python-docx>=1.1.0,<2.0.0",
     "beautifulsoup4>=4.12.0,<5.0.0",
-    # 嵌入模型
     "sentence-transformers>=2.2.0,<4.0.0",
 ]
-digital-human = [
-    # 数字人推理需要 ONNX Runtime，
-    # 请额外安装 mosaic[onnx] (CPU) 或 mosaic[onnx-gpu] (GPU)
-    "trimesh>=3.23.0,<5.0.0",
-    # 人脸检测与特征提取（数字人域 _detect_face / _extract_face_embedding 使用）
-    # insightface 是可选依赖，缺失时自动回退到中心裁剪
-    "insightface>=0.7.3,<1.0.0",
-]
-consistency = [
-    # 人脸检测（IdentityKeeper 的 _prepare_face_region 使用）
-    # insightface 是可选依赖，缺失时自动回退到中心裁剪
-    "insightface>=0.7.3,<1.0.0",
-    # 图像相似度计算（_compute_image_similarity 使用）
-    # scikit-image 是可选依赖，缺失时自动回退到归一化互相关
-    "scikit-image>=0.21.0,<1.0.0",
-]
+# 开发工具
 dev = [
     "pytest>=7.4.0,<10.0.0",
     "ruff>=0.1.0,<1.0.0",
     "mypy>=1.7.0,<3.0.0",
 ]
-# all 组默认使用 CPU 版本的 ONNX Runtime。
-# GPU 用户请安装 mosaic[all,onnx-gpu] 并手动卸载 onnxruntime:
-#   pip uninstall onnxruntime && pip install mosaic[all,onnx-gpu]
+# 全量安装（默认 CPU ONNX；GPU 用户用 all,onnx-gpu）
 all = [
-    "mosaic[onnx,video,audio,export,rag,digital-human,consistency,dev]",
+    "mosaic[onnx,media,rag,dev]",
 ]
 
 [project.urls]

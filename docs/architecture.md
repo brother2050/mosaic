@@ -614,7 +614,7 @@ for chunk in chat.stream(MosaicData(messages=[...], temperature=0.8)):
 每个域节点在 `import` 时不实际加载 `torch` / `diffusers` / `transformers`，仅在 `load()` 时导入。好处：
 
 - **导入快**：核心包可在无 ML 库环境运行
-- **可选依赖友好**：未安装 `mosaic[video]` 也能用文本/音频域
+- **可选依赖友好**：未安装 `mosaic[media]` 也能用文本/音频域
 - **测试友好**：单元测试无需 ML 环境
 
 ### 7. 为什么 PipelineResult 同时提供 get() 和 dict-like 访问？
