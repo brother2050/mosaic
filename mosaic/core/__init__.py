@@ -43,10 +43,13 @@ from mosaic.core.task import AsyncTask, TaskCancelledError, TaskStatus
 from mosaic.core.task_manager import TaskManager
 from mosaic.core.types import (
     AudioData,
+    AvatarData,
     DATA_TYPE_REGISTRY,
     DocumentData,
     ImageData,
+    MotionData,
     MosaicData,
+    RagQueryResult,
     SubtitleData,
     TextData,
     VideoData,
@@ -65,6 +68,9 @@ __all__ = [
     "VideoData",
     "SubtitleData",
     "DocumentData",
+    "MotionData",
+    "AvatarData",
+    "RagQueryResult",
     "DATA_TYPE_REGISTRY",
     "data_from_dict",
     # node

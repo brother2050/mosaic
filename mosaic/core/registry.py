@@ -250,7 +250,6 @@ class NodeRegistry:
         """
         if self._scanned:
             return []
-        self._scanned = True
 
         newly_registered: list[type[Node]] = []
         try:
@@ -302,8 +301,17 @@ class NodeRegistry:
                         if already is not None:
                             # 已被其它类占用，交由 register 抛出 ValueError
                             pass
-                    self.register(attr_value)
-                    newly_registered.append(attr_value)
+                    try:
+                        self.register(attr_value)
+                        newly_registered.append(attr_value)
+                    except ValueError as exc:
+                        # 同名节点冲突不应中断整个发现过程
+                        self._logger.warning(
+                            "Node registration conflict: %s", exc,
+                        )
+                        continue
+        # 标记扫描完成（移至扫描成功后，允许中途失败后重试）
+        self._scanned = True
         return newly_registered
 
     def reset_discovery(self) -> None:

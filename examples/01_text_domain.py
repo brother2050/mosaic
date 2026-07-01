@@ -10,8 +10,7 @@ from __future__ import annotations
 import sys
 sys.path.insert(0, "/workspace/mosaic")
 
-from mosaic import Pipeline
-from mosaic.core.types import MosaicData
+from mosaic.core import MosaicData
 from mosaic.nodes.text import (
     TextGenerator,
     Chat,
@@ -28,12 +27,14 @@ def example_1_text_generation():
 
     gen = TextGenerator(model="Qwen/Qwen2.5-7B-Instruct")
     result = gen.run(
-        prompt="用三句话描述春天的早晨",
-        temperature=0.7,
-        seed=42,
+        MosaicData(
+            prompt="用三句话描述春天的早晨",
+            temperature=0.7,
+            seed=42,
+        )
     )
 
-    text = result.get("text")
+    text = result.get("generated_text")
     print(f"生成的文本：\n{text}\n")
     return text
 
@@ -44,11 +45,16 @@ def example_2_chat():
 
     chat = Chat(system_prompt="你是一个 Python 教学助手")
 
-    r1 = chat.run(MosaicData(message="什么是装饰器？"))
+    # 第一轮：构建 messages 列表（role + content）
+    messages = [{"role": "user", "content": "什么是装饰器？"}]
+    r1 = chat.run(MosaicData(messages=messages))
     print(f"用户：什么是装饰器？")
     print(f"助手：{r1.get('reply')}\n")
 
-    r2 = chat.run(MosaicData(message="能举个例子吗？"))
+    # 第二轮：Chat 返回的 messages 已包含助手回复，追加新问题即可
+    messages = r1.get("messages")
+    messages.append({"role": "user", "content": "能举个例子吗？"})
+    r2 = chat.run(MosaicData(messages=messages))
     print(f"用户：能举个例子吗？")
     print(f"助手：{r2.get('reply')}\n")
 
@@ -61,13 +67,14 @@ def example_3_rewriter():
     original = "这个产品超棒，我非常喜欢，用起来很爽"
 
     result = rewriter.run(
-        text=original,
-        style="formal",
-        requirement="增加专业术语",
+        MosaicData(
+            text=original,
+            instruction="改为正式风格，增加专业术语",
+        )
     )
 
     print(f"原文：{original}")
-    print(f"改写：{result.get('text')}\n")
+    print(f"改写：{result.get('rewritten_text')}\n")
 
 
 def example_4_translator():
@@ -81,8 +88,8 @@ def example_4_translator():
         ("今天天气真好", "ja"),
         ("Hello world", "zh"),
     ]:
-        result = translator.run(MosaicData(text=text, target_lang=target))
-        print(f"{text} → [{target}]: {result.get('text')}")
+        result = translator.run(MosaicData(text=text, target_language=target))
+        print(f"{text} → [{target}]: {result.get('translated_text')}")
 
     print()
 
@@ -100,12 +107,14 @@ def example_5_summarizer():
 
     summarizer = TextSummarizer()
     result = summarizer.run(
-        text=long_text,
-        mode="bullet_points",
-        max_length=100,
+        MosaicData(
+            text=long_text,
+            style="bullet_points",
+            max_length=100,
+        )
     )
 
-    print(f"摘要：\n{result.get('text')}\n")
+    print(f"摘要：\n{result.get('summary')}\n")
 
 
 def example_6_classifier():
@@ -114,38 +123,56 @@ def example_6_classifier():
 
     classifier = TextClassifier()
 
-    # 情感分析
-    result = classifier.run(MosaicData(text="这家餐厅的食物非常棒！", mode="sentiment"))
-    print(f"情感分析：{result.get('label')} ({result.get('scores')})")
-
-    # 零样本分类
+    # 情感分析（需提供候选标签）
     result = classifier.run(
-        text="今天的会议讨论了产品路线图",
-        labels=["技术", "商业", "运营", "人事"],
-        mode="zero_shot",
+        MosaicData(
+            text="这家餐厅的食物非常棒！",
+            labels=["正面", "负面", "中性"],
+        )
     )
-    print(f"零样本分类：{result.get('label')} (top-3: {result.get('top_k')})")
+    print(f"情感分析：{result.get('predicted_label')} ({result.get('scores')})")
+
+    # 零样本分类（提供任意候选标签）
+    result = classifier.run(
+        MosaicData(
+            text="今天的会议讨论了产品路线图",
+            labels=["技术", "商业", "运营", "人事"],
+        )
+    )
+    print(f"零样本分类：{result.get('predicted_label')} (scores: {result.get('scores')})")
 
     print()
 
 
 def example_7_combined_pipeline():
-    """示例 7：文本处理管道（生成 → 翻译 → 摘要）。"""
-    print("\n=== 示例 7：组合管道（生成 → 翻译 → 摘要）===")
+    """示例 7：文本处理流水线（生成 → 翻译 → 摘要）。
 
-    pipe = (
-        TextGenerator(model="Qwen/Qwen2.5-7B-Instruct")
-        | Translator()
-        | TextSummarizer()
+    由于 TextGenerator 输出字段为 ``generated_text``，而 Translator
+    需要输入字段 ``text``，字段名不一致，因此用显式的逐节点调用
+    来展示数据如何在节点之间流转。在节点输出字段与下一节点输入字段
+    名称匹配的场景下，可直接使用 ``|`` 管道运算符。
+    """
+    print("\n=== 示例 7：组合流水线（生成 → 翻译 → 摘要）===")
+
+    gen = TextGenerator(model="Qwen/Qwen2.5-7B-Instruct")
+    translator = Translator()
+    summarizer = TextSummarizer()
+
+    # 1. 生成
+    r1 = gen.run(MosaicData(prompt="用一段话介绍北京"))
+    generated = r1.get("generated_text")
+    print(f"生成：{generated}\n")
+
+    # 2. 翻译（将生成文本作为输入）
+    r2 = translator.run(
+        MosaicData(text=generated, target_language="en")
     )
+    translated = r2.get("translated_text")
+    print(f"翻译：{translated}\n")
 
-    result = pipe.run(
-        prompt="用一段话介绍北京",
-        target_lang="en",
-        mode="concise",
-    )
-
-    print(f"最终结果：\n{result.get('text')}\n")
+    # 3. 摘要
+    r3 = summarizer.run(MosaicData(text=translated, style="concise"))
+    print(f"摘要：{r3.get('summary')}\n")
 
 
 def main():

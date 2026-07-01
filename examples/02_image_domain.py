@@ -10,8 +10,9 @@ from __future__ import annotations
 import sys
 sys.path.insert(0, "/workspace/mosaic")
 
-from mosaic import Pipeline
-from mosaic.core.types import ImageData, MosaicData
+from PIL import Image
+
+from mosaic.core import MosaicData
 from mosaic.nodes.image import (
     TextToImage,
     ImageToImage,
@@ -44,13 +45,15 @@ def example_2_image_to_image():
     print("\n=== 示例 2：图生图 ===")
 
     i2i = ImageToImage(model="stabilityai/stable-diffusion-xl-refiner-1.0")
-    input_image = ImageData.from_file("input.jpg")  # 假设有 input.jpg
+    input_image = Image.open("input.jpg")  # 假设有 input.jpg
 
     result = i2i.run(
-        image=input_image,
-        prompt="the same scene in watercolor painting style",
-        strength=0.6,
-        seed=42,
+        MosaicData(
+            image=input_image,
+            prompt="the same scene in watercolor painting style",
+            strength=0.6,
+            seed=42,
+        )
     )
 
     image = result.get("image")
@@ -64,9 +67,9 @@ def example_3_inpainting():
 
     inpaint = Inpainting(model="diffusers/stable-diffusion-xl-1.0-inpainting-0.1")
 
-    # 模拟输入图和蒙版
-    image = ImageData.from_file("room.jpg")
-    mask = ImageData.from_file("mask.png")  # 白色区域为重绘区
+    # 模拟输入图和蒙版（直接使用 PIL.Image）
+    image = Image.open("room.jpg")
+    mask = Image.open("mask.png")  # 白色区域为重绘区
 
     result = inpaint.run(MosaicData(
         image=image,
@@ -80,11 +83,14 @@ def example_3_inpainting():
 
 
 def example_4_upscaler():
-    """示例 4：超分辨率。"""
+    """示例 4：超分辨率。
+
+    注意：``scale_factor`` 是运行时输入字段，不是构造参数。
+    """
     print("\n=== 示例 4：超分（4x）===")
 
     upscaler = Upscaler(model="stabilityai/stable-diffusion-x4-upscaler")
-    low_res = ImageData.from_file("low_res.jpg")
+    low_res = Image.open("low_res.jpg")
 
     result = upscaler.run(MosaicData(image=low_res, scale_factor=4))
     image = result.get("image")
@@ -97,7 +103,7 @@ def example_5_background_remover():
     print("\n=== 示例 5：去背景 ===")
 
     remover = BackgroundRemover(model="briaai/RMBG-2.0")
-    image = ImageData.from_file("portrait.jpg")
+    image = Image.open("portrait.jpg")
 
     result = remover.run(MosaicData(image=image))
     result.get("image").save("output_no_bg.png")
@@ -109,19 +115,30 @@ def example_6_stylizer():
     print("\n=== 示例 6：风格化 ===")
 
     stylizer = Stylizer()
-    image = ImageData.from_file("photo.jpg")
+    image = Image.open("photo.jpg")
 
     result = stylizer.run(
-        image=image,
-        style="oil painting, impressionist",
-        strength=0.8,
+        MosaicData(
+            image=image,
+            style="oil painting, impressionist",
+            strength=0.8,
+        )
     )
     result.get("image").save("output_stylized.png")
     print("已应用艺术风格")
 
 
 def example_7_combined_pipeline():
-    """示例 7：组合管道（生成 → 去背景 → 4x 超分）。"""
+    """示例 7：组合管道（生成 → 去背景 → 4x 超分）。
+
+    管道中各节点的输出字段与下一节点的输入字段名称匹配：
+    - TextToImage 输出 ``image`` (PIL.Image) → BackgroundRemover 需要 ``image``
+    - BackgroundRemover 输出 ``image`` (PIL.Image) → Upscaler 需要 ``image``
+
+    注意：``scale_factor`` 无法通过管道透传到 Upscaler（中间节点会
+    创建新的 MosaicData），Upscaler 默认 ``scale_factor=4``，因此
+    最终仍为 4x 放大。
+    """
     print("\n=== 示例 7：组合管道（生成 → 去背景 → 4x 超分）===")
 
     pipe = (
@@ -133,7 +150,6 @@ def example_7_combined_pipeline():
     result = pipe.run(MosaicData(
         prompt="a beautiful flower, isolated on white background",
         seed=42,
-        scale_factor=4,
     ))
 
     result.get("image").save("output_combined.png")

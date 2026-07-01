@@ -229,9 +229,32 @@ class BaseImageNode(Node):
         ``Scheduler._evict`` 回调，不应在其中调用
         ``scheduler.release(self)`` 以免递归。
         """
-        self._pipeline = None
-        self._loaded = False
-        self._logger.info("Pipeline for model %s unloaded.", self._model_name)
+        if self._pipeline is not None:
+            # 从 model_cache 移除，避免强引用导致显存无法释放
+            from mosaic.core.model_cache import model_cache
+            model_cache.remove(
+                type(self._pipeline),
+                self._model_name,
+                self._dtype_str,
+            )
+            # 移至 CPU 再置空，加速 GPU 显存回收
+            try:
+                self._pipeline.to("cpu")
+            except Exception:
+                pass
+            self._pipeline = None
+            self._loaded = False
+            # 触发 GPU 显存回收
+            try:
+                import torch
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+            except Exception:
+                pass
+            self._logger.info(
+                "Pipeline for model %s unloaded (GPU cache cleared).",
+                self._model_name,
+            )
 
     # ------------------------------------------------------------------
     # 公共推理逻辑

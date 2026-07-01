@@ -16,10 +16,7 @@ import io
 import time
 from typing import Any
 
-from mosaic.core.events import EventBus, get_event_bus
-from mosaic.core.node import NodeSpec
 from mosaic.core.registry import registry
-from mosaic.core.scheduler import Scheduler, get_scheduler
 from mosaic.core.types import MosaicData
 
 from mosaic.nodes.image._base import BaseImageNode, _VRAM_ESTIMATES, _LICENSE_INFO

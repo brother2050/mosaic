@@ -146,12 +146,26 @@ class ModelCache:
                 )
 
     def clear(self) -> None:
-        """清空缓存。"""
+        """清空缓存并释放 GPU 显存。"""
         with self._lock:
             count = len(self._cache)
+            # 将所有 Pipeline/模型移至 CPU 加速显存回收
+            for _key, obj in self._cache.items():
+                try:
+                    if hasattr(obj, "to"):
+                        obj.to("cpu")
+                except Exception:
+                    pass
             self._cache.clear()
             if count:
                 logger.info("Model cache cleared (%d entries)", count)
+        # 在锁外触发 GPU 显存回收
+        try:
+            import torch
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+        except Exception:
+            pass
 
     def set_enabled(self, enabled: bool) -> None:
         """启用/禁用缓存。"""

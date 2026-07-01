@@ -249,12 +249,13 @@ class BaseVideoNode(Node):
         fps = int(meta.get("fps", 30))
 
         frames: list[Any] = []
-        for frame in reader:
-            # imageio 返回 numpy 数组 (H, W, C)
-            pil_frame = Image.fromarray(frame)
-            frames.append(pil_frame)
-
-        reader.close()
+        try:
+            for frame in reader:
+                # imageio 返回 numpy 数组 (H, W, C)
+                pil_frame = Image.fromarray(frame)
+                frames.append(pil_frame)
+        finally:
+            reader.close()
 
         width, height = frames[0].size if frames else (0, 0)
         duration = len(frames) / fps if fps > 0 else 0.0
@@ -311,21 +312,22 @@ class BaseVideoNode(Node):
             codec=codec,
         )
 
-        for frame in frames:
-            if isinstance(frame, Image.Image):
-                arr = np.array(frame.convert("RGB"))
-            else:
-                arr = np.asarray(frame)
-                # 防御性 dtype 转换：imageio 期望 uint8
-                if arr.dtype != np.uint8:
-                    # 空数组保护：arr.size == 0 时 arr.max() 会抛 ValueError
-                    if arr.size > 0 and arr.max() <= 1.0:
-                        arr = np.clip(arr * 255, 0, 255).astype(np.uint8)
-                    else:
-                        arr = np.clip(arr, 0, 255).astype(np.uint8)
-            writer.append_data(arr)
-
-        writer.close()
+        try:
+            for frame in frames:
+                if isinstance(frame, Image.Image):
+                    arr = np.array(frame.convert("RGB"))
+                else:
+                    arr = np.asarray(frame)
+                    # 防御性 dtype 转换：imageio 期望 uint8
+                    if arr.dtype != np.uint8:
+                        # 空数组保护：arr.size == 0 时 arr.max() 会抛 ValueError
+                        if arr.size > 0 and arr.max() <= 1.0:
+                            arr = np.clip(arr * 255, 0, 255).astype(np.uint8)
+                        else:
+                            arr = np.clip(arr, 0, 255).astype(np.uint8)
+                writer.append_data(arr)
+        finally:
+            writer.close()
 
     @staticmethod
     def _extract_frames(
