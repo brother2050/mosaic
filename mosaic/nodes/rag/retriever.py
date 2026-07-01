@@ -26,6 +26,7 @@ from mosaic.core.registry import registry
 from mosaic.core.scheduler import Scheduler, get_scheduler
 from mosaic.core.types import MosaicData, RagQueryResult
 
+from mosaic.nodes._coerce import safe_float, safe_int
 from mosaic.nodes.rag._base import BaseRagNode, _EMBEDDING_VRAM
 
 __all__ = ["Retriever"]
@@ -200,8 +201,10 @@ class Retriever(BaseRagNode):
                 )
 
             collection_name = input_data.get("collection_name", "default")
-            top_k = int(input_data.get("top_k", 5))
-            score_threshold = float(input_data.get("score_threshold", 0.0))
+            top_k = safe_int(input_data.get("top_k"), "top_k", default=5)
+            score_threshold = safe_float(
+                input_data.get("score_threshold"), "score_threshold", default=0.0
+            )
             filter_metadata = input_data.get("filter_metadata")
 
             # 计算查询向量
@@ -485,9 +488,10 @@ class Retriever(BaseRagNode):
             import chromadb  # type: ignore
 
             client = chromadb.PersistentClient(path=self._index_path)
-            # 获取所有 collections
+            # 获取所有 collections（兼容 ChromaDB 0.4.x 和 0.5.x）
             for coll in client.list_collections():
-                self._collections[coll.name] = coll
-                self._chunk_store[coll.name] = []
+                name = coll if isinstance(coll, str) else coll.name
+                self._collections[name] = client.get_collection(name)
+                self._chunk_store[name] = []
 
             self._logger.info("Loaded ChromaDB from %s", self._index_path)

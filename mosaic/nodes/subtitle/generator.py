@@ -24,6 +24,7 @@ from typing import Any
 from mosaic.core.registry import registry
 from mosaic.core.types import AudioData, MosaicData, SubtitleData
 
+from mosaic.nodes._coerce import safe_int
 from mosaic.nodes.audio._base import BaseAudioNode
 from mosaic.nodes.subtitle._base import BaseSubtitleNode
 
@@ -189,7 +190,9 @@ class SubtitleGenerator(BaseSubtitleNode):
 
             language = input_data.get("language", self._language)
             word_timestamps = bool(input_data.get("word_timestamps", False))
-            max_chars = int(input_data.get("max_chars_per_line", 42))
+            max_chars = safe_int(
+                input_data.get("max_chars_per_line"), "max_chars_per_line", default=42
+            )
 
             # 使用 ASR 节点进行识别
             asr_input = MosaicData(audio=audio_input)

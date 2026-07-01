@@ -53,6 +53,7 @@ from mosaic.core.node import NodeSpec
 from mosaic.core.registry import registry
 from mosaic.core.types import MosaicData
 
+from mosaic.nodes._coerce import safe_float, safe_int
 from mosaic.nodes.consistency._base import BaseConsistencyNode
 
 __all__ = ["CrossFrameConsistency"]
@@ -660,8 +661,8 @@ class CrossFrameConsistency(BaseConsistencyNode):
             if not isinstance(negative_prompt, str):
                 negative_prompt = None
 
-            width = int(input_data.get("width", 1024))
-            height = int(input_data.get("height", 1024))
+            width = safe_int(input_data.get("width"), "width", default=1024)
+            height = safe_int(input_data.get("height"), "height", default=1024)
             # 对齐到 8 的倍数
             width = max(8, (width // 8) * 8)
             height = max(8, (height // 8) * 8)
@@ -683,13 +684,19 @@ class CrossFrameConsistency(BaseConsistencyNode):
                     width = max(8, (int(width * ratio) // 8) * 8)
                     height = max(8, (int(height * ratio) // 8) * 8)
 
-            num_inference_steps = int(
-                input_data.get("num_inference_steps", 30)
+            num_inference_steps = safe_int(
+                input_data.get("num_inference_steps"),
+                "num_inference_steps",
+                default=30,
             )
-            guidance_scale = float(input_data.get("guidance_scale", 7.5))
+            guidance_scale = safe_float(
+                input_data.get("guidance_scale"), "guidance_scale", default=7.5
+            )
 
-            consistency_strength = float(
-                input_data.get("consistency_strength", 0.85)
+            consistency_strength = safe_float(
+                input_data.get("consistency_strength"),
+                "consistency_strength",
+                default=0.85,
             )
             consistency_strength = max(0.0, min(1.0, consistency_strength))
             self._consistency_strength = consistency_strength

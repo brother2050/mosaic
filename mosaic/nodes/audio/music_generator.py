@@ -20,6 +20,7 @@ from typing import Any
 from mosaic.core.registry import registry
 from mosaic.core.types import AudioData, MosaicData
 
+from mosaic.nodes._coerce import safe_float
 from mosaic.nodes.audio._base import BaseAudioNode
 
 __all__ = ["MusicGenerator"]
@@ -129,8 +130,10 @@ class MusicGenerator(BaseAudioNode):
                     f"got {type(prompt).__name__}."
                 )
 
-            duration = float(input_data.get("duration", 8.0))
-            guidance_scale = float(input_data.get("guidance_scale", 3.0))
+            duration = safe_float(input_data.get("duration"), "duration", default=8.0)
+            guidance_scale = safe_float(
+                input_data.get("guidance_scale"), "guidance_scale", default=3.0
+            )
 
             # MusicGen 最大生成时长约 30 秒
             if duration > 30.0:

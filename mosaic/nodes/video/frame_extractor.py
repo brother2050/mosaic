@@ -46,6 +46,7 @@ from typing import Any
 from mosaic.core.registry import registry
 from mosaic.core.types import MosaicData, VideoData
 
+from mosaic.nodes._coerce import safe_int
 from mosaic.nodes.video._base import BaseVideoNode
 
 __all__ = ["FrameExtractor"]
@@ -759,7 +760,7 @@ class FrameExtractor(BaseVideoNode):
                         video_data, total
                     )
                 elif mode == "interval":
-                    interval = int(input_data.get("interval", 1))
+                    interval = safe_int(input_data.get("interval"), "interval", default=1)
                     frames, timestamps = self._extract_interval(
                         video_data, interval, total
                     )

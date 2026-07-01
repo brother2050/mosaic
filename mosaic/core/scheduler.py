@@ -411,7 +411,12 @@ class Scheduler:
                 self._remove_from_lru(name)
                 return
             freed = self._node_memory.get(name, 0.0)
-            node.unload()
+            try:
+                node.unload()
+            except Exception:
+                self._logger.warning(
+                    "Node %s unload raised an exception", name, exc_info=True,
+                )
             self._loaded_names.discard(name)
             self._remove_from_lru(name)
             if not self._is_gpu:
@@ -430,7 +435,13 @@ class Scheduler:
             self._loaded_names.discard(name)
             return
         freed = self._node_memory.get(name, 0.0)
-        node.unload()
+        try:
+            node.unload()
+        except Exception:
+            self._logger.warning(
+                "Node %s unload raised an exception during eviction",
+                name, exc_info=True,
+            )
         self._loaded_names.discard(name)
         self._remove_from_lru(name)
         self._bus.emit(

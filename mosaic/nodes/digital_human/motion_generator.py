@@ -34,6 +34,7 @@ from mosaic.core.node import NodeSpec
 from mosaic.core.registry import registry
 from mosaic.core.types import AudioData, MotionData, MosaicData
 
+from mosaic.nodes._coerce import safe_float, safe_int
 from mosaic.nodes.digital_human._base import BaseDigitalHumanNode
 
 __all__ = ["MotionGenerator"]
@@ -712,8 +713,8 @@ class MotionGenerator(BaseDigitalHumanNode):
         t0 = time.perf_counter()
         try:
             # ---------- 提取公共参数 ----------
-            duration = float(input_data.get("duration", 3.0))
-            fps = int(input_data.get("fps", 30))
+            duration = safe_float(input_data.get("duration"), "duration", default=3.0)
+            fps = safe_int(input_data.get("fps"), "fps", default=30)
             fps = max(1, fps)
             smooth = bool(input_data.get("smooth", True))
             self._last_fps = fps

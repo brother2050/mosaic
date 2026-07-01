@@ -57,6 +57,7 @@ from mosaic.core.node import NodeSpec
 from mosaic.core.registry import registry
 from mosaic.core.types import MosaicData, VideoData
 
+from mosaic.nodes._coerce import safe_float, safe_int
 from mosaic.nodes.digital_human._base import BaseDigitalHumanNode
 
 __all__ = ["AvatarDriver"]
@@ -405,11 +406,15 @@ class AvatarDriver(BaseDigitalHumanNode):
             output_format = str(
                 input_data.get("output_format", "video")
             ).lower()
-            fps = int(input_data.get("fps", _DEFAULT_FPS))
-            resolution = input_data.get("resolution", _DEFAULT_RESOLUTION)
+            fps = safe_int(input_data.get("fps"), "fps", default=_DEFAULT_FPS)
+            resolution = input_data.get("resolution") or _DEFAULT_RESOLUTION
             resolution = (int(resolution[0]), int(resolution[1]))
-            expression_scale = float(input_data.get("expression_scale", 1.0))
-            motion_scale = float(input_data.get("motion_scale", 1.0))
+            expression_scale = safe_float(
+                input_data.get("expression_scale"), "expression_scale", default=1.0
+            )
+            motion_scale = safe_float(
+                input_data.get("motion_scale"), "motion_scale", default=1.0
+            )
 
             if source_image.size != resolution:
                 source_image = source_image.resize(resolution, Image.Resampling.LANCZOS)
@@ -544,7 +549,14 @@ class AvatarDriver(BaseDigitalHumanNode):
                 )
             else:
                 # sadtalker / musetalk 原生为音频驱动；视频驱动走表情参数回退
-                params = self._frame_to_expression_params(drv_frame)
+                try:
+                    params = self._frame_to_expression_params(drv_frame)
+                except ValueError as exc:
+                    self._logger.warning(
+                        "Skipping frame %d: %s", i, exc,
+                    )
+                    out_frames.append(source_image.copy())
+                    continue
                 driven = self._render_expression_fallback(
                     source_image, bbox, params
                 )

@@ -14,6 +14,7 @@ from typing import Any
 from mosaic.core.registry import registry
 from mosaic.core.types import MosaicData
 
+from mosaic.nodes._coerce import safe_float, safe_int
 from mosaic.nodes.text._base import BaseTextNode
 
 __all__ = ["TextRewriter"]
@@ -92,9 +93,13 @@ class TextRewriter(BaseTextNode):
             instruction = input_data.get("instruction")
             if not isinstance(instruction, str) or not instruction.strip():
                 instruction = _DEFAULT_INSTRUCTION
-            max_new_tokens = int(input_data.get("max_new_tokens", 512))
-            temperature = float(input_data.get("temperature", 0.7))
-            top_p = float(input_data.get("top_p", 0.9))
+            max_new_tokens = safe_int(
+                input_data.get("max_new_tokens"), "max_new_tokens", default=512
+            )
+            temperature = safe_float(
+                input_data.get("temperature"), "temperature", default=0.7
+            )
+            top_p = safe_float(input_data.get("top_p"), "top_p", default=0.9)
             do_sample = bool(input_data.get("do_sample", True))
 
             # 构造 prompt：指令 + 原文

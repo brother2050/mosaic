@@ -454,10 +454,15 @@ class CitationGenerator(BaseRagNode):
         used_ids: set = set()
         for match in matches:
             # 处理 [1-3] 和 [1,2] 格式
-            parts = re.split(r"[-,]", match)
+            parts = re.split(r"[,]", match)
             for part in parts:
                 part = part.strip()
-                if part.isdigit():
+                if "-" in part:
+                    lo, hi = part.split("-")
+                    lo, hi = lo.strip(), hi.strip()
+                    if lo.isdigit() and hi.isdigit():
+                        used_ids.update(range(int(lo), int(hi) + 1))
+                elif part.isdigit():
                     used_ids.add(int(part))
 
         citations: list[dict[str, Any]] = []

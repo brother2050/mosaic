@@ -53,6 +53,7 @@ from mosaic.core.node import NodeSpec
 from mosaic.core.registry import registry
 from mosaic.core.types import AudioData, MosaicData, VideoData
 
+from mosaic.nodes._coerce import safe_int
 from mosaic.nodes.digital_human._base import BaseDigitalHumanNode
 
 __all__ = ["LipSyncer"]
@@ -469,7 +470,7 @@ class LipSyncer(BaseDigitalHumanNode):
                     "(AudioData, file path, or ndarray)."
                 )
 
-            fps = int(input_data.get("fps", _DEFAULT_FPS))
+            fps = safe_int(input_data.get("fps"), "fps", default=_DEFAULT_FPS)
             output_format = str(
                 input_data.get("output_format", "video")
             ).lower()

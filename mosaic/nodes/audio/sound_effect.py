@@ -29,6 +29,7 @@ from typing import Any
 from mosaic.core.registry import registry
 from mosaic.core.types import AudioData, MosaicData
 
+from mosaic.nodes._coerce import safe_float, safe_int
 from mosaic.nodes.audio._base import BaseAudioNode
 
 __all__ = ["SoundEffectGenerator"]
@@ -136,12 +137,16 @@ class SoundEffectGenerator(BaseAudioNode):
                     f"got {type(prompt).__name__}."
                 )
 
-            duration = float(input_data.get("duration", 5.0))
+            duration = safe_float(input_data.get("duration"), "duration", default=5.0)
             negative_prompt = input_data.get("negative_prompt")
             if not isinstance(negative_prompt, str):
                 negative_prompt = None
 
-            num_inference_steps = int(input_data.get("num_inference_steps", 10))
+            num_inference_steps = safe_int(
+                input_data.get("num_inference_steps"),
+                "num_inference_steps",
+                default=10,
+            )
 
             # AudioLDM2 适合短音效（< 10 秒）
             if duration > 10.0:

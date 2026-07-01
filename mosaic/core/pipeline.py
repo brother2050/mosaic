@@ -622,12 +622,20 @@ class Pipeline(Node):
                 # 空 input_types 视为"未声明"，跳过检查（而非接受任意）
                 if not consumer_types:
                     continue  # 后继未声明输入类型，跳过检查
-                if consumer_types.isdisjoint(producer_types):
-                    issues.append(
-                        f"Type mismatch: '{self._dag[pid].node.name}' outputs "
-                        f"{sorted(producer_types)} but '{dn.node.name}' expects "
-                        f"{sorted(consumer_types)}."
-                    )
+                # "mosaic" 作为通配类型：仅当 consumer_types 仅含 "mosaic" 时
+                # （如 Merge 节点），跳过检查。若 consumer_types 同时含具体类型
+                # （如 ["image", "mosaic"]），则移除 "mosaic" 后做交集检查。
+                if consumer_types == {"mosaic"}:
+                    continue
+                effective_consumer = consumer_types - {"mosaic"}
+                effective_producer = producer_types - {"mosaic"}
+                if effective_consumer and effective_producer:
+                    if effective_consumer.isdisjoint(effective_producer):
+                        issues.append(
+                            f"Type mismatch: '{self._dag[pid].node.name}' outputs "
+                            f"{sorted(producer_types)} but '{dn.node.name}' expects "
+                            f"{sorted(consumer_types)}."
+                        )
 
         return DryRunResult(ok=not issues, issues=issues, steps=steps)
 
@@ -970,6 +978,18 @@ class Pipeline(Node):
             except Exception as exc:  # noqa: BLE001
                 elapsed = time.perf_counter() - t0
                 node_durations[nid] = elapsed
+                ctx.store_artifact(dn.node_id, MosaicData(), duration=elapsed)
+                ctx.emit(
+                    Event(
+                        event_type="node_end",
+                        node_name=dn.node.name,
+                        payload={
+                            "output_keys": [],
+                            "elapsed_seconds": elapsed,
+                            "error": str(exc),
+                        },
+                    )
+                )
                 if fail_fast:
                     raise
                 errors.append(NodeError(

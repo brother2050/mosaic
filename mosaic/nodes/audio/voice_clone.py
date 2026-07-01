@@ -27,6 +27,7 @@ from typing import Any
 from mosaic.core.registry import registry
 from mosaic.core.types import AudioData, MosaicData
 
+from mosaic.nodes._coerce import safe_float
 from mosaic.nodes.audio._base import BaseAudioNode
 from mosaic.nodes.audio._ref_audio_utils import load_reference_audio
 from mosaic.nodes.audio.tts import (
@@ -343,7 +344,7 @@ class VoiceClone(BaseAudioNode):
             language = input_data.get("language", self._language)
             emotion = input_data.get("emotion", self._emotion)
             voice = input_data.get("voice", self._voice)
-            user_speed = float(input_data.get("speed", self._speed))
+            user_speed = safe_float(input_data.get("speed"), "speed", default=self._speed)
 
             # 加载参考音频（统一处理时长校验与自动截断）
             # VoiceClone 推荐 6-30s：过短（<1s）将抛出 ValueError，

@@ -55,7 +55,7 @@ def test_registry_list_nodes_under_100ms():
         f"list_nodes() 耗时 {elapsed * 1000:.1f}ms，应小于 100ms"
     )
     assert isinstance(nodes, list), "list_nodes() 应返回 list"
-    assert len(nodes) >= 39, (
+    assert len(nodes) >= 42, (
         f"list_nodes() 应返回至少 39 个节点，实际返回 {len(nodes)}"
     )
 

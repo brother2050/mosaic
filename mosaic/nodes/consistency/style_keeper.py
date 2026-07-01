@@ -34,6 +34,7 @@ from mosaic.core.node import NodeSpec
 from mosaic.core.registry import registry
 from mosaic.core.types import MosaicData
 
+from mosaic.nodes._coerce import safe_float, safe_int
 from mosaic.nodes.consistency._base import BaseConsistencyNode
 
 __all__ = ["StyleKeeper"]
@@ -494,16 +495,24 @@ class StyleKeeper(BaseConsistencyNode):
                 negative_prompt = None
 
             # ---------- 提取参数 ----------
-            width = int(input_data.get("width", 1024))
-            height = int(input_data.get("height", 1024))
+            width = safe_int(input_data.get("width"), "width", default=1024)
+            height = safe_int(input_data.get("height"), "height", default=1024)
             width = max(8, (width // 8) * 8)
             height = max(8, (height // 8) * 8)
             # 大图像内存保护
             self._check_image_dimensions(width, height)
 
-            num_inference_steps = int(input_data.get("num_inference_steps", 30))
-            guidance_scale = float(input_data.get("guidance_scale", 7.5))
-            style_strength = float(input_data.get("style_strength", 0.7))
+            num_inference_steps = safe_int(
+                input_data.get("num_inference_steps"),
+                "num_inference_steps",
+                default=30,
+            )
+            guidance_scale = safe_float(
+                input_data.get("guidance_scale"), "guidance_scale", default=7.5
+            )
+            style_strength = safe_float(
+                input_data.get("style_strength"), "style_strength", default=0.7
+            )
             style_strength = max(0.0, min(1.0, style_strength))
 
             # ---------- 图像前处理 ----------

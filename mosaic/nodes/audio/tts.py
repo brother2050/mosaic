@@ -29,6 +29,7 @@ from typing import Any
 from mosaic.core.registry import registry
 from mosaic.core.types import AudioData, MosaicData
 
+from mosaic.nodes._coerce import safe_float
 from mosaic.nodes.audio._base import BaseAudioNode
 
 __all__ = ["TTS"]
@@ -691,7 +692,7 @@ class TTS(BaseAudioNode):
             language = input_data.get("language", self._language)
             emotion = input_data.get("emotion", self._emotion)
             voice = input_data.get("voice", self._voice)
-            speed = float(input_data.get("speed", self._speed))
+            speed = safe_float(input_data.get("speed"), "speed", default=self._speed)
 
             speaker = input_data.get("speaker", self._speaker)
 
@@ -865,7 +866,7 @@ class TTS(BaseAudioNode):
         if not isinstance(text, str) or not text.strip():
             raise ValueError(f"TTS requires 'text' (non-empty str), got {type(text).__name__}.")
         language = input_data.get("language", self._language)
-        speed = float(input_data.get("speed", self._speed))
+        speed = safe_float(input_data.get("speed"), "speed", default=self._speed)
         speaker = input_data.get("speaker", self._speaker)
 
         if self._tts_backend is not None:

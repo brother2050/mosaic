@@ -133,5 +133,8 @@ __all__ = [
 # （CLI 路径会自行调用 discover()，此处保证 import mosaic 即可用）
 try:
     import mosaic.nodes  # noqa: F401 — 触发 @registry.register 装饰器
-except ImportError:
-    pass
+except ImportError as exc:
+    import logging as _logging
+    _logging.getLogger("mosaic").warning(
+        "Failed to auto-import mosaic.nodes: %s", exc, exc_info=True,
+    )

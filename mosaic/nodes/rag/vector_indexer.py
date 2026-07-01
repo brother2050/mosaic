@@ -476,13 +476,24 @@ class VectorIndexer(BaseRagNode):
         """从 ``index_path`` 加载已有索引。"""
         if self._index_type == "faiss":
             import faiss  # type: ignore
+            import json  # type: ignore
 
-            faiss_path = os.path.join(self._index_path, "faiss.index")
-            if os.path.exists(faiss_path):
-                index = faiss.read_index(faiss_path)
-                self._collections["default"] = index
-                self._chunk_store["default"] = []
-                self._logger.info("Loaded FAISS index from %s", faiss_path)
+            for name in self._collections:
+                faiss_path = os.path.join(self._index_path, f"{name}.faiss")
+                if os.path.exists(faiss_path):
+                    index = faiss.read_index(faiss_path)
+                    self._collections[name] = index
+                    chunks_path = os.path.join(
+                        self._index_path, f"{name}_chunks.json"
+                    )
+                    if os.path.exists(chunks_path):
+                        with open(chunks_path, encoding="utf-8") as f:
+                            self._chunk_store[name] = json.load(f)
+                    else:
+                        self._chunk_store[name] = []
+                    self._logger.info(
+                        "Loaded FAISS index '%s' from %s", name, faiss_path
+                    )
 
         elif self._index_type == "chromadb":
             # ChromaDB PersistentClient 自动加载

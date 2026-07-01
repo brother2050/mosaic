@@ -231,7 +231,7 @@ class Merge(Node):
                         merged[inner_key] = inner_val
                 else:
                     # 非数据容器值直接保留在原标签下
-                    pass
+                    merged[_label] = value
             return merged
 
         # "dict": 原样返回

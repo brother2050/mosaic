@@ -1,7 +1,7 @@
 # tests/final/test_node_interface_compliance.py
 """节点接口合规测试。
 
-遍历所有 39 个节点，逐一验证 Node 抽象基类定义的接口契约：
+遍历所有 42 个节点，逐一验证 Node 抽象基类定义的接口契约：
 - load / unload / run / describe 方法存在且可调用
 - __call__ 语法糖（自动调用 load + run）
 - 上下文管理器协议（__enter__ / __exit__）

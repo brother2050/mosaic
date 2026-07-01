@@ -34,6 +34,7 @@ from mosaic.core.node import NodeSpec
 from mosaic.core.registry import registry
 from mosaic.core.types import AudioData, MosaicData, MotionData
 
+from mosaic.nodes._coerce import safe_int
 from mosaic.nodes.digital_human._base import BaseDigitalHumanNode
 
 __all__ = ["RealtimeRenderer"]
@@ -184,6 +185,7 @@ class RealtimeRenderer(BaseDigitalHumanNode):
         self._tts_node: Any = None
         self._onnx_session: Any = None
         self._use_onnx: bool = False
+        self._placeholder_mode: bool = False
 
         # 实时渲染状态
         self._realtime_running: bool = False
@@ -261,6 +263,7 @@ class RealtimeRenderer(BaseDigitalHumanNode):
                 torch_dtype=torch_dtype,
             )
             self._pipeline = self._safe_to_device(self._pipeline, device)
+            self._placeholder_mode = False
             self._logger.info(
                 "LivePortraitPipeline loaded via diffusers (device=%s).",
                 device,
@@ -281,6 +284,7 @@ class RealtimeRenderer(BaseDigitalHumanNode):
                 trust_remote_code=True,
             )
             self._pipeline = self._safe_to_device(self._pipeline, device)
+            self._placeholder_mode = False
             self._logger.info(
                 "Driver model loaded via transformers AutoModel (device=%s).",
                 device,
@@ -469,7 +473,9 @@ class RealtimeRenderer(BaseDigitalHumanNode):
             output_callback = input_data.get("output_callback")
 
             # 运行时覆盖参数
-            target_fps = int(input_data.get("target_fps", self._target_fps))
+            target_fps = safe_int(
+                input_data.get("target_fps"), "target_fps", default=self._target_fps
+            )
             target_fps = max(1, target_fps)
             resolution = input_data.get("resolution", self._resolution)
             resolution = (max(64, int(resolution[0])), max(64, int(resolution[1])))
