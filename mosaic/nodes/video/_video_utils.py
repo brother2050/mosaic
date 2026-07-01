@@ -433,7 +433,7 @@ def validate_model_path(model_name: str, logger: Any = None) -> None:
                 "diffusers pipeline structure (model_index.json).\n"
                 "Please download the diffusers-format version instead:\n"
                 "  hunyuanvideo-community/HunyuanVideo (diffusers format)\n"
-                "  tencent/HunyuanVideo (raw format, NOT compatible)"
+                "  hunyuanvideo-community/HunyuanVideo (raw format, NOT compatible)"
             ) if has_safetensors else (
                 "This directory does not contain model_index.json.\n"
                 "Please ensure you downloaded the diffusers-format version."

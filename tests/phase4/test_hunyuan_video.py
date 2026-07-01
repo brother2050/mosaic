@@ -55,7 +55,7 @@ class TestHunyuanVideo:
                 return_value=mock_pipe,
             ):
                 self.hv = HunyuanVideo(
-                    model="tencent/HunyuanVideo",
+                    model="hunyuanvideo-community/HunyuanVideo",
                     scheduler=cpu_scheduler,
                 )
                 self.hv.load()
@@ -135,7 +135,7 @@ class TestHunyuanVideo:
         from mosaic.nodes.video.hunyuan_video import HunyuanVideo
 
         node = HunyuanVideo(
-            model="tencent/HunyuanVideo",
+            model="hunyuanvideo-community/HunyuanVideo",
             scheduler=self.hv._scheduler,
         )
         assert not node.is_loaded(), "初始应为未加载"

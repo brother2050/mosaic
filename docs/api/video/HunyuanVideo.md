@@ -12,7 +12,7 @@ HunyuanVideo 文生视频节点。
 Parameters
 ----------
 model:
-    模型标识，默认 ``"tencent/HunyuanVideo"``。
+    模型标识，默认 ``"hunyuanvideo-community/HunyuanVideo"``。
 device:
     推理设备，默认 ``"cuda"``。
 dtype:
@@ -55,7 +55,7 @@ Examples
 
 若节点尚未加载，会自动调用 :meth:`load`（惰性加载）。
 
-### `__init__(self, model: 'str' = 'tencent/HunyuanVideo', device: 'str' = 'cuda', dtype: 'str' = 'bfloat16', enable_cpu_offload: 'bool' = True, enable_vae_tiling: 'bool' = True, enable_chunking: 'bool' = True, **kwargs: 'Any') -> 'None'`
+### `__init__(self, model: 'str' = 'hunyuanvideo-community/HunyuanVideo', device: 'str' = 'cuda', dtype: 'str' = 'bfloat16', enable_cpu_offload: 'bool' = True, enable_vae_tiling: 'bool' = True, enable_chunking: 'bool' = True, **kwargs: 'Any') -> 'None'`
 
 Initialize self.  See help(type(self)) for accurate signature.
 

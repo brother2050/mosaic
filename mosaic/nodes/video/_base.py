@@ -58,7 +58,7 @@ _VRAM_ESTIMATES: dict[str, float] = {
     "Wan-AI/Wan2.2-T2V-A14B-Diffusers": 30.0,
     "Wan-AI/Wan2.2-T2V-A14B": 30.0,
     # HunyuanVideo
-    "tencent/HunyuanVideo": 60.0,
+    "hunyuanvideo-community/HunyuanVideo": 60.0,
     # LTX-Video
     "Lightricks/LTX-Video": 12.0,
     "Lightricks/LTX-Video-13B": 30.0,
@@ -79,7 +79,7 @@ _LICENSE_INFO: dict[str, str] = {
     "Wan-AI/Wan2.2-T2V-A14B-Diffusers": "Apache 2.0",
     "Wan-AI/Wan2.2-T2V-A14B": "Apache 2.0",
     # HunyuanVideo：Tencent License
-    "tencent/HunyuanVideo": "Tencent Hunyuan Video License",
+    "hunyuanvideo-community/HunyuanVideo": "Tencent Hunyuan Video License",
     # LTX-Video：OpenRAIL-M
     "Lightricks/LTX-Video": "OpenRAIL-M License",
     "Lightricks/LTX-Video-13B": "OpenRAIL-M License",

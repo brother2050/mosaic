@@ -35,7 +35,7 @@ Mosaic 通过 diffusers 的 Pipeline 接口集成了 4 个主流视频生成模�
 > python -c "
 > from huggingface_hub import snapshot_download
 > snapshot_download('Wan-AI/Wan2.1-T2V-14B-Diffusers')
-> snapshot_download('tencent/HunyuanVideo')
+> snapshot_download('hunyuanvideo-community/HunyuanVideo')
 > snapshot_download('Lightricks/LTX-Video')
 > snapshot_download('THUDM/CogVideoX-5b')
 > snapshot_download('stabilityai/stable-video-diffusion-img2vid-xt')
@@ -180,7 +180,7 @@ from mosaic.nodes.video import HunyuanVideo
 from mosaic import MosaicData
 
 hv = HunyuanVideo(
-    model="tencent/HunyuanVideo",
+    model="hunyuanvideo-community/HunyuanVideo",
     enable_cpu_offload=True,    # 必须开启（默认 60GB 显存）
     enable_vae_tiling=True,
     enable_chunking=True,       # HunyuanVideo 专属 VAE 分块

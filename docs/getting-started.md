@@ -136,7 +136,7 @@ Mosaic 环境诊断
 |------|---------|---------|------|
 | TextToVideo / VideoContinuation | CogVideoX-5b | `THUDM/CogVideoX-5b` | ~10GB |
 | WanVideo | Wan2.1-T2V-14B | `Wan-AI/Wan2.1-T2V-14B-Diffusers` | ~28GB |
-| HunyuanVideo | HunyuanVideo | `tencent/HunyuanVideo` | ~13GB |
+| HunyuanVideo | HunyuanVideo | `hunyuanvideo-community/HunyuanVideo` | ~13GB |
 | LTXVideo | LTX-Video | `Lightricks/LTX-Video` | ~2.5GB |
 | ImageToVideo | SVD img2vid | `stabilityai/stable-video-diffusion-img2vid-xt` | ~5GB |
 

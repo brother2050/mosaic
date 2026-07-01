@@ -148,7 +148,7 @@ def example_8_video_model_note():
         "使用方法见 examples/03_video_domain.py。\n"
         "  - WanVideo(model='Wan-AI/Wan2.1-T2V-14B-Diffusers')"
     )
-    print("  - HunyuanVideo(model='tencent/HunyuanVideo')")
+    print("  - HunyuanVideo(model='hunyuanvideo-community/HunyuanVideo')")
     print("  - LTXVideo(model='Lightricks/LTX-Video')")
 
 

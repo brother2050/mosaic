@@ -76,7 +76,7 @@ def example_3_hunyuan_video():
     print("\n=== 示例 3：HunyuanVideo 文生视频（需 60GB 显存）===")
 
     hv = HunyuanVideo(
-        model="tencent/HunyuanVideo",
+        model="hunyuanvideo-community/HunyuanVideo",
         enable_cpu_offload=True,
         enable_vae_tiling=True,
         enable_chunking=True,

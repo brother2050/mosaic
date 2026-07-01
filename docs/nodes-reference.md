@@ -805,7 +805,7 @@ Apache-2.0
 
 | 参数 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
-| `model` | str | `tencent/HunyuanVideo` | 模型 ID |
+| `model` | str | `hunyuanvideo-community/HunyuanVideo` | 模型 ID |
 | `device` | str | `cuda` | 推理设备 |
 | `dtype` | str | `bfloat16` | 推理精度 |
 | `enable_cpu_offload` | bool | `True` | 启用 CPU offload |
