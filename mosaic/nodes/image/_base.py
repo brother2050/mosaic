@@ -244,12 +244,9 @@ class BaseImageNode(Node):
                 pass
             self._pipeline = None
             # 触发 GPU 显存回收
-            try:
-                import torch
-                if torch.cuda.is_available():
-                    torch.cuda.empty_cache()
-            except Exception:
-                pass
+            from mosaic.core._device_utils import empty_device_cache
+
+            empty_device_cache()
         self._loaded = False
         self._logger.info(
             "Pipeline for model %s unloaded (GPU cache cleared).",
@@ -335,11 +332,15 @@ class BaseImageNode(Node):
         # B1: cpu_offload 时 UNet 在 CPU，_infer_device 返回 "cpu"，
         # 但 pipeline 实际执行时会在 GPU。使用配置设备（self._device）更可靠。
         device = self._device
+        # MPS 下 torch.Generator(device="mps") 可能不稳定，使用 CPU generator
+        # （diffusers 官方推荐）
+        if device.startswith("mps"):
+            device = "cpu"
         try:
             generator = torch.Generator(device=device)
             generator.manual_seed(seed)
-        except (RuntimeError, ValueError, TypeError):
-            # CPU-only 环境可能不支持 cuda generator
+        except (RuntimeError, ValueError, TypeError, NotImplementedError):
+            # CPU-only 环境可能不支持 cuda/mps generator
             generator = torch.Generator(device="cpu")
             generator.manual_seed(seed)
 

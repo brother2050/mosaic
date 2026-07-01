@@ -458,8 +458,9 @@ class VocosVocoder(Vocoder):
                     self._impl.to("cpu")
                 except Exception:  # noqa: BLE001
                     pass
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
+            from mosaic.core._device_utils import empty_device_cache
+
+            empty_device_cache()
         except ImportError:
             pass
         self._official = None

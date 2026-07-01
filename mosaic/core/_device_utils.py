@@ -27,6 +27,7 @@ __all__ = [
     "apply_optimizations",
     "run_diffusers_pipeline",
     "upcast_pipeline_components",
+    "empty_device_cache",
 ]
 
 logger = logging.getLogger("mosaic.core._device_utils")
@@ -91,7 +92,11 @@ def resolve_device(device: str | None, scheduler: Any | None = None) -> str:
         try:
             import torch  # type: ignore
 
-            return "cuda" if torch.cuda.is_available() else "cpu"
+            if torch.cuda.is_available():
+                return "cuda"
+            if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+                return "mps"
+            return "cpu"
         except ImportError:
             return "cpu"
 
@@ -176,16 +181,36 @@ def auto_resolve_device_dtype(
     resolved_device = resolve_device(device, scheduler)
     resolved_dtype = dtype
 
-    if resolved_device == "cpu" and dtype in ("float16", "fp16", "bfloat16", "bf16"):
-        resolved_dtype = "float32"
-        msg = (
-            "Device downgraded to CPU but dtype is %s — auto-switching to float32 "
-            "to avoid black/garbage images (fp16 on CPU is not supported by PyTorch)."
-        ) % dtype
-        if logger is not None:
-            logger.warning(msg)
+    if resolved_device in ("cpu", "mps") and dtype in ("float16", "fp16", "bfloat16", "bf16"):
+        if resolved_device == "cpu" or _is_sd15_model(model_name):
+            # CPU 下 float16 不稳定；MPS + SD 1.5 与 CPU 一致，均降级 float32
+            resolved_dtype = "float32"
+            if resolved_device == "cpu":
+                msg = (
+                    "Device downgraded to CPU but dtype is %s — auto-switching to "
+                    "float32 to avoid black/garbage images (fp16 on CPU is not "
+                    "supported by PyTorch)."
+                ) % dtype
+            else:
+                msg = (
+                    "Device is MPS and model %s is SD 1.5 series with dtype=%s — "
+                    "auto-switching to float32 to avoid NaN/black images "
+                    "(SD 1.5 is fp16-sensitive, same as CPU)."
+                ) % (model_name, dtype)
+            if logger is not None:
+                logger.warning(msg)
+            else:
+                logging.getLogger("mosaic.core._device_utils").warning(msg)
         else:
-            logging.getLogger("mosaic.core._device_utils").warning(msg)
+            # MPS + SDXL/其它模型：保持 float16，但提示部分算子兼容性问题
+            msg = (
+                "MPS device with dtype=%s — keeping float16, but some operators "
+                "may have compatibility issues on MPS (float16)."
+            ) % dtype
+            if logger is not None:
+                logger.info(msg)
+            else:
+                logging.getLogger("mosaic.core._device_utils").info(msg)
 
     # SD 1.5 系列：text_encoder/UNet 对 float16 敏感，整体降为 float32
     if resolved_dtype in ("float16", "fp16") and _is_sd15_model(model_name):
@@ -342,3 +367,25 @@ def upcast_pipeline_components(
         except Exception as exc:
             if logger is not None:
                 logger.debug("VAE upcast skipped: %s", exc)
+
+
+def empty_device_cache(device: str = "") -> None:
+    """统一的设备显存清理，支持 CUDA 和 MPS。
+
+    依次尝试清理 CUDA 与 MPS 显存缓存；任一后端不可用或清理失败时静默忽略，
+    不抛出异常，以保证推理主流程不被可选的显存优化中断。
+
+    Parameters
+    ----------
+    device:
+        预留参数，当前未使用。清理时会同时尝试 CUDA 与 MPS（仅清理可用的后端）。
+    """
+    try:
+        import torch  # type: ignore
+
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+            torch.mps.empty_cache()
+    except Exception:  # noqa: BLE001 - 显存清理失败不应中断推理
+        pass

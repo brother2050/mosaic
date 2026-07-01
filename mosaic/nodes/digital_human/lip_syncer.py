@@ -492,13 +492,9 @@ class LipSyncer(BaseDigitalHumanNode):
         self._onnx_session = None
         self._use_onnx = False
         self._loaded = False
-        try:
-            import torch  # type: ignore
+        from mosaic.core._device_utils import empty_device_cache
 
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
-        except ImportError:
-            pass
+        empty_device_cache()
         self._logger.info("Lip-syncer unloaded (method=%s).", self._method)
 
     # ------------------------------------------------------------------

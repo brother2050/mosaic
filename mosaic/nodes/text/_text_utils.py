@@ -17,7 +17,8 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
+
+from mosaic.nodes._coerce import safe_float, safe_int  # noqa: F401
 
 __all__ = [
     "MAX_CONTEXT_LENGTH",
@@ -48,64 +49,10 @@ MAX_TEMPERATURE = 2.0
 
 
 # ---------------------------------------------------------------------------
-# 安全类型转换
+# 安全类型转换（re-export 自 mosaic.nodes._coerce，保持向后兼容）
 # ---------------------------------------------------------------------------
-def safe_int(value: Any, param_name: str) -> int:
-    """安全的 int 转换。
-
-    Parameters
-    ----------
-    value:
-        待转换的值（可能来自 ``MosaicData.get``）。
-    param_name:
-        参数名，用于构造错误消息。
-
-    Returns
-    -------
-    int
-        转换后的整数值。
-
-    Raises
-    ------
-    ValueError
-        ``value`` 无法转换为 int 时抛出，消息包含参数名与实际值。
-    """
-    try:
-        return int(value)
-    except (TypeError, ValueError) as exc:
-        raise ValueError(
-            f"Parameter {param_name!r} must be an integer, "
-            f"got {type(value).__name__}: {value!r}"
-        ) from exc
-
-
-def safe_float(value: Any, param_name: str) -> float:
-    """安全的 float 转换。
-
-    Parameters
-    ----------
-    value:
-        待转换的值（可能来自 ``MosaicData.get``）。
-    param_name:
-        参数名，用于构造错误消息。
-
-    Returns
-    -------
-    float
-        转换后的浮点数。
-
-    Raises
-    ------
-    ValueError
-        ``value`` 无法转换为 float 时抛出，消息包含参数名与实际值。
-    """
-    try:
-        return float(value)
-    except (TypeError, ValueError) as exc:
-        raise ValueError(
-            f"Parameter {param_name!r} must be a number, "
-            f"got {type(value).__name__}: {value!r}"
-        ) from exc
+# safe_int / safe_float 由 mosaic.nodes._coerce 统一实现，此处仅 re-export，
+# 以兼容历史导入 ``from mosaic.nodes.text._text_utils import safe_int``。
 
 
 # ---------------------------------------------------------------------------

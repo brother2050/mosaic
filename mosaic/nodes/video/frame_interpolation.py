@@ -53,7 +53,11 @@ import os
 import time
 from typing import Any
 
-from mosaic.core.onnx_utils import create_inference_session, is_onnxruntime_usable
+from mosaic.core.onnx_utils import (
+    create_inference_session,
+    get_onnx_providers,
+    is_onnxruntime_usable,
+)
 from mosaic.core.registry import registry
 from mosaic.core.types import MosaicData, VideoData
 
@@ -198,10 +202,7 @@ class FrameInterpolator(BaseVideoNode):
             )
 
         device = self._resolve_device()
-        if device.startswith("cuda"):
-            providers = ["CUDAExecutionProvider", "CPUExecutionProvider"]
-        else:
-            providers = ["CPUExecutionProvider"]
+        providers = get_onnx_providers(device)
 
         self._pipeline = create_inference_session(
             model_path, providers=providers

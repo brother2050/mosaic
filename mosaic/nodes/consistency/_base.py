@@ -127,18 +127,18 @@ class BaseConsistencyNode(Node):
         )
 
     def _resolve_device(self) -> str:
-        """解析实际推理设备，无 GPU 时从调度器降级。
+        """解析实际推理设备，无 GPU 时从调度器降级并记录日志。
 
         统一的设备解析入口：当节点配置为 CUDA 但调度器检测不到 GPU 时，
-        降级到调度器报告的设备（通常为 ``"cpu"``）并记录日志。所有一致性
-        子类应通过本方法解析目标设备，避免各自实现不一致的降级逻辑。
+        降级到调度器报告的设备（通常为 ``"cpu"``）并记录日志。各域子类应
+        通过本方法解析目标设备，避免各自实现不一致的降级逻辑。
         """
-        device = resolve_device(self._device, self._scheduler)
-        if device != self._device:
+        resolved = resolve_device(self._device, self._scheduler)
+        if resolved != self._device:
             self._logger.info(
-                "No GPU available; falling back to device %r.", device
+                "Device resolved: %s → %s", self._device, resolved,
             )
-        return device
+        return resolved
 
     def _check_image_dimensions(self, width: int, height: int) -> None:
         """校验图像尺寸是否在合理上限内，避免大图像导致内存溢出。

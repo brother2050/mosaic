@@ -221,8 +221,9 @@ class LlamaARModelBase(AcousticModel):
         try:
             import torch
 
-            if self._device.startswith("cuda") and torch.cuda.is_available():
-                torch.cuda.empty_cache()
+            from mosaic.core._device_utils import empty_device_cache
+
+            empty_device_cache()
         except ImportError:
             pass
 

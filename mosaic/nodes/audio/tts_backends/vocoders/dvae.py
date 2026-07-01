@@ -391,8 +391,9 @@ def _get_dvae_class() -> Any:
                     import torch
 
                     self.to("cpu")
-                    if torch.cuda.is_available():
-                        torch.cuda.empty_cache()
+                    from mosaic.core._device_utils import empty_device_cache
+
+                    empty_device_cache()
                 except Exception:  # noqa: BLE001
                     pass
                 self._stream_buffer = None

@@ -159,13 +159,10 @@ class ModelCache:
             self._cache.clear()
             if count:
                 logger.info("Model cache cleared (%d entries)", count)
-        # 在锁外触发 GPU 显存回收
-        try:
-            import torch
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
-        except Exception:
-            pass
+        # 在锁外触发 GPU 显存回收（CUDA/MPS）
+        from mosaic.core._device_utils import empty_device_cache
+
+        empty_device_cache()
 
     def set_enabled(self, enabled: bool) -> None:
         """启用/禁用缓存。"""

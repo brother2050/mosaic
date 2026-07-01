@@ -131,12 +131,13 @@ def get_onnx_providers(device: str = "cuda") -> list[str]:
     Parameters
     ----------
     device:
-        目标设备，``"cuda"`` 或 ``"cpu"``。
+        目标设备，``"cuda"``、``"mps"`` 或 ``"cpu"``。
 
     Returns
     -------
     list[str]
-        Provider 列表，如 ``["CUDAExecutionProvider", "CPUExecutionProvider"]``。
+        Provider 列表，如 ``["CUDAExecutionProvider", "CPUExecutionProvider"]``、
+        ``["CoreMLExecutionProvider", "CPUExecutionProvider"]``。
         如果 onnxruntime 不可用，返回空列表。
     """
     usable, _, providers, _ = OnnxRuntimeStatus.get()
@@ -145,6 +146,8 @@ def get_onnx_providers(device: str = "cuda") -> list[str]:
 
     if device.startswith("cuda") and "CUDAExecutionProvider" in providers:
         return ["CUDAExecutionProvider", "CPUExecutionProvider"]
+    if device.startswith("mps") and "CoreMLExecutionProvider" in providers:
+        return ["CoreMLExecutionProvider", "CPUExecutionProvider"]
     return ["CPUExecutionProvider"]
 
 

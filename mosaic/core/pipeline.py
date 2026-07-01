@@ -55,39 +55,6 @@ __all__ = [
 
 
 # ---------------------------------------------------------------------------
-# 跨域字段别名映射
-# ---------------------------------------------------------------------------
-# 当上游节点输出字段名与下游节点期望的输入字段名不一致时，
-# 自动添加别名键，使管道能无缝串联不同域的节点。
-_FIELD_ALIASES: dict[str, str] = {
-    "generated_text": "prompt",   # TextGenerator → TextToImage
-    "text": "prompt",             # 通用 text → prompt
-    "description": "prompt",      # 通用 description → prompt
-    "caption": "prompt",          # 图像描述 → prompt
-    "summary": "prompt",          # 文本摘要 → prompt
-    "translated_text": "text",    # Translator → 通用 text
-}
-
-
-def _apply_field_aliases(data: MosaicData, consumer_input_types: list[str]) -> MosaicData:
-    """根据下游节点的 input_types 自动添加字段别名。
-
-    如果 data 中有别名源键但无目标键，则添加目标键（值相同）。
-    """
-    if not data:
-        return data
-    result = data
-    for source_key, target_key in _FIELD_ALIASES.items():
-        if source_key in result and target_key not in result:
-            if result is data:
-                result = MosaicData()
-                for k, v in data.items():
-                    result[k] = v
-            result[target_key] = result[source_key]
-    return result
-
-
-# ---------------------------------------------------------------------------
 # 异常与结果类型
 # ---------------------------------------------------------------------------
 class PipelineError(Exception):
@@ -1287,8 +1254,6 @@ class Pipeline(Node):
             pred_id = dn.predecessors[0]
             if pred_id in outputs:
                 pred_output = outputs[pred_id]
-                # 跨域字段别名映射（如 generated_text → prompt）
-                pred_output = _apply_field_aliases(pred_output, dn.node.input_types)
                 # 合并管道入口中未被前驱输出覆盖的参数
                 # （让用户在 pipeline.run() 设的 width/height/negative_prompt 等生效）
                 if pipeline_input:

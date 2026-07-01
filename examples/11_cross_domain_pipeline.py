@@ -35,9 +35,9 @@ from mosaic.nodes.video import WanVideo
 def scenario_1_text_to_video():
     """场景 1：文本 → 图像 → 视频 → 导出（完整创作链）。
 
-    由于各节点输出字段名与下一节点输入字段名不完全匹配
-    （TextGenerator 输出 ``generated_text``，TextToImage 需要 ``prompt``），
-    使用显式逐节点调用展示数据流转。
+    TextGenerator 输出 ``prompt`` 字段（同时保留 ``generated_text``），
+    可直接与 TextToImage 等 diffusers 下游节点串联。
+    此示例使用显式逐节点调用展示完整数据流转。
     """
     print("\n" + "=" * 60)
     print("场景 1: 文本 → 图像 → 视频 → 导出")

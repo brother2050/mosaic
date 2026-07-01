@@ -916,13 +916,9 @@ class StyleKeeper(BaseConsistencyNode):
                 pass
             self._pipeline = None
             # 触发 GPU 显存回收
-            try:
-                import torch
+            from mosaic.core._device_utils import empty_device_cache
 
-                if torch.cuda.is_available():
-                    torch.cuda.empty_cache()
-            except Exception:
-                pass
+            empty_device_cache()
         self._orig_attn_procs = None
         self._loaded = False
         self._logger.info(

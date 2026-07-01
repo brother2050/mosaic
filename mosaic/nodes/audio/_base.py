@@ -167,14 +167,18 @@ class BaseAudioNode(Node):
         return infer_device(self._model, self._scheduler)
 
     def _resolve_device(self) -> str:
-        """解析实际设备字符串，无 GPU 时降级到 CPU。"""
-        device = resolve_device(self._device)
-        if device != self._device:
-            self._logger.warning(
-                "CUDA not available, falling back to CPU for %s.",
-                self.name,
+        """解析实际推理设备，无 GPU 时从调度器降级并记录日志。
+
+        统一的设备解析入口：当节点配置为 CUDA 但调度器检测不到 GPU 时，
+        降级到调度器报告的设备（通常为 ``"cpu"``）并记录日志。各域子类应
+        通过本方法解析目标设备，避免各自实现不一致的降级逻辑。
+        """
+        resolved = resolve_device(self._device, self._scheduler)
+        if resolved != self._device:
+            self._logger.info(
+                "Device resolved: %s → %s", self._device, resolved,
             )
-        return device
+        return resolved
 
     # ------------------------------------------------------------------
     # 音频前后处理工具

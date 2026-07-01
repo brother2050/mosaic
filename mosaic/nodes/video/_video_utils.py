@@ -24,6 +24,8 @@ import random
 import re
 from typing import Any
 
+from mosaic.nodes._coerce import safe_float, safe_int  # noqa: F401
+
 __all__ = [
     "safe_int",
     "safe_float",
@@ -42,68 +44,13 @@ _HF_REPO_ID_RE = re.compile(r"^[A-Za-z0-9][\w.-]*/[A-Za-z0-9][\w.-]*$")
 
 
 # ----------------------------------------------------------------------
-# 安全类型转换（A1）
+# 安全类型转换（A1，re-export 自 mosaic.nodes._coerce）
 # ----------------------------------------------------------------------
-def safe_int(value: Any, param_name: str, default: int = 0) -> int:
-    """安全的 int 转换，失败时抛出清晰的 ValueError。
-
-    Parameters
-    ----------
-    value:
-        待转换的值（通常来自 ``input_data.get(...)``）。
-    param_name:
-        参数名，用于错误信息。
-    default:
-        保留以兼容调用方签名；当前实现失败时总是抛出异常（不返回默认值）。
-
-    Returns
-    -------
-    int
-        转换后的整数。
-
-    Raises
-    ------
-    ValueError
-        ``value`` 无法转为 int 时抛出，附带参数名与原始值信息。
-    """
-    try:
-        return int(value)
-    except (TypeError, ValueError) as exc:
-        raise ValueError(
-            f"Parameter {param_name!r} must be an integer, "
-            f"got {type(value).__name__}: {value!r}"
-        ) from exc
-
-
-def safe_float(value: Any, param_name: str, default: float = 0.0) -> float:
-    """安全的 float 转换，失败时抛出清晰的 ValueError。
-
-    Parameters
-    ----------
-    value:
-        待转换的值。
-    param_name:
-        参数名，用于错误信息。
-    default:
-        保留以兼容调用方签名；当前实现失败时总是抛出异常。
-
-    Returns
-    -------
-    float
-        转换后的浮点数。
-
-    Raises
-    ------
-    ValueError
-        ``value`` 无法转为 float 时抛出。
-    """
-    try:
-        return float(value)
-    except (TypeError, ValueError) as exc:
-        raise ValueError(
-            f"Parameter {param_name!r} must be a number, "
-            f"got {type(value).__name__}: {value!r}"
-        ) from exc
+# safe_int / safe_float 由 mosaic.nodes._coerce 统一实现，此处仅 re-export，
+# 以兼容历史导入 ``from mosaic.nodes.video._video_utils import safe_int``。
+# 注意：旧版 safe_int 签名含未使用的 ``default`` 参数（死参数），统一后
+# ``default`` 生效——当 ``value`` 为 None 且提供 ``default`` 时返回 ``default``，
+# 未提供时抛 ``ValueError``。现有调用方均为 2 参调用，行为不变。
 
 
 # ----------------------------------------------------------------------

@@ -130,6 +130,7 @@ class TextGenerator(BaseTextNode):
 
         elapsed = time.perf_counter() - t0
         result = MosaicData(
+            prompt=generated_text,
             generated_text=generated_text,
             input_tokens=input_tokens,
             output_tokens=output_tokens,

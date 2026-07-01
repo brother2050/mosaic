@@ -53,12 +53,6 @@ _SUPPORTED_MODES: tuple[str, ...] = ("audio", "text", "motion")
 # 支持的输出模式
 _SUPPORTED_OUTPUT_MODES: tuple[str, ...] = ("frames", "callback")
 
-# ONNX Runtime 可用时的推理优化提示
-_ONNX_PROVIDERS_PRIORITY = (
-    "CUDAExecutionProvider",
-    "CPUExecutionProvider",
-)
-
 
 @registry.register
 class RealtimeRenderer(BaseDigitalHumanNode):
@@ -1257,13 +1251,9 @@ class RealtimeRenderer(BaseDigitalHumanNode):
                 pass
             self._pipeline = None
             # 触发 GPU 显存回收
-            try:
-                import torch
+            from mosaic.core._device_utils import empty_device_cache
 
-                if torch.cuda.is_available():
-                    torch.cuda.empty_cache()
-            except Exception:
-                pass
+            empty_device_cache()
         self._tts_node = None
         self._onnx_session = None
         self._use_onnx = False
