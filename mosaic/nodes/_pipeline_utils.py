@@ -340,8 +340,9 @@ def safe_load_pipeline(
     # 加载成功后存入缓存（from_pretrained 抛异常时不会到达此处）
     # fp16 variant 回退后实际 dtype 为 float32，缓存键应反映实际 dtype
     actual_cache_dtype = cache_dtype
-    if pipe is not None and use_fp16_variant and torch_dtype == torch.float16:
-        # 如果第一次 fp16 variant 失败走回退，实际 dtype 已改为 float32
+    if first_exc is not None and use_fp16_variant and torch_dtype == torch.float16:
+        # 仅当确实发生了 fp16 variant 回退（first_exc 不为 None）时，
+        # 实际 dtype 才是 float32
         actual_cache_dtype = "float32"
     model_cache.put(cache_cls, model_name, actual_cache_dtype, pipe, cache_device)
     return pipe

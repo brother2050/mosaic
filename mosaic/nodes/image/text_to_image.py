@@ -77,6 +77,12 @@ class TextToImage(BaseImageNode):
     DEFAULT_GUIDANCE_SCALE: float = 7.5
     DEFAULT_NUM_IMAGES: int = 1
 
+    # 默认负面提示词（与 Stylizer 对齐，显著提升基础质量）
+    DEFAULT_NEGATIVE_PROMPT: str = (
+        "blurry, low quality, distorted, deformed, watermark, "
+        "signature, text, ugly, extra limbs, bad anatomy"
+    )
+
     def _load_pipeline(self) -> None:
         """加载 diffusers Pipeline。
 
@@ -183,8 +189,14 @@ class TextToImage(BaseImageNode):
             seed, generator = self._prepare_seed(input_data.get("seed"))
 
             # 构造 Pipeline 参数
+            # 未提供 negative_prompt 时使用默认值（显著减少伪影/模糊）
+            effective_negative_prompt = negative_prompt
+            if effective_negative_prompt is None:
+                effective_negative_prompt = self.DEFAULT_NEGATIVE_PROMPT
+
             pipe_kwargs: dict = {
                 "prompt": prompt,
+                "negative_prompt": effective_negative_prompt,
                 "width": width,
                 "height": height,
                 "num_inference_steps": num_inference_steps,
@@ -192,8 +204,6 @@ class TextToImage(BaseImageNode):
                 "num_images_per_prompt": num_images,
                 "generator": generator,
             }
-            if negative_prompt is not None:
-                pipe_kwargs["negative_prompt"] = negative_prompt
 
             # 执行推理
             output = self._run_pipeline(**pipe_kwargs)

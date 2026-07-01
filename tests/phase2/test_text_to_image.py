@@ -211,5 +211,7 @@ class TestTextToImage:
         assert call_kwargs["num_inference_steps"] == 30
         assert call_kwargs["guidance_scale"] == 7.5
         assert call_kwargs["num_images_per_prompt"] == 1
-        assert "negative_prompt" not in call_kwargs
+        # 未提供 negative_prompt 时使用默认值
+        assert "negative_prompt" in call_kwargs
+        assert call_kwargs["negative_prompt"] == TextToImage.DEFAULT_NEGATIVE_PROMPT
         assert "generator" in call_kwargs

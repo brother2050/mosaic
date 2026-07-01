@@ -55,6 +55,39 @@ __all__ = [
 
 
 # ---------------------------------------------------------------------------
+# 跨域字段别名映射
+# ---------------------------------------------------------------------------
+# 当上游节点输出字段名与下游节点期望的输入字段名不一致时，
+# 自动添加别名键，使管道能无缝串联不同域的节点。
+_FIELD_ALIASES: dict[str, str] = {
+    "generated_text": "prompt",   # TextGenerator → TextToImage
+    "text": "prompt",             # 通用 text → prompt
+    "description": "prompt",      # 通用 description → prompt
+    "caption": "prompt",          # 图像描述 → prompt
+    "summary": "prompt",          # 文本摘要 → prompt
+    "translated_text": "text",    # Translator → 通用 text
+}
+
+
+def _apply_field_aliases(data: MosaicData, consumer_input_types: list[str]) -> MosaicData:
+    """根据下游节点的 input_types 自动添加字段别名。
+
+    如果 data 中有别名源键但无目标键，则添加目标键（值相同）。
+    """
+    if not data:
+        return data
+    result = data
+    for source_key, target_key in _FIELD_ALIASES.items():
+        if source_key in result and target_key not in result:
+            if result is data:
+                result = MosaicData()
+                for k, v in data.items():
+                    result[k] = v
+            result[target_key] = result[source_key]
+    return result
+
+
+# ---------------------------------------------------------------------------
 # 异常与结果类型
 # ---------------------------------------------------------------------------
 class PipelineError(Exception):
@@ -903,6 +936,8 @@ class Pipeline(Node):
                             indegree[succ] -= 1
                             if indegree[succ] == 0:
                                 ready_queue.append(succ)
+                        # 并行模式：释放不再被需要的已加载节点
+                        self._release_unused_nodes_parallel(nid, completed, outputs)
                     except Exception as exc:  # noqa: BLE001
                         if fail_fast:
                             # 设置取消信号：通知尚未启动的工作线程跳过执行
@@ -1015,7 +1050,71 @@ class Pipeline(Node):
                 )
             )
 
+            # 串行模式：释放不再被需要的已加载节点（减少组合管道显存占用）
+            # 一个节点"不再被需要"的条件：它的所有后继都已执行完毕
+            self._release_unused_nodes_serial(nid, order, outputs)
+
         return outputs, errors, node_durations
+
+    def _release_unused_nodes_serial(
+        self,
+        current_nid: str,
+        order: list[str],
+        outputs: dict[str, MosaicData],
+    ) -> None:
+        """串行模式下释放不再被后续节点需要的已加载模型。
+
+        当一个节点的所有后继都已产出输出时，该节点不再被需要，
+        可以安全释放其 GPU 资源。这对 TextGenerator → TextToImage
+        等顺序管道尤其重要（避免两个大模型同时驻留 GPU）。
+        """
+        for nid in order:
+            if nid == current_nid:
+                continue
+            dn = self._dag.get(nid)
+            if dn is None:
+                continue
+            # 跳过尚未执行的节点
+            if nid not in outputs:
+                continue
+            # 检查该节点的所有后继是否都已产出
+            if not dn.successors:
+                continue  # 终点节点不释放
+            all_successors_done = all(s in outputs for s in dn.successors)
+            if not all_successors_done:
+                continue
+            # 安全释放（通过节点自身的 scheduler）
+            try:
+                scheduler = getattr(dn.node, "_scheduler", None)
+                if scheduler is not None and dn.node.is_loaded():
+                    scheduler.release(dn.node)
+            except Exception:  # noqa: BLE001
+                pass
+
+    def _release_unused_nodes_parallel(
+        self,
+        current_nid: str,
+        completed: set[str],
+        outputs: dict[str, MosaicData],
+    ) -> None:
+        """并行模式下释放不再被后续节点需要的已加载模型。"""
+        for nid in completed:
+            if nid == current_nid:
+                continue
+            dn = self._dag.get(nid)
+            if dn is None:
+                continue
+            if not dn.successors:
+                continue
+            all_successors_done = all(s in outputs for s in dn.successors)
+            if not all_successors_done:
+                continue
+            try:
+                scheduler = getattr(dn.node, "_scheduler", None)
+                if scheduler is not None and dn.node.is_loaded():
+                    scheduler.release(dn.node)
+            except Exception:  # noqa: BLE001
+                pass
 
     def _run_single_node(
         self,
@@ -1184,10 +1283,24 @@ class Pipeline(Node):
             # 源点：使用管道输入
             return pipeline_input
         if len(dn.predecessors) == 1:
-            # 单前驱：直接透传
+            # 单前驱：透传前驱输出，并合并管道入口的额外参数
             pred_id = dn.predecessors[0]
             if pred_id in outputs:
-                return outputs[pred_id]
+                pred_output = outputs[pred_id]
+                # 跨域字段别名映射（如 generated_text → prompt）
+                pred_output = _apply_field_aliases(pred_output, dn.node.input_types)
+                # 合并管道入口中未被前驱输出覆盖的参数
+                # （让用户在 pipeline.run() 设的 width/height/negative_prompt 等生效）
+                if pipeline_input:
+                    merged = MosaicData()
+                    # 先放管道入口参数
+                    for k, v in pipeline_input.items():
+                        merged[k] = v
+                    # 前驱输出覆盖（前驱结果优先）
+                    for k, v in pred_output.items():
+                        merged[k] = v
+                    return merged
+                return pred_output
             # 前驱失败（fail_fast=False），返回空
             return MosaicData()
         # 多前驱（fan-in）：按标签组装为 {标签: 前驱输出}
