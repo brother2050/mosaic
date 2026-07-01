@@ -7,11 +7,8 @@ examples/09_subtitle_rag.py
 """
 from __future__ import annotations
 
-import sys
-sys.path.insert(0, "/workspace/mosaic")
-
 from mosaic import Pipeline
-from mosaic.core.types import AudioData, MosaicData
+from mosaic.core import MosaicData
 from mosaic.nodes.audio import ASR
 from mosaic.nodes.subtitle import (
     SubtitleGenerator,
@@ -34,14 +31,15 @@ def example_1_subtitle_generation():
     print("\n=== 示例 1：字幕生成 ===")
 
     gen = SubtitleGenerator()
-    audio = AudioData.from_file("speech.wav")
 
-    result = gen.run(MosaicData(audio=audio, language="zh"))
+    # SubtitleGenerator 接受 str 路径 / ndarray / AudioData 作为 ``audio``
+    result = gen.run(MosaicData(audio="speech.wav", language="zh"))
     subtitle = result.get("subtitle")
+    segments = subtitle.segments
 
-    print(f"字幕段数: {len(result.get('segments', []))}")
+    print(f"字幕段数: {len(segments)}")
     print(f"前 3 段:")
-    for seg in result.get("segments", [])[:3]:
+    for seg in segments[:3]:
         print(f"  [{seg['start']:.1f}s - {seg['end']:.1f}s] {seg['text']}")
 
 
@@ -51,11 +49,11 @@ def example_2_subtitle_translate():
 
     pipe = SubtitleGenerator() | SubtitleTranslator()
 
-    result = pipe.run(
-        audio=AudioData.from_file("speech.wav"),
+    result = pipe.run(MosaicData(
+        audio="speech.wav",
         language="zh",
         target_lang="en",
-    )
+    ))
 
     subtitle = result.get("subtitle")
     print("已生成中英双语字幕")
@@ -73,11 +71,11 @@ def example_3_subtitle_align():
         | SubtitleAligner()
     )
 
-    result = pipe.run(
-        audio=AudioData.from_file("long_speech.wav"),
+    result = pipe.run(MosaicData(
+        audio="long_speech.wav",
         source_lang="zh",
         target_lang="en",
-    )
+    ))
     print("已生成时间轴精确对齐的双语字幕")
 
 
@@ -95,16 +93,16 @@ def example_4_rag_basic():
         | CitationGenerator()
     )
 
-    result = pipe.run(
+    result = pipe.run(MosaicData(
         file_path="manual.pdf",
         query="如何使用 Mosaic 的 Pipeline？",
         index_path="./index",
-    )
+    ))
 
     print(f"答案：\n{result.get('answer')}")
     print(f"\n引用：")
     for cit in result.get("citations", []):
-        print(f"  [{cit['source']}] {cit['text']}")
+        print(f"  [{cit['source']}] {cit['content'][:80]}")
 
 
 def example_5_rag_with_existing_index():
@@ -114,9 +112,11 @@ def example_5_rag_with_existing_index():
     retriever = Retriever(index_path="./existing_index", top_k=5)
     result = retriever.run(MosaicData(query="Mosaic 的 TTS 后端有哪些？"))
 
-    print(f"检索到 {len(result.get('documents', []))} 个相关文档")
-    for doc in result.get("documents", [])[:3]:
-        print(f"  - {doc.text[:100]}...")
+    # Retriever 输出 ``results`` (list[dict])，每项含 content/score/source
+    results = result.get("results", [])
+    print(f"检索到 {len(results)} 个相关文档")
+    for doc in results[:3]:
+        print(f"  - {doc['content'][:100]}...")
 
 
 # ============= 字幕 + RAG 组合示例 =============
@@ -133,7 +133,7 @@ def example_6_subtitle_rag_video_qa():
         | SubtitleGenerator()
         | VectorIndexer(embedding_model="BAAI/bge-m3", index_path="./video_index")
     )
-    index_pipe.run(MosaicData(audio=AudioData.from_file("tutorial_video.wav")))
+    index_pipe.run(MosaicData(audio="tutorial_video.wav"))
     print("  视频索引已建立")
 
     # 第 2 步：用户提问
@@ -144,13 +144,13 @@ def example_6_subtitle_rag_video_qa():
         | CitationGenerator()
     )
 
-    result = qa_pipe.run(
+    result = qa_pipe.run(MosaicData(
         query="视频中讲解的 WanVideo 节点支持哪些模型？",
-    )
+    ))
     print(f"\n回答：\n{result.get('answer')}")
     print(f"\n引用：")
     for cit in result.get("citations", [])[:3]:
-        print(f"  [{cit['start']:.1f}s - {cit['end']:.1f}s] {cit['text']}")
+        print(f"  [{cit['source']}] {cit['content'][:80]}")
 
 
 def main():

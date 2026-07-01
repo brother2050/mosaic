@@ -180,9 +180,29 @@ class BaseVideoNode(Node):
         ``Scheduler._evict`` 回调，不应在其中调用
         ``scheduler.release(self)`` 以免递归。
         """
-        self._pipeline = None
+        if self._pipeline is not None:
+            from mosaic.core.model_cache import model_cache
+            model_cache.remove(
+                type(self._pipeline),
+                self._model_name,
+                self._dtype_str,
+            )
+            try:
+                self._pipeline.to("cpu")
+            except Exception:
+                pass
+            self._pipeline = None
+            try:
+                import torch
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+            except Exception:
+                pass
         self._loaded = False
-        self._logger.info("Video model %s unloaded.", self._model_name)
+        self._logger.info(
+            "Video model %s unloaded (GPU cache cleared).",
+            self._model_name,
+        )
 
     # ------------------------------------------------------------------
     # 设备与推理辅助

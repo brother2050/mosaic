@@ -249,6 +249,7 @@ class RealtimeRenderer(BaseDigitalHumanNode):
                 "using lightweight placeholder renderer."
             )
             self._pipeline = None
+            self._placeholder_mode = True
             return
 
         # 优先尝试 diffusers LivePortraitPipeline

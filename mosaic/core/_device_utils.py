@@ -273,8 +273,10 @@ _SD15_MODEL_PATTERNS = (
 )
 
 
-def _is_sd15_model(model_name: str) -> bool:
+def _is_sd15_model(model_name: str | None) -> bool:
     """判断模型是否为 SD 1.5 系列（text_encoder 对 float16 敏感）。"""
+    if not model_name:
+        return False
     return any(p in model_name for p in _SD15_MODEL_PATTERNS)
 
 

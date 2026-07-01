@@ -127,7 +127,6 @@ class IdentityKeeper(BaseConsistencyNode):
                 f"Unsupported method {method!r}. "
                 f"Choose from {_SUPPORTED_METHODS}."
             )
-        super().__init__(device=device, dtype=dtype, **kwargs)
         self._method: str = method
         # 若用户使用了某方法的默认模型标识之外的值，仍以用户值为准；
         # 否则采用对应 method 的推荐模型。
@@ -135,6 +134,7 @@ class IdentityKeeper(BaseConsistencyNode):
             model if model != "InstantX/InstantID" or method == "instantid"
             else _METHOD_DEFAULT_MODELS[method]
         )
+        super().__init__(device=device, dtype=dtype, model=self._model_name, **kwargs)
         # 运行时标记：instantid 是否加载了原生 Pipeline
         self._native_instantid: bool = False
 

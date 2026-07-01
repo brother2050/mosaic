@@ -7,17 +7,17 @@ examples/04_audio_domain.py
 """
 from __future__ import annotations
 
-import sys
-sys.path.insert(0, "/workspace/mosaic")
+import soundfile as sf
 
 from mosaic import Pipeline
-from mosaic.core.types import AudioData, MosaicData
+from mosaic.core import MosaicData
 from mosaic.nodes.audio import (
     ASR,
     MusicGenerator,
-    SoundEffect,
+    SoundEffectGenerator,
     VoiceClone,
 )
+from mosaic.nodes.text import TextSummarizer
 
 
 def example_1_asr():
@@ -25,9 +25,9 @@ def example_1_asr():
     print("\n=== 示例 1：语音识别 ===")
 
     asr = ASR(model="openai/whisper-large-v3")
-    audio = AudioData.from_file("speech.wav")
 
-    result = asr.run(MosaicData(audio=audio, language="zh"))
+    # ASR 接受 str 路径 / ndarray / AudioData 作为 ``audio``
+    result = asr.run(MosaicData(audio="speech.wav", language="zh"))
 
     print(f"识别文本：{result.get('text')}")
     print(f"检测语言：{result.get('language')}")
@@ -40,58 +40,51 @@ def example_2_music_generation():
 
     music_gen = MusicGenerator()
     result = music_gen.run(
-        prompt="upbeat lo-fi hip hop, jazzy piano, relaxing beat, 90 BPM",
-        duration=30,
+        MosaicData(prompt="upbeat lo-fi hip hop, jazzy piano, relaxing beat, 90 BPM", duration=30)
     )
 
     audio = result.get("audio")
-    audio.save("output_music.wav")
-    print(f"已生成背景音乐：{audio.duration:.1f} 秒")
+    sf.write("output_music.wav", audio.waveform, audio.sample_rate)
+    print(f"已生成背景音乐：{result.get('duration'):.1f} 秒")
 
 
 def example_3_sound_effect():
     """示例 3：音效生成。"""
     print("\n=== 示例 3：音效生成 ===")
 
-    se = SoundEffect()
+    se = SoundEffectGenerator()
     result = se.run(
-        prompt="thunderstorm with heavy rain and distant thunder",
-        duration=5.0,
+        MosaicData(prompt="thunderstorm with heavy rain and distant thunder", duration=5.0)
     )
 
     audio = result.get("audio")
-    audio.save("output_thunder.wav")
-    print(f"已生成音效：{audio.duration:.1f} 秒")
+    sf.write("output_thunder.wav", audio.waveform, audio.sample_rate)
+    print(f"已生成音效：{audio.metadata.get('duration', 0):.1f} 秒")
 
 
 def example_4_voice_clone():
     """示例 4：语音克隆。"""
-    print("\n=== 示例 4：语音克隆（GPT-SoVITS）===")
+    print("\n=== 示例 4：语音克隆 ===")
 
-    clone = VoiceClone(backend="sovits")
-    result = clone.run(
+    clone = VoiceClone(language="zh")
+    # VoiceClone 用 ``reference_audio`` 提供参考音色，``text`` 为待合成文本
+    result = clone.run(MosaicData(
+        reference_audio="reference.wav",
         text="这是用 5 秒参考音频克隆的声音。",
-        ref_audio="reference.wav",
-        ref_text="参考音频的文字内容",
-    )
+    ))
 
     audio = result.get("audio")
-    audio.save("output_clone.wav")
-    print(f"已克隆声音：{audio.duration:.1f} 秒")
+    sf.write("output_clone.wav", audio.waveform, audio.sample_rate)
+    print(f"已克隆声音：{audio.metadata.get('duration', 0):.1f} 秒")
 
 
 def example_5_pipeline_transcribe_to_summarize():
     """示例 5：ASR → 摘要管道。"""
     print("\n=== 示例 5：ASR → 文本摘要管道 ===")
 
-    pipe = ASR(model="openai/whisper-large-v3") | __import__(
-        "mosaic.nodes.text", fromlist=["TextSummarizer"]
-    ).TextSummarizer()
+    pipe = ASR(model="openai/whisper-large-v3") | TextSummarizer()
 
-    result = pipe.run(
-        audio=AudioData.from_file("long_speech.wav"),
-        mode="concise",
-    )
+    result = pipe.run(MosaicData(audio="long_speech.wav", mode="concise"))
     print(f"摘要：{result.get('text')}")
 
 

@@ -1036,11 +1036,27 @@ class Pipeline(Node):
             )
         )
         t0 = time.perf_counter()
-        # 不在此处直接调用 node.load()，交给 scheduler.ensure_loaded() 处理
-        # 以确保显存容量检查和 LRU 淘汰正常工作；无 scheduler 的节点
-        #（旧代码兼容）回退到直接 load。
-        self._ensure_node_loaded(dn.node)
-        out = dn.node.run(node_input)
+        try:
+            # 不在此处直接调用 node.load()，交给 scheduler.ensure_loaded() 处理
+            # 以确保显存容量检查和 LRU 淘汰正常工作；无 scheduler 的节点
+            #（旧代码兼容）回退到直接 load。
+            self._ensure_node_loaded(dn.node)
+            out = dn.node.run(node_input)
+        except Exception as exc:
+            elapsed = time.perf_counter() - t0
+            ctx.store_artifact(dn.node_id, MosaicData(), duration=elapsed)
+            ctx.emit(
+                Event(
+                    event_type="node_end",
+                    node_name=dn.node.name,
+                    payload={
+                        "output_keys": [],
+                        "elapsed_seconds": elapsed,
+                        "error": str(exc),
+                    },
+                )
+            )
+            raise
         elapsed = time.perf_counter() - t0
         ctx.store_artifact(dn.node_id, out, duration=elapsed)
         ctx.emit(

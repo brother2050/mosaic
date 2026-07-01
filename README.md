@@ -190,7 +190,7 @@ audio = result.get("audio")  # AudioData 对象
 
 # 流式合成（首批延迟 ~50ms）
 async def stream_demo():
-    async for chunk in tts.synthesize_stream(text="流式合成测试", language="zh"):
+    async for chunk in tts.run_stream(MosaicData(text="流式合成测试", language="zh")):
         play(chunk)  # 立即播放当前 chunk
 
 asyncio.run(stream_demo())

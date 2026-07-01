@@ -174,7 +174,10 @@ class TextToImage(BaseImageNode):
             )
             validate_guidance_scale(guidance_scale)
             num_images = safe_int(input_data.get("num_images", self.DEFAULT_NUM_IMAGES), "num_images")
-            num_images = max(1, num_images)
+            if num_images < 1:
+                raise ValueError(
+                    f"num_images must be >= 1, got {num_images}."
+                )
 
             # 准备种子
             seed, generator = self._prepare_seed(input_data.get("seed"))
@@ -202,10 +205,15 @@ class TextToImage(BaseImageNode):
 
         # 提取生成的图片
         images: list[Any] = output.images if hasattr(output, "images") else []
+        if not images:
+            raise RuntimeError(
+                "Pipeline returned no images. This may indicate a model "
+                "loading or inference error."
+            )
 
         result = MosaicData(
             images=images,
-            image=images[0] if images else None,  # 兼容下游单数 image 字段
+            image=images[0],  # 兼容下游单数 image 字段
             seed=seed,
             prompt=prompt,
             model_name=self._model_name,

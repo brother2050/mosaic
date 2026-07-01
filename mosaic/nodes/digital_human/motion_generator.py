@@ -1177,7 +1177,7 @@ class MotionGenerator(BaseDigitalHumanNode):
             pass
 
         # 回退：RMS 能量峰值
-        hop = max(1, sample_rate // fps)
+        hop = max(1, sample_rate // fps) if fps else 1
         rms = []
         arr = np.asarray(mono, dtype=np.float32)
         for i in range(0, len(arr) - hop, hop):

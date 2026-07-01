@@ -11,12 +11,12 @@ Fish Speech 完整示例 —— 多语言合成（中/英/日/韩）、语音克
 """
 from __future__ import annotations
 
-import asyncio
-import sys
-sys.path.insert(0, "/workspace/mosaic")
+import time
 
+import soundfile as sf
+
+from mosaic.core import MosaicData
 from mosaic.nodes.audio import TTS
-from mosaic import MosaicData
 
 
 def example_1_basic():
@@ -27,8 +27,8 @@ def example_1_basic():
     result = tts.run(MosaicData(text="你好世界，这是 Fish Speech 合成。"))
 
     audio = result.get("audio")
-    audio.save("output_fish_basic.wav")
-    print(f"采样率: {audio.sample_rate} Hz, 时长: {audio.duration:.2f}s")
+    sf.write("output_fish_basic.wav", audio.waveform, audio.sample_rate)
+    print(f"采样率: {audio.sample_rate} Hz, 时长: {result.get('duration'):.2f}s")
 
 
 def example_2_multilingual():
@@ -47,8 +47,8 @@ def example_2_multilingual():
     for lang, text in texts:
         result = tts.run(MosaicData(text=text, language=lang))
         audio = result.get("audio")
-        audio.save(f"output_fish_{lang}.wav")
-        print(f"[{lang}] {text} → {audio.duration:.2f}s")
+        sf.write(f"output_fish_{lang}.wav", audio.waveform, audio.sample_rate)
+        print(f"[{lang}] {text} → {result.get('duration'):.2f}s")
 
 
 def example_3_voice_cloning():
@@ -64,8 +64,8 @@ def example_3_voice_cloning():
     # 任意新文本都会用参考音频的音色
     result = tts.run(MosaicData(text="这是用参考音频克隆的声音，合成新文本。", language="zh"))
     audio = result.get("audio")
-    audio.save("output_fish_cloned.wav")
-    print(f"已克隆：{audio.duration:.2f}s")
+    sf.write("output_fish_cloned.wav", audio.waveform, audio.sample_rate)
+    print(f"已克隆：{result.get('duration'):.2f}s")
 
 
 def example_4_cross_lingual_clone():
@@ -79,31 +79,29 @@ def example_4_cross_lingual_clone():
         ref_text="这是中文参考音频。",
     )
 
-    result = tts.run(
+    result = tts.run(MosaicData(
         text="Cross-lingual voice cloning in English.",
         language="en",
-    )
+    ))
     audio = result.get("audio")
-    audio.save("output_fish_cross_lingual.wav")
+    sf.write("output_fish_cross_lingual.wav", audio.waveform, audio.sample_rate)
     print("已实现跨语种克隆")
 
 
-async def example_5_streaming():
+def example_5_streaming():
     """示例 5：流式输出。"""
     print("\n=== 示例 5：流式输出 ===")
 
-    tts = TTS(backend="fish", streaming=True, language="zh")
+    tts = TTS(backend="fish", language="zh")
 
     print("开始流式合成...")
     chunk_idx = 0
-    start = asyncio.get_event_loop().time()
+    start = time.time()
 
-    async for chunk in tts.synthesize_stream(
-        text="流式合成测试。Fish Speech 延迟约 80 毫秒。",
-        language="zh",
-    ):
+    # run_stream 返回同步生成器，每次 yield 一小段 AudioData
+    for chunk in tts.run_stream(MosaicData(text="流式合成测试。Fish Speech 延迟约 80 毫秒。", language="zh")):
         if chunk_idx == 0:
-            first = (asyncio.get_event_loop().time() - start) * 1000
+            first = (time.time() - start) * 1000
             print(f"首批延迟: {first:.0f}ms")
         chunk_idx += 1
 
@@ -119,11 +117,11 @@ def example_6_comparison():
     tts_chat = TTS(backend="chattts", language="zh")
     tts_fish = TTS(backend="fish", language="zh")
 
-    audio_chat = tts_chat.run(MosaicData(text=text, seed=42)).get("audio")
-    audio_fish = tts_fish.run(MosaicData(text=text)).get("audio")
+    r_chat = tts_chat.run(MosaicData(text=text, seed=42))
+    r_fish = tts_fish.run(MosaicData(text=text))
 
-    print(f"ChatTTS: {audio_chat.sample_rate}Hz, {audio_chat.duration:.2f}s")
-    print(f"Fish:    {audio_fish.sample_rate}Hz, {audio_fish.duration:.2f}s")
+    print(f"ChatTTS: {r_chat.get('audio').sample_rate}Hz, {r_chat.get('duration'):.2f}s")
+    print(f"Fish:    {r_fish.get('audio').sample_rate}Hz, {r_fish.get('duration'):.2f}s")
     print("注意：两者的采样率和时长都不同")
 
 
@@ -139,7 +137,7 @@ def main():
     example_3_voice_cloning()
     example_4_cross_lingual_clone()
 
-    asyncio.run(example_5_streaming())
+    example_5_streaming()
 
     example_6_comparison()
 

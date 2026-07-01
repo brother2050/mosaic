@@ -306,6 +306,10 @@ class FrameInterpolator(BaseVideoNode):
         """
         if target_fps is not None:
             target_fps = int(target_fps)
+            if original_fps <= 0:
+                raise ValueError(
+                    f"original_fps must be > 0 for interpolation, got {original_fps}."
+                )
             if target_fps <= original_fps:
                 self._logger.warning(
                     "target_fps=%d <= original_fps=%d; no interpolation applied.",

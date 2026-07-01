@@ -36,6 +36,8 @@ from mosaic.core.node import Node, NodeSpec
 from mosaic.core.scheduler import Scheduler, get_scheduler
 from mosaic.core.types import MosaicData
 
+logger = logging.getLogger(__name__)
+
 __all__ = ["BaseDigitalHumanNode"]
 
 
@@ -518,7 +520,7 @@ class BaseDigitalHumanNode(Node):
         )
         # D7: 检测 NaN，防止上游模型推理异常导致黑块
         if np.isnan(blended).any():
-            self._logger.warning(
+            logger.warning(
                 "NaN detected in face blend result; replacing with zeros."
             )
             blended = np.nan_to_num(blended, nan=0.0)

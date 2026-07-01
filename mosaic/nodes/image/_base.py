@@ -243,7 +243,6 @@ class BaseImageNode(Node):
             except Exception:
                 pass
             self._pipeline = None
-            self._loaded = False
             # 触发 GPU 显存回收
             try:
                 import torch
@@ -251,10 +250,11 @@ class BaseImageNode(Node):
                     torch.cuda.empty_cache()
             except Exception:
                 pass
-            self._logger.info(
-                "Pipeline for model %s unloaded (GPU cache cleared).",
-                self._model_name,
-            )
+        self._loaded = False
+        self._logger.info(
+            "Pipeline for model %s unloaded (GPU cache cleared).",
+            self._model_name,
+        )
 
     # ------------------------------------------------------------------
     # 公共推理逻辑
