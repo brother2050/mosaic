@@ -294,6 +294,8 @@ class BaseAudioNode(Node):
         """
         if orig_sr == target_sr:
             return waveform
+        if orig_sr <= 0 or target_sr <= 0:
+            return waveform
 
         try:
             import librosa  # type: ignore
@@ -339,6 +341,8 @@ class BaseAudioNode(Node):
 
         if isinstance(waveform, np.ndarray):
             num_samples = waveform.shape[-1]
+            if sample_rate <= 0:
+                return 0.0
             return float(num_samples) / float(sample_rate)
         return 0.0
 

@@ -1154,7 +1154,21 @@ class RealtimeRenderer(BaseDigitalHumanNode):
         # 停止实时循环
         if self._realtime_running:
             self.stop_realtime()
-        self._pipeline = None
+        if self._pipeline is not None:
+            # 移至 CPU 再置空，加速 GPU 显存回收
+            try:
+                self._pipeline.to("cpu")
+            except Exception:
+                pass
+            self._pipeline = None
+            # 触发 GPU 显存回收
+            try:
+                import torch
+
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+            except Exception:
+                pass
         self._tts_node = None
         self._onnx_session = None
         self._use_onnx = False

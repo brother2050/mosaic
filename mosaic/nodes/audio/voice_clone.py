@@ -212,6 +212,8 @@ class VoiceClone(BaseAudioNode):
         if signs.size < 2:
             return 0.0
         crossings = int(np.sum(np.abs(np.diff(signs)) > 0))
+        if sample_rate <= 0:
+            return 0.0
         duration = float(mono.size) / float(sample_rate)
         if duration <= 0:
             return 0.0

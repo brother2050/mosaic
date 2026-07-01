@@ -336,7 +336,13 @@ class AvatarDriver(BaseDigitalHumanNode):
 
     def unload(self) -> None:
         """释放驱动模型与显存。"""
-        self._pipeline = None
+        if self._pipeline is not None:
+            # 移至 CPU 再置空，加速 GPU 显存回收
+            try:
+                self._pipeline.to("cpu")
+            except Exception:
+                pass
+            self._pipeline = None
         self._model = None
         self._processor = None
         self._components = None

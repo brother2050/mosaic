@@ -80,7 +80,7 @@ def example_3_motion_generation():
     ))
 
     motion = result.get("motion")
-    print(f"已生成动作序列: {motion.frame_count} 帧")
+    print(f"已生成动作序列: {motion['frame_count']} 帧")
 
 
 def example_4_realtime_renderer():
@@ -183,13 +183,13 @@ def example_7_motion_to_video():
     motion_gen = MotionGenerator(method="text2motion")
     m_result = motion_gen.run(MosaicData(prompt="a person walking forward", duration=3.0))
     motion = m_result.get("motion")
-    print(f"已生成动作序列: {motion.frame_count} 帧")
+    print(f"已生成动作序列: {motion['frame_count']} 帧")
 
     # 2. 用动作驱动静态形象生成视频
     driver = AvatarDriver()
     result = driver.run(MosaicData(
         source_image=Image.open("avatar.png"),
-        expression_params=motion.keypoints,
+        expression_params=motion["keypoints"],
         output_format="video",
         fps=25,
     ))

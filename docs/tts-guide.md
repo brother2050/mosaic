@@ -268,7 +268,7 @@ from mosaic import MosaicData
 tts = TTS(backend="chattts")
 result = tts.run(MosaicData(text="你好，欢迎使用 Mosaic！", language="zh"))
 audio = result.get("audio")  # AudioData 对象
-print(f"采样率: {audio.sample_rate} Hz, 时长: {audio.duration:.2f}s")
+print(f"采样率: {audio.sample_rate} Hz, 时长: {audio.metadata.get('duration', 0):.2f}s")
 # 采样率: 24000 Hz, 时长: 2.45s
 ```
 

@@ -82,17 +82,21 @@ _setup_logging()
 
 # 便捷导出：常用核心类
 from mosaic.core import (
-    MosaicData,
-    TextData,
-    ImageData,
     AudioData,
-    VideoData,
-    SubtitleData,
+    AvatarData,
+    DocumentData,
+    ImageData,
+    MotionData,
+    MosaicData,
     Node,
     Pipeline,
+    PipelineResult,
     Branch,
     Merge,
-    PipelineResult,
+    RagQueryResult,
+    SubtitleData,
+    TextData,
+    VideoData,
     registry,
 )
 
@@ -108,6 +112,10 @@ __all__ = [
     "AudioData",
     "VideoData",
     "SubtitleData",
+    "DocumentData",
+    "MotionData",
+    "AvatarData",
+    "RagQueryResult",
     # core
     "Node",
     "Pipeline",
@@ -120,3 +128,10 @@ __all__ = [
     "plugin_manager",
     "node",  # @node 装饰器
 ]
+
+# 库式使用时自动发现并注册所有内置节点
+# （CLI 路径会自行调用 discover()，此处保证 import mosaic 即可用）
+try:
+    import mosaic.nodes  # noqa: F401 — 触发 @registry.register 装饰器
+except ImportError:
+    pass

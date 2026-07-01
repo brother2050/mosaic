@@ -353,7 +353,21 @@ class CrossFrameConsistency(BaseConsistencyNode):
 
     def unload(self) -> None:
         """释放 Pipeline 与一致性扩展状态。"""
-        self._pipeline = None
+        if self._pipeline is not None:
+            # 移至 CPU 再置空，加速 GPU 显存回收
+            try:
+                self._pipeline.to("cpu")
+            except Exception:
+                pass
+            self._pipeline = None
+            # 触发 GPU 显存回收
+            try:
+                import torch
+
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+            except Exception:
+                pass
         self._loaded = False
         self._shared_kv_cache.clear()
         self._kv_mode = "off"

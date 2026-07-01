@@ -374,6 +374,8 @@ class BaseImageNode(Node):
         if isinstance(image, np.ndarray):
             # 防御性 dtype 转换：PIL 需要 uint8
             if image.dtype != np.uint8:
+                if image.size == 0:
+                    raise ValueError("Empty image array received.")
                 image = np.clip(
                     image * 255 if image.max() <= 1.0 else image,
                     0, 255,

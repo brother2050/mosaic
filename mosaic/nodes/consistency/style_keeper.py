@@ -899,8 +899,22 @@ class StyleKeeper(BaseConsistencyNode):
     # ------------------------------------------------------------------
     def unload(self) -> None:
         """释放 Pipeline 资源。"""
+        if self._pipeline is not None:
+            # 移至 CPU 再置空，加速 GPU 显存回收
+            try:
+                self._pipeline.to("cpu")
+            except Exception:
+                pass
+            self._pipeline = None
+            # 触发 GPU 显存回收
+            try:
+                import torch
+
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+            except Exception:
+                pass
         self._orig_attn_procs = None
-        self._pipeline = None
         self._loaded = False
         self._logger.info(
             "StyleKeeper pipeline unloaded (method=%s).", self._method

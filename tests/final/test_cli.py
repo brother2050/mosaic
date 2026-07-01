@@ -16,13 +16,14 @@ from __future__ import annotations
 
 import os
 import subprocess
+from pathlib import Path
 import sys
 import tempfile
 
 import pytest
 
 # 项目根目录
-PROJECT_ROOT = "/workspace/mosaic"
+PROJECT_ROOT = str(Path(__file__).resolve().parents[2])
 CLI_BASE = ["python3", "-m", "mosaic.cli.main"]
 
 

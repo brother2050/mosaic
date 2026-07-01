@@ -91,6 +91,7 @@ class BaseDigitalHumanNode(Node):
         bus: EventBus | None = None,
         **kwargs: Any,
     ) -> None:
+        model_name = kwargs.pop("model", "")
         super().__init__(bus=bus, **kwargs)
         self._scheduler: Scheduler = scheduler or get_scheduler()
         self._logger = logging.getLogger(
@@ -100,7 +101,7 @@ class BaseDigitalHumanNode(Node):
         # 自动解析设备与 dtype：CPU/SD1.5 环境下将 float16 降级为 float32
         self._device, self._dtype_str = auto_resolve_device_dtype(
             device, dtype, self._scheduler, self._logger,
-            model_name=kwargs.get("model", ""),
+            model_name=model_name,
         )
 
         # 运行时持有的 Pipeline / 模型

@@ -15,7 +15,7 @@ Mosaic 是一个模块化、可组合的全模态生成式 AI 框架。它将文
 | **text** | `TextGenerator`, `Chat`, `TextRewriter`, `Translator`, `TextSummarizer`, `TextClassifier` | 6 |
 | **image** | `TextToImage`, `ImageToImage`, `Inpainting`, `Upscaler`, `BackgroundRemover`, `Stylizer` | 6 |
 | **video** | `TextToVideo`, `WanVideo`, `HunyuanVideo`, `LTXVideo`, `ImageToVideo`, `VideoContinuation`, `FrameInterpolator`, `FrameExtractor` | 8 |
-| **audio** | `TTS`, `ASR`, `MusicGenerator`, `SoundEffect`, `VoiceClone` | 5 |
+| **audio** | `TTS`, `ASR`, `MusicGenerator`, `SoundEffectGenerator`, `VoiceClone` | 5 |
 | **subtitle** | `SubtitleGenerator`, `SubtitleTranslator`, `SubtitleAligner` | 3 |
 | **consistency** | `IdentityKeeper`, `StyleKeeper`, `CrossFrameConsistency` | 3 |
 | **digital-human** | `AvatarDriver`, `LipSyncer`, `MotionGenerator`, `RealtimeRenderer` | 4 |

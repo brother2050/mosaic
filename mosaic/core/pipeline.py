@@ -911,6 +911,8 @@ class Pipeline(Node):
                             branch_name=dn.branch_name,
                         ))
                         completed.add(nid)
+                        # 失败节点在 outputs 中放入空 MosaicData，与串行模式一致
+                        outputs[nid] = MosaicData()
                         # 失败节点仍需推进后继入度，否则后继会永远等待
                         for succ in dn.successors:
                             indegree[succ] -= 1

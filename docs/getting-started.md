@@ -342,8 +342,9 @@ pipeline.add(TTS(
 
 result = pipeline.run(MosaicData(text="你好，欢迎使用 Mosaic 框架！"))
 audio = result.get("audio")
-audio.save("hello.wav")
-print(f"已生成音频: {audio.duration:.2f} 秒, {audio.sample_rate} Hz")
+import soundfile as sf
+sf.write("hello.wav", audio.waveform, audio.sample_rate)
+print(f"已生成音频: {audio.metadata.get('duration', 0):.2f} 秒, {audio.sample_rate} Hz")
 ```
 
 **预期输出**
@@ -633,7 +634,7 @@ pipe.add(Merge())  # 合并三条路径的输出
 ```python
 tts = TTS(backend="chattts")
 
-async for chunk in tts.synthesize_stream(text="流式合成", language="zh"):
+for chunk in tts.run_stream(MosaicData(text="流式合成", language="zh")):
     # chunk 是 AudioData，可以立即播放
     play(chunk)
 ```

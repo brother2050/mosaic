@@ -16,7 +16,7 @@ import pytest
 # ---------------------------------------------------------------------------
 # 路径常量
 # ---------------------------------------------------------------------------
-_MOSAIC_ROOT = Path("/workspace/mosaic")
+_MOSAIC_ROOT = Path(__file__).resolve().parents[2]
 _README_PATH = _MOSAIC_ROOT / "README.md"
 _DOCS_DIR = _MOSAIC_ROOT / "docs"
 _NODES_REF_PATH = _DOCS_DIR / "nodes-reference.md"
@@ -59,7 +59,7 @@ def test_readme_node_count_matches_registry(registry):
     """
     # 实际注册节点数
     actual_count = _count_registered_nodes(registry)
-    assert actual_count >= 39, (
+    assert actual_count >= 42, (
         f"注册表节点数 ({actual_count}) 应至少为 39"
     )
 
@@ -160,7 +160,7 @@ def test_nodes_reference_covers_all_nodes(registry, tts_registry):
 
     # 获取所有注册节点名称
     actual_node_names = registry.list_names()
-    assert len(actual_node_names) >= 39, (
+    assert len(actual_node_names) >= 42, (
         f"注册表节点数 ({len(actual_node_names)}) 应至少为 39"
     )
 
@@ -228,7 +228,7 @@ def test_node_descriptions_match_docs(registry):
     assert doc_text, "nodes-reference.md 不应为空"
 
     nodes = registry.list_nodes()
-    assert len(nodes) >= 39, f"至少应有 39 个注册节点，实际有 {len(nodes)}"
+    assert len(nodes) >= 42, f"至少应有 42 个注册节点，实际有 {len(nodes)}"
 
     # 对每个节点进行关键词检查
     matched_count = 0

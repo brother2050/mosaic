@@ -185,7 +185,7 @@ def auto_resolve_device_dtype(
         if logger is not None:
             logger.warning(msg)
         else:
-            logger.warning(msg)
+            logging.getLogger("mosaic.core._device_utils").warning(msg)
 
     # SD 1.5 系列：text_encoder/UNet 对 float16 敏感，整体降为 float32
     if resolved_dtype in ("float16", "fp16") and _is_sd15_model(model_name):
@@ -197,7 +197,7 @@ def auto_resolve_device_dtype(
         if logger is not None:
             logger.warning(msg)
         else:
-            logger.warning(msg)
+            logging.getLogger("mosaic.core._device_utils").warning(msg)
 
     return resolved_device, resolved_dtype
 

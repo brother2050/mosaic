@@ -20,7 +20,7 @@ from mosaic.core.node import NodeSpec
 
 
 # ============================================================================
-# 所有 39 个节点的名称列表（按域分组）
+# 所有 42 个节点的名称列表（按域分组）
 # ============================================================================
 _ALL_NODE_NAMES: list[str] = [
     # text (6)
@@ -29,9 +29,10 @@ _ALL_NODE_NAMES: list[str] = [
     # image (6)
     "TextToImage", "ImageToImage", "Inpainting", "Upscaler",
     "BackgroundRemover", "Stylizer",
-    # video (5)
+    # video (8)
     "TextToVideo", "ImageToVideo", "VideoContinuation",
     "FrameInterpolator", "FrameExtractor",
+    "WanVideo", "HunyuanVideo", "LTXVideo",
     # audio (5)
     "TTS", "ASR", "MusicGenerator", "SoundEffectGenerator", "VoiceClone",
     # subtitle (3)

@@ -570,7 +570,7 @@ async def stream_video_pipeline():
     task = pipe.run_async(text="一段长文本...")
 
     # 同时流式处理 TTS
-    async for chunk in pipe.nodes[0].synthesize_stream(text="..."):
+    for chunk in pipe.nodes[0].run_stream(MosaicData(text="...")):
         play(chunk)
 
     # 等待完整结果

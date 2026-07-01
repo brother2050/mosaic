@@ -1266,7 +1266,21 @@ class MotionGenerator(BaseDigitalHumanNode):
         ``preset`` / ``audio2motion`` 方式无模型需释放；``text2motion``
         方式释放模型与 tokenizer。
         """
-        self._pipeline = None
+        if self._pipeline is not None:
+            # 移至 CPU 再置空，加速 GPU 显存回收
+            try:
+                self._pipeline.to("cpu")
+            except Exception:
+                pass
+            self._pipeline = None
+            # 触发 GPU 显存回收
+            try:
+                import torch
+
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+            except Exception:
+                pass
         self._tokenizer = None
         self._loaded = False
         self._logger.info(
