@@ -146,11 +146,14 @@ def auto_resolve_device_dtype(
     dtype: str,
     scheduler: Any | None = None,
     logger: Any | None = None,
+    model_name: str = "",
 ) -> tuple[str, str]:
-    """自动解析设备与 dtype：CPU 环境下将 float16/bfloat16 降级为 float32。
+    """自动解析设备与 dtype：CPU 或 SD 1.5 环境下将 float16 降级为 float32。
 
-    **float16 在 CPU 上无法正确推理**（PyTorch 限制），会产生黑图/垃圾输出。
-    本函数在设备降级为 CPU 时自动将 dtype 调整为 ``"float32"``，并发出告警。
+    1. **CPU + float16 → float32**：float16 在 CPU 上无法正确推理（PyTorch 限制）。
+    2. **SD 1.5 + float16 → float32**：SD 1.5 的 text_encoder/UNet 对 float16 敏感，
+       特定 prompt 触发 attention 溢出产生 NaN，导致黑图。整体 float32 加载避免
+       组件间 dtype 不匹配。
 
     Parameters
     ----------
@@ -162,6 +165,8 @@ def auto_resolve_device_dtype(
         调度器实例，用于判断 GPU 可用性。
     logger:
         可选的日志器，用于输出降级告警。
+    model_name:
+        模型名称，用于判断是否为 SD 1.5 系列（float16 敏感）。
 
     Returns
     -------
@@ -177,6 +182,18 @@ def auto_resolve_device_dtype(
             "Device downgraded to CPU but dtype is %s — auto-switching to float32 "
             "to avoid black/garbage images (fp16 on CPU is not supported by PyTorch)."
         ) % dtype
+        if logger is not None:
+            logger.warning(msg)
+        else:
+            logger_mod.warning(msg)
+
+    # SD 1.5 系列：text_encoder/UNet 对 float16 敏感，整体降为 float32
+    if resolved_dtype in ("float16", "fp16") and _is_sd15_model(model_name):
+        resolved_dtype = "float32"
+        msg = (
+            "Model %s is SD 1.5 series with dtype=float16 — auto-switching to "
+            "float32 to avoid NaN/black images (SD 1.5 text_encoder is fp16-sensitive)."
+        ) % model_name
         if logger is not None:
             logger.warning(msg)
         else:
@@ -248,8 +265,8 @@ def run_diffusers_pipeline(pipeline: Any, **kwargs: Any) -> Any:
         return pipeline(**kwargs)
 
 
-# SD 1.5 系列：text_encoder 对 float16 敏感，需上转为 float32
-# SDXL 的 text_encoder 已兼容 float16，无需上转
+# SD 1.5 系列：text_encoder/UNet 对 float16 敏感，应整体加载为 float32
+# SDXL 的 text_encoder 已兼容 float16
 _SD15_MODEL_PATTERNS = (
     "stable-diffusion-v1", "stable-diffusion-2-1", "stable-diffusion-x4",
     "sd-v1", "sd15", "SD1.5",

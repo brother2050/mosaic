@@ -99,9 +99,10 @@ class BaseConsistencyNode(Node):
             f"mosaic.nodes.consistency.{self.name}"
         )
 
-        # 自动解析设备与 dtype：CPU 环境下将 float16 降级为 float32
+        # 自动解析设备与 dtype：CPU/SD1.5 环境下将 float16 降级为 float32
         self._device, self._dtype_str = auto_resolve_device_dtype(
             device, dtype, self._scheduler, self._logger,
+            model_name=kwargs.get("model", ""),
         )
 
         # 运行时持有的 Pipeline / 模型

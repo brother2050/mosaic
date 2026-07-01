@@ -126,6 +126,7 @@ class BaseImageNode(Node):
         # （float16 在 CPU 上无法正确推理，会产生黑图）
         self._device, self._dtype_str = auto_resolve_device_dtype(
             device, dtype, self._scheduler, self._logger,
+            model_name=model,
         )
         self._enable_attention_slicing: bool = enable_attention_slicing
         self._enable_vae_slicing: bool = enable_vae_slicing
@@ -155,7 +156,7 @@ class BaseImageNode(Node):
 
         self._logger.info("Loading pipeline for model %s ...", self._model_name)
         self._load_pipeline()
-        # 上转 VAE + text_encoder（SD 1.5）为 float32，防止 float16 下产生黑图/NaN
+        # 上转 VAE 为 float32，防止 float16 下产生黑图/NaN
         upcast_pipeline_components(self._pipeline, self._model_name, self._logger)
         self._loaded = True
 

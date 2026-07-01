@@ -288,7 +288,8 @@ class LipSyncer(BaseDigitalHumanNode):
                 self._wav2vec2_model
             )
             self._audio_encoder = Wav2Vec2Model.from_pretrained(
-                self._wav2vec2_model
+                self._wav2vec2_model,
+                torch_dtype=self._resolve_dtype(),
             ).to(device)
         except Exception as exc:  # noqa: BLE001
             self._logger.debug(

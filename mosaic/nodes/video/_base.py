@@ -127,9 +127,10 @@ class BaseVideoNode(Node):
         self._scheduler: Scheduler = scheduler or get_scheduler()
         self._logger = logging.getLogger(f"mosaic.nodes.video.{self.name}")
 
-        # 自动解析设备与 dtype：CPU 环境下将 float16 降级为 float32
+        # 自动解析设备与 dtype：CPU/SD1.5 环境下将 float16 降级为 float32
         self._device, self._dtype_str = auto_resolve_device_dtype(
             device, dtype, self._scheduler, self._logger,
+            model_name=model,
         )
 
         # 运行时持有的 Pipeline / 模型（load 后填充）
@@ -153,7 +154,7 @@ class BaseVideoNode(Node):
 
         self._logger.info("Loading video model %s ...", self._model_name)
         self._load_model()
-        # 上转 VAE + text_encoder（SD 1.5）为 float32，防止 float16 下产生黑图/NaN
+        # 上转 VAE 为 float32，防止 float16 下产生黑图/NaN
         upcast_pipeline_components(self._pipeline, self._model_name, self._logger)
         self._loaded = True
 

@@ -185,6 +185,8 @@ class IdentityKeeper(BaseConsistencyNode):
         与 ``safe_load_pipeline`` 类似的回退逻辑，但用于 identity_keeper
         需要直接操作 pipeline 类的场景（如加载后挂载 IP-Adapter 权重）。
         """
+        import torch  # type: ignore
+
         variant = kwargs.pop("variant", None)
         try:
             return pipeline_cls.from_pretrained(variant=variant, **kwargs) if variant else \
@@ -195,6 +197,10 @@ class IdentityKeeper(BaseConsistencyNode):
                     "fp16 variant load failed for %s: %s; retrying without variant.",
                     self._model_name, exc,
                 )
+                # fp16 variant 回退：torch_dtype 从 float16 降为 float32，
+                # 避免加载 fp32 权重后再转 fp16 引入数值偏差
+                if kwargs.get("torch_dtype") == torch.float16:
+                    kwargs["torch_dtype"] = torch.float32
                 return pipeline_cls.from_pretrained(**kwargs)
             raise
 

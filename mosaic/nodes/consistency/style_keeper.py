@@ -822,15 +822,22 @@ class StyleKeeper(BaseConsistencyNode):
         if vae is None:
             raise RuntimeError("Pipeline has no VAE for image encoding.")
 
+        # VAE 被 upcast_pipeline_components 上转为 float32（防黑图），
+        # 输入 tensor 必须使用 VAE 的 dtype，而非 pipeline 的 dtype（可能为 float16），
+        # 否则触发 "mat1 and mat2 must have the same dtype"。
+        vae_dtype = next(vae.parameters()).dtype
+
         arr = np.array(image.convert("RGB")).astype(np.float32) / 127.5 - 1.0
         arr = arr.transpose(2, 0, 1)  # (3, H, W)
-        tensor = torch.from_numpy(arr).unsqueeze(0).to(device=device, dtype=dtype)
+        tensor = torch.from_numpy(arr).unsqueeze(0).to(device=device, dtype=vae_dtype)
 
         scaling_factor = getattr(vae.config, "scaling_factor", 0.18215)
         with torch.no_grad():
             latent_dist = vae.encode(tensor).latent_dist
             latents = latent_dist.sample()
             latents = latents * scaling_factor
+        # 输出 latent 转回 pipeline dtype，保持与后续 UNet 推理一致
+        latents = latents.to(dtype=dtype)
         return latents
 
     # ------------------------------------------------------------------
