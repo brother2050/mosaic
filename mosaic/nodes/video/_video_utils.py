@@ -390,6 +390,9 @@ def validate_model_path(model_name: str, logger: Any = None) -> None:
     ``THUDM/CogVideoX-5b``）与 URL 不受影响，仍交给 ``safe_load_pipeline``
     处理。
 
+    额外检查本地目录是否包含 ``model_index.json``（diffusers 格式的标志），
+    缺失时提示用户下载 diffusers 格式的模型。
+
     Parameters
     ----------
     model_name:
@@ -401,6 +404,8 @@ def validate_model_path(model_name: str, logger: Any = None) -> None:
     ------
     FileNotFoundError
         ``model_name`` 像本地路径但文件/目录不存在时抛出。
+    ValueError
+        本地目录存在但缺少 ``model_index.json``（非 diffusers 格式）时抛出。
     """
     if not model_name:
         return
@@ -410,3 +415,30 @@ def validate_model_path(model_name: str, logger: Any = None) -> None:
             f"Please check the path or use a valid HuggingFace model ID "
             f"(e.g. 'THUDM/CogVideoX-5b')."
         )
+
+    # 检查本地目录是否为 diffusers 格式（包含 model_index.json）
+    if _looks_like_local_path(model_name) and os.path.isdir(model_name):
+        index_file = os.path.join(model_name, "model_index.json")
+        if not os.path.exists(index_file):
+            try:
+                contents = os.listdir(model_name)
+            except OSError:
+                contents = []
+            has_safetensors = any(
+                f.endswith((".safetensors", ".pt", ".bin"))
+                for f in contents
+            )
+            hint = (
+                "This directory contains raw checkpoint files but not the "
+                "diffusers pipeline structure (model_index.json).\n"
+                "Please download the diffusers-format version instead:\n"
+                "  hunyuanvideo-community/HunyuanVideo (diffusers format)\n"
+                "  tencent/HunyuanVideo (raw format, NOT compatible)"
+            ) if has_safetensors else (
+                "This directory does not contain model_index.json.\n"
+                "Please ensure you downloaded the diffusers-format version."
+            )
+            raise ValueError(
+                f"Directory {model_name!r} is not a valid diffusers model "
+                f"directory (missing model_index.json).\n{hint}"
+            )

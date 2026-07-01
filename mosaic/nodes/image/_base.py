@@ -150,11 +150,55 @@ class BaseImageNode(Node):
             self._loaded = True
             return
 
+        # 校验本地模型路径是否为 diffusers 格式
+        self._validate_local_model_path()
+
         self._logger.info("Loading pipeline for model %s ...", self._model_name)
         self._load_pipeline()
         # 上转 VAE + text_encoder（SD 1.5）为 float32，防止 float16 下产生黑图/NaN
         upcast_pipeline_components(self._pipeline, self._model_name, self._logger)
         self._loaded = True
+
+    def _validate_local_model_path(self) -> None:
+        """校验本地模型路径是否为 diffusers 格式（包含 model_index.json）。
+
+        仅对看起来像本地路径的 model_name 做检查，提前给出友好错误，
+        避免等到 from_pretrained 报 OSError 时信息不清晰。
+        """
+        import os
+
+        name = self._model_name
+        if not name or "/" not in name:
+            return
+        # 仅检查像本地路径的名称（含 / 但不像 HF repo ID）
+        if not os.path.isdir(name):
+            return
+        index_file = os.path.join(name, "model_index.json")
+        if os.path.exists(index_file):
+            return
+        # 列出内容，判断是否为原始权重文件
+        try:
+            contents = os.listdir(name)
+        except OSError:
+            contents = []
+        has_safetensors = any(
+            f.endswith((".safetensors", ".pt", ".bin")) for f in contents
+        )
+        hint = (
+            "This directory contains raw checkpoint files but not the "
+            "diffusers pipeline structure (model_index.json).\n"
+            "Please download the diffusers-format version:\n"
+            "  SD 1.5:  runwayml/stable-diffusion-v1-5\n"
+            "  SDXL:    stabilityai/stable-diffusion-xl-base-1.0\n"
+            "Or convert your checkpoint using diffusers' conversion scripts."
+        ) if has_safetensors else (
+            "This directory does not contain model_index.json.\n"
+            "Please ensure you downloaded the diffusers-format version."
+        )
+        raise ValueError(
+            f"Directory {name!r} is not a valid diffusers model directory "
+            f"(missing model_index.json).\n{hint}"
+        )
 
     def _upcast_vae_fp32(self) -> None:
         """[已弃用] 请使用 upcast_pipeline_components()。
