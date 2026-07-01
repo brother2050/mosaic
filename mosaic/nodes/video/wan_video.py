@@ -352,6 +352,8 @@ class WanVideo(BaseVideoNode):
 
         result = MosaicData(
             video=video,
+            frames=frames,  # 暴露顶层 frames 供 VideoEncoder 直接读取
+            fps=fps,  # 暴露顶层 fps 供 VideoEncoder 直接读取
             prompt=prompt,
             seed=actual_seed,
             num_frames=len(frames),

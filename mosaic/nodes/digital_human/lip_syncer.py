@@ -447,11 +447,13 @@ class LipSyncer(BaseDigitalHumanNode):
         self._emit_start()
         t0 = time.perf_counter()
         try:
-            # 1. 校验输入
+            # 1. 校验输入：face_image 优先，回退到 source_image（AvatarDriver 输出别名）
             face_input = input_data.get("face_image")
             if face_input is None:
+                face_input = input_data.get("source_image")
+            if face_input is None:
                 raise ValueError(
-                    "LipSyncer requires 'face_image' "
+                    "LipSyncer requires 'face_image' or 'source_image' "
                     "(PIL.Image, file path, VideoData, or list of frames)."
                 )
             audio_input = input_data.get("audio")

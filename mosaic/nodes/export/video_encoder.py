@@ -204,15 +204,31 @@ class VideoEncoder(Node):
         t0 = time.perf_counter()
 
         try:
-            # 校验输入
+            # 校验输入：优先从顶层 frames/fps 读取
             frames = input_data.get("frames")
+            fps = input_data.get("fps")
+
+            # 自动解包 VideoData 对象（video 节点输出）
+            if (frames is None or fps is None) and input_data.get("video") is not None:
+                video_obj = input_data.get("video")
+                if hasattr(video_obj, "frames") and hasattr(video_obj, "fps"):
+                    if frames is None:
+                        frames = video_obj.frames
+                    if fps is None:
+                        fps = video_obj.fps
+
+            # 回退：images 字段（TextToImage 等输出的 PIL 列表）
+            if frames is None:
+                images_list = input_data.get("images")
+                if images_list and isinstance(images_list, (list, tuple)):
+                    frames = images_list
+
             if not isinstance(frames, list) or len(frames) == 0:
                 raise ValueError(
-                    f"VideoEncoder requires 'frames' (non-empty list), "
-                    f"got {type(frames).__name__}."
+                    f"VideoEncoder requires 'frames' (non-empty list) or "
+                    f"'video' (VideoData), got frames={type(frames).__name__}."
                 )
 
-            fps = input_data.get("fps")
             if not isinstance(fps, (int, float)) or fps <= 0:
                 raise ValueError(
                     f"VideoEncoder requires 'fps' (positive number), "

@@ -126,8 +126,12 @@ class Inpainting(BaseImageNode):
         self._emit_start()
         t0 = time.perf_counter()
         try:
-            # 校验输入
+            # 校验输入：优先读取单数 image，回退到复数 images[0]
             image = input_data.get("image")
+            if image is None:
+                images_list = input_data.get("images")
+                if images_list and isinstance(images_list, (list, tuple)):
+                    image = images_list[0]
             if image is None:
                 raise ValueError(
                     f"Inpainting requires 'image' (PIL.Image), "

@@ -187,6 +187,7 @@ class TextToImage(BaseImageNode):
 
         result = MosaicData(
             images=images,
+            image=images[0] if images else None,  # 兼容下游单数 image 字段
             seed=seed,
             prompt=prompt,
             model_name=self._model_name,

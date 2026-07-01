@@ -432,6 +432,9 @@ class RealtimeRenderer(BaseDigitalHumanNode):
             # ---------- 校验输入 ----------
             source_image = input_data.get("source_image")
             if source_image is None:
+                # 回退到 face_image（LipSyncer 输出别名）
+                source_image = input_data.get("face_image")
+            if source_image is None:
                 raise ValueError(
                     "RealtimeRenderer requires 'source_image' "
                     "(PIL.Image or file path)."
@@ -442,11 +445,19 @@ class RealtimeRenderer(BaseDigitalHumanNode):
                     f"Unsupported mode {mode!r}. "
                     f"Choose from {_SUPPORTED_MODES}."
                 )
+            # input_stream 优先；motion 模式回退到 motion/keypoints（MotionGenerator 输出）
             input_stream = input_data.get("input_stream")
+            if input_stream is None:
+                if mode == "motion":
+                    motion_data = input_data.get("motion")
+                    if motion_data is not None:
+                        input_stream = [motion_data]
+                    elif input_data.get("keypoints") is not None:
+                        input_stream = input_data.get("keypoints")
             if input_stream is None:
                 raise ValueError(
                     "RealtimeRenderer requires 'input_stream' "
-                    "(generator or list)."
+                    "(generator or list), or 'motion'/'keypoints' for motion mode."
                 )
             output_mode = input_data.get("output_mode", "frames")
             if output_mode not in _SUPPORTED_OUTPUT_MODES:
