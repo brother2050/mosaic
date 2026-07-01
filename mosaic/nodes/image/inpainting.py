@@ -70,17 +70,17 @@ class Inpainting(BaseImageNode):
         super().__init__(model=model, **kwargs)
 
     def _load_pipeline(self) -> None:
-        """加载 StableDiffusionXLInpaintPipeline。"""
-        from diffusers import AutoPipelineForInpainting  # type: ignore
-        from mosaic.nodes._pipeline_utils import safe_load_pipeline
+        """加载 diffusers Inpainting Pipeline（自动检测）。"""
+        from mosaic.nodes._pipeline_utils import auto_load_pipeline
 
         torch_dtype = self._resolve_dtype()
 
-        self._pipeline = safe_load_pipeline(
-            AutoPipelineForInpainting,
+        self._pipeline = auto_load_pipeline(
             self._model_name,
+            task="inpainting",
             variant_fp16=self._dtype_str in ("float16", "fp16"),
             dtype_str=self._dtype_str,
+            pipeline_class=self._pipeline_class,
             torch_dtype=torch_dtype,
         )
 
@@ -93,9 +93,10 @@ class Inpainting(BaseImageNode):
         self._switch_scheduler()
 
         self._logger.info(
-            "SDXL Inpainting pipeline loaded (dtype=%s, device=%s).",
+            "Inpainting pipeline loaded (dtype=%s, device=%s, class=%s).",
             self._dtype_str,
             self._device,
+            type(self._pipeline).__name__,
         )
 
     def run(self, input_data: MosaicData) -> MosaicData:

@@ -69,17 +69,17 @@ class ImageToImage(BaseImageNode):
         super().__init__(model=model, **kwargs)
 
     def _load_pipeline(self) -> None:
-        """加载 StableDiffusionXLImg2ImgPipeline。"""
-        from diffusers import AutoPipelineForImage2Image  # type: ignore
-        from mosaic.nodes._pipeline_utils import safe_load_pipeline
+        """加载 diffusers Image2Image Pipeline（自动检测）。"""
+        from mosaic.nodes._pipeline_utils import auto_load_pipeline
 
         torch_dtype = self._resolve_dtype()
 
-        self._pipeline = safe_load_pipeline(
-            AutoPipelineForImage2Image,
+        self._pipeline = auto_load_pipeline(
             self._model_name,
+            task="image-to-image",
             variant_fp16=self._dtype_str in ("float16", "fp16"),
             dtype_str=self._dtype_str,
+            pipeline_class=self._pipeline_class,
             torch_dtype=torch_dtype,
         )
 

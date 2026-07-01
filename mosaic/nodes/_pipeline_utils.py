@@ -347,6 +347,143 @@ def safe_load_pipeline(
     return pipe
 
 
+def auto_load_pipeline(
+    model_name: str,
+    *,
+    task: str = "text-to-image",
+    dtype_str: str | None = None,
+    variant_fp16: bool = False,
+    needs_t5: bool = False,
+    pipeline_class: Any = None,
+    **kwargs: Any,
+) -> Any:
+    """自动检测并加载 diffusers Pipeline。
+
+    加载策略（按优先级）：
+    1. **pipeline_class** — 用户显式指定的 Pipeline 类
+    2. **AutoPipeline** — 根据任务类型自动匹配（text-to-image / image-to-image / inpainting）
+    3. **DiffusionPipeline** — 终极 fallback，读取 model_index.json 的 _class_name 自动检测
+
+    内部调用 :func:`safe_load_pipeline`，享受 fp16 variant 回退、缓存等全部功能。
+
+    Parameters
+    ----------
+    model_name:
+        模型标识（HF repo ID / 本地路径）。
+    task:
+        任务类型，可选 ``"text-to-image"`` / ``"image-to-image"`` / ``"inpainting"``。
+        用于 AutoPipeline 匹配。
+    dtype_str:
+        dtype 字符串（如 ``"float16"``、``"bfloat16"``、``"float32"``）。
+    variant_fp16:
+        是否尝试使用 fp16 variant。
+    needs_t5:
+        是否预导入 T5 组件。
+    pipeline_class:
+        显式指定 Pipeline 类（优先级最高）。
+    **kwargs:
+        传递给 ``from_pretrained`` 的额外参数。
+
+    Returns
+    -------
+    Any
+        加载完成的 Pipeline 实例。
+    """
+    import torch  # type: ignore
+
+    # 解析 torch_dtype
+    torch_dtype = kwargs.pop("torch_dtype", None)
+    if torch_dtype is None and dtype_str is not None:
+        if dtype_str in ("float16", "fp16"):
+            torch_dtype = torch.float16
+        elif dtype_str in ("bfloat16", "bf16"):
+            torch_dtype = torch.bfloat16
+        else:
+            torch_dtype = torch.float32
+    if torch_dtype is not None:
+        kwargs["torch_dtype"] = torch_dtype
+
+    # 策略 1: 用户显式指定
+    if pipeline_class is not None:
+        cls_name = getattr(pipeline_class, "__name__", str(pipeline_class))
+        logger.info(
+            "Loading pipeline %s via explicit pipeline_class=%s",
+            model_name,
+            cls_name,
+        )
+        return safe_load_pipeline(
+            pipeline_class,
+            model_name,
+            needs_t5=needs_t5,
+            variant_fp16=variant_fp16,
+            dtype_str=dtype_str,
+            **kwargs,
+        )
+
+    # 策略 2: AutoPipeline 自动匹配
+    auto_cls = None
+    try:
+        if task == "text-to-image":
+            from diffusers import AutoPipelineForText2Image  # type: ignore
+            auto_cls = AutoPipelineForText2Image
+        elif task == "image-to-image":
+            from diffusers import AutoPipelineForImage2Image  # type: ignore
+            auto_cls = AutoPipelineForImage2Image
+        elif task == "inpainting":
+            from diffusers import AutoPipelineForInpainting  # type: ignore
+            auto_cls = AutoPipelineForInpainting
+        else:
+            auto_cls = None
+    except ImportError:
+        auto_cls = None
+
+    if auto_cls is not None:
+        try:
+            auto_name = getattr(auto_cls, "__name__", str(auto_cls))
+            logger.info(
+                "Loading pipeline %s via %s (task=%s)",
+                model_name,
+                auto_name,
+                task,
+            )
+            return safe_load_pipeline(
+                auto_cls,
+                model_name,
+                needs_t5=needs_t5,
+                variant_fp16=variant_fp16,
+                dtype_str=dtype_str,
+                **kwargs,
+            )
+        except (ValueError, RuntimeError, OSError) as exc:
+            # AutoPipeline 无法识别该模型（model_index.json 的 _class_name
+            # 不在 AUTO_*_PIPELINES_MAPPING 中），回退到 DiffusionPipeline
+            logger.warning(
+                "AutoPipeline failed for %s (task=%s): %s; "
+                "falling back to DiffusionPipeline auto-detection.",
+                model_name,
+                task,
+                exc,
+            )
+
+    # 策略 3: DiffusionPipeline 终极 fallback
+    # DiffusionPipeline.from_pretrained 会读取 model_index.json 的 _class_name
+    # 字段，自动加载正确的 Pipeline 类（如 ZImagePipeline、FluxPipeline 等）
+    from diffusers import DiffusionPipeline  # type: ignore
+
+    logger.info(
+        "Loading pipeline %s via DiffusionPipeline auto-detection",
+        model_name,
+    )
+    return safe_load_pipeline(
+        DiffusionPipeline,
+        model_name,
+        needs_t5=needs_t5,
+        variant_fp16=variant_fp16,
+        dtype_str=dtype_str,
+        **kwargs,
+    )
+
+
 def safe_load_processor(
     processor_class: Any,
     model_name: str,

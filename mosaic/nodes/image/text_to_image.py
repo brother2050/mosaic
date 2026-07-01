@@ -80,33 +80,23 @@ class TextToImage(BaseImageNode):
     def _load_pipeline(self) -> None:
         """加载 diffusers Pipeline。
 
-        优先使用用户指定的 ``pipeline_class``，否则使用
-        ``AutoPipelineForText2Image`` 自动识别。
+        使用 :func:`auto_load_pipeline` 自动检测 Pipeline 类：
+        1. 若用户指定了 ``pipeline_class``，优先使用
+        2. 否则用 ``AutoPipelineForText2Image`` 自动匹配
+        3. 若 AutoPipeline 不认识该模型，回退到 ``DiffusionPipeline`` 终极检测
         """
-        from mosaic.nodes._pipeline_utils import safe_load_pipeline
+        from mosaic.nodes._pipeline_utils import auto_load_pipeline
 
         torch_dtype = self._resolve_dtype()
 
-        if self._pipeline_class is not None:
-            # 用户显式指定了 Pipeline 类（如 ZImagePipeline）
-            self._pipeline = safe_load_pipeline(
-                self._pipeline_class,
-                self._model_name,
-                variant_fp16=self._dtype_str in ("float16", "fp16"),
-                dtype_str=self._dtype_str,
-                torch_dtype=torch_dtype,
-            )
-        else:
-            # 使用 AutoPipelineForText2Image 自动识别
-            from diffusers import AutoPipelineForText2Image  # type: ignore
-
-            self._pipeline = safe_load_pipeline(
-                AutoPipelineForText2Image,
-                self._model_name,
-                variant_fp16=self._dtype_str in ("float16", "fp16"),
-                dtype_str=self._dtype_str,
-                torch_dtype=torch_dtype,
-            )
+        self._pipeline = auto_load_pipeline(
+            self._model_name,
+            task="text-to-image",
+            variant_fp16=self._dtype_str in ("float16", "fp16"),
+            dtype_str=self._dtype_str,
+            pipeline_class=self._pipeline_class,
+            torch_dtype=torch_dtype,
+        )
 
         # 迁移到目标设备
         if self._enable_model_cpu_offload:
