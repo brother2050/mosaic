@@ -136,6 +136,10 @@ class BaseImageNode(Node):
 
         # 运行时持有的 diffusers Pipeline（load 后填充）
         self._pipeline: Any = None
+        # model_cache 缓存键信息（_load_pipeline 后填充，供 unload 使用）
+        self._cache_cls: str = ""
+        self._cache_dtype: str = self._dtype_str
+        self._cache_device: str | None = None
 
     # ------------------------------------------------------------------
     # 模型加载 / 卸载
@@ -218,25 +222,47 @@ class BaseImageNode(Node):
     def unload(self) -> None:
         """释放 diffusers Pipeline。
 
-        本方法执行实际资源清理。它由 ``Scheduler.release`` /
-        ``Scheduler._evict`` 回调，不应在其中调用
-        ``scheduler.release(self)`` 以免递归。
+        从 :class:`ModelCache` 移除缓存条目（使用加载时记录的缓存键，避免
+        类名不匹配导致 remove 静默失败），移至 CPU 后触发 GC 与 GPU 显存回收。
         """
         if self._pipeline is not None:
-            # 从 model_cache 移除，避免强引用导致显存无法释放
             from mosaic.core.model_cache import model_cache
-            model_cache.remove(
-                type(self._pipeline),
-                self._model_name,
-                self._dtype_str,
+
+            # 优先使用加载时附加的缓存键（精确匹配），回退到运行时类型推断
+            # 注意：mock 环境下 getattr 会返回 MagicMock，需用 isinstance 过滤
+            cache_cls = getattr(
+                self._pipeline, "_mosaic_cache_cls", None
             )
-            # 移至 CPU 再置空，加速 GPU 显存回收
-            try:
-                self._pipeline.to("cpu")
-            except Exception:
-                pass
+            if not isinstance(cache_cls, str):
+                cache_cls = type(self._pipeline)
+            cache_dtype = getattr(
+                self._pipeline, "_mosaic_cache_dtype", None
+            )
+            if not isinstance(cache_dtype, str):
+                cache_dtype = self._dtype_str
+            cache_device = getattr(
+                self._pipeline, "_mosaic_cache_device", None
+            )
+            if not isinstance(cache_device, str):
+                cache_device = None
+            # remove 返回 True 表示引用归零，可安全搬运到 CPU；
+            # 返回 False 表示仍有其他节点共享该对象，不可搬运
+            released = model_cache.remove(
+                cache_cls,
+                self._model_name,
+                cache_dtype,
+                cache_device,
+            )
+            if released:
+                try:
+                    self._pipeline.to("cpu")
+                except Exception:
+                    pass
             self._pipeline = None
-            # 触发 GPU 显存回收
+            # 触发 GC 与 GPU 显存回收
+            import gc
+
+            gc.collect()
             from mosaic.core.device_utils import empty_device_cache
 
             empty_device_cache()

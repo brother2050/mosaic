@@ -116,18 +116,23 @@ class SoundEffectGenerator(BaseAudioNode):
         if self._model is not None:
             from mosaic.core.model_cache import model_cache
 
-            # safe_load_pipeline 未传 dtype_str，缓存键 dtype 维度为 "default"
-            model_cache.remove(
-                type(self._model),
-                self._model_name,
-                "default",
-            )
-            try:
-                self._model = self._model.to("cpu")
-            except Exception:
-                pass
+            cache_cls = getattr(self._model, "_mosaic_cache_cls", None)
+            if not isinstance(cache_cls, str):
+                cache_cls = type(self._model)
+            cache_dtype = getattr(self._model, "_mosaic_cache_dtype", None)
+            if not isinstance(cache_dtype, str):
+                cache_dtype = "default"
+            released = model_cache.remove(cache_cls, self._model_name, cache_dtype, None)
+            if released:
+                try:
+                    self._model = self._model.to("cpu")
+                except Exception:
+                    pass
             self._model = None
             self._pipeline = None
+            import gc
+
+            gc.collect()
             from mosaic.core.device_utils import empty_device_cache
 
             empty_device_cache()

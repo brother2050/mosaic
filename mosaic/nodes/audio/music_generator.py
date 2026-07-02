@@ -111,20 +111,32 @@ class MusicGenerator(BaseAudioNode):
         if self._model is not None:
             from mosaic.core.model_cache import model_cache
 
-            model_cache.remove(
-                type(self._model),
-                self._model_name,
-                getattr(self, "_cache_dtype", "default"),
-            )
-            try:
-                self._model = self._model.to("cpu")
-            except Exception:
-                pass
+            cache_cls = getattr(self._model, "_mosaic_cache_cls", None)
+            if not isinstance(cache_cls, str):
+                cache_cls = type(self._model)
+            cache_dtype = getattr(self._model, "_mosaic_cache_dtype", None)
+            if not isinstance(cache_dtype, str):
+                cache_dtype = getattr(self, "_cache_dtype", "default")
+            released = model_cache.remove(cache_cls, self._model_name, cache_dtype, None)
+            if released:
+                try:
+                    self._model = self._model.to("cpu")
+                except Exception:
+                    pass
             self._model = None
+            import gc
+
+            gc.collect()
             from mosaic.core.device_utils import empty_device_cache
 
             empty_device_cache()
         if self._processor is not None:
+            from mosaic.core.model_cache import model_cache
+
+            proc_cls = getattr(self._processor, "_mosaic_cache_cls", None)
+            if not isinstance(proc_cls, str):
+                proc_cls = "AutoProcessor"
+            model_cache.remove(proc_cls, self._model_name, "default", None)
             self._processor = None
         self._loaded = False
         self._logger.info("MusicGen model %s unloaded.", self._model_name)

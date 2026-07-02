@@ -75,6 +75,8 @@ class SubtitleAligner(BaseSubtitleNode):
         self._language: str | None = language
         # 内部 ASR pipeline（whisper 对齐时使用）
         self._pipeline: Any = None
+        # Whisper 模型标识（whisper 对齐时填充，供 unload 日志使用）
+        self._model_name: str | None = None
 
     def _load_model(self) -> None:
         """加载对齐所需的模型。"""
@@ -95,6 +97,7 @@ class SubtitleAligner(BaseSubtitleNode):
         )
 
         model_name = "openai/whisper-large-v3"
+        self._model_name = model_name
         device = "cpu"
         try:
             if torch.cuda.is_available():
@@ -128,6 +131,32 @@ class SubtitleAligner(BaseSubtitleNode):
             torch_dtype=resolved_dtype,
         )
         self._model = model
+
+    def unload(self) -> None:
+        """释放 Whisper 模型与 pipeline。
+
+        先释放 pipeline（其内部持有 model/tokenizer/feature_extractor
+        引用），再将模型迁移至 CPU 并置空，最后触发 ``gc.collect`` 与
+        ``empty_device_cache`` 回收 GPU 显存。本节点通过
+        ``from_pretrained`` 直接加载（未入 ``model_cache``），故无需调用
+        ``model_cache.remove``。
+        """
+        if self._pipeline is not None:
+            self._pipeline = None
+        if self._model is not None:
+            try:
+                self._model = self._model.to("cpu")
+            except Exception:
+                pass
+            self._model = None
+            import gc
+
+            gc.collect()
+            from mosaic.core.device_utils import empty_device_cache
+
+            empty_device_cache()
+        self._loaded = False
+        self._logger.info("Aligner model %s unloaded.", self._model_name)
 
     def run(self, input_data: MosaicData) -> MosaicData:
         """执行时间轴对齐。

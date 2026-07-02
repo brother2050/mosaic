@@ -185,18 +185,35 @@ class BaseTextNode(Node):
         from mosaic.core.model_cache import model_cache
 
         if self._model is not None:
-            # 从 model_cache 移除，避免强引用导致显存无法释放
-            model_cache.remove(
-                self._cache_cls,
-                self._model_name,
-                self._cache_dtype,
-                self._cache_device,
+            # 优先使用加载时附加的缓存键，回退到 self._cache_cls
+            # 注意：mock 环境下 getattr 会返回 MagicMock，需用 isinstance 过滤
+            cache_cls = getattr(
+                self._model, "_mosaic_cache_cls", None
             )
-            # 移至 CPU 再置空，加速 GPU 显存回收
-            try:
-                self._model = self._model.to("cpu")
-            except Exception:
-                pass
+            if not isinstance(cache_cls, str):
+                cache_cls = self._cache_cls
+            cache_dtype = getattr(
+                self._model, "_mosaic_cache_dtype", None
+            )
+            if not isinstance(cache_dtype, str):
+                cache_dtype = self._cache_dtype
+            cache_device = getattr(
+                self._model, "_mosaic_cache_device", None
+            )
+            if not isinstance(cache_device, str):
+                cache_device = self._cache_device
+            # remove 返回 True 表示引用归零，可安全搬运到 CPU
+            released = model_cache.remove(
+                cache_cls,
+                self._model_name,
+                cache_dtype,
+                cache_device,
+            )
+            if released:
+                try:
+                    self._model = self._model.to("cpu")
+                except Exception:
+                    pass
             self._model = None
             import gc
 
@@ -205,8 +222,14 @@ class BaseTextNode(Node):
 
             empty_device_cache()
         if self._tokenizer is not None:
+            # 优先使用附加的缓存键，回退到默认
+            tok_cls = getattr(
+                self._tokenizer, "_mosaic_cache_cls", None
+            )
+            if not isinstance(tok_cls, str):
+                tok_cls = "AutoTokenizer"
             model_cache.remove(
-                "AutoTokenizer",
+                tok_cls,
                 self._model_name,
                 "default",
                 None,

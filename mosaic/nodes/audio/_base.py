@@ -165,6 +165,9 @@ class BaseAudioNode(Node):
             except Exception:
                 pass
             self._model = None
+            import gc
+
+            gc.collect()
             from mosaic.core.device_utils import empty_device_cache
 
             empty_device_cache()

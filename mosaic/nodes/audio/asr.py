@@ -125,6 +125,13 @@ class ASR(BaseAudioNode):
             device,
         )
 
+    def unload(self) -> None:
+        """释放 ASR 模型与 pipeline。"""
+        if self._pipeline is not None:
+            # pipeline 持有 model/tokenizer/feature_extractor 引用，需先置空
+            self._pipeline = None
+        super().unload()
+
     def run(self, input_data: MosaicData) -> MosaicData:
         """执行语音识别。
 

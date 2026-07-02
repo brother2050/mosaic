@@ -344,6 +344,13 @@ def safe_load_pipeline(
     # 回退后实际加载的是 float32 权重，缓存键仍保持为请求的 dtype，避免
     # 键不匹配导致的 GET 永久 miss 与缓存泄漏。
     model_cache.put(cache_cls, model_name, cache_dtype, pipe, cache_device)
+    # 将缓存键附加到返回对象，供节点 unload 时精确 remove（避免类名不匹配）
+    try:
+        pipe._mosaic_cache_cls = cache_cls
+        pipe._mosaic_cache_dtype = cache_dtype
+        pipe._mosaic_cache_device = cache_device
+    except (AttributeError, TypeError):
+        pass  # 某些对象不支持属性赋值
     return pipe
 
 
@@ -533,6 +540,13 @@ def safe_load_processor(
         model_cache.put(
             cache_cls, model_name, "default", processor, cache_device
         )
+        # 将缓存键附加到返回对象，供节点 unload 时精确 remove
+        try:
+            processor._mosaic_cache_cls = cache_cls
+            processor._mosaic_cache_dtype = "default"
+            processor._mosaic_cache_device = cache_device
+        except (AttributeError, TypeError):
+            pass
         return processor
     except (ImportError, AttributeError, ValueError, OSError) as exc:
         raise RuntimeError(
@@ -617,4 +631,11 @@ def safe_load_model(
 
     # 加载成功后存入缓存（from_pretrained 抛异常时不会到达此处）
     model_cache.put(cache_cls, model_name, cache_dtype, model, cache_device)
+    # 将缓存键附加到返回对象，供节点 unload 时精确 remove
+    try:
+        model._mosaic_cache_cls = cache_cls
+        model._mosaic_cache_dtype = cache_dtype
+        model._mosaic_cache_device = cache_device
+    except (AttributeError, TypeError):
+        pass
     return model
