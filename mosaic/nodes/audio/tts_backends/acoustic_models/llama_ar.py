@@ -605,15 +605,30 @@ class LlamaARModel(LlamaARModelBase):
             # weight_norm key 兼容性转换
             # 旧版 nn.utils.weight_norm: weight_g / weight_v
             # 新版 parametrizations.weight_norm: parametrizations.weight.original0 / original1
-            # 官方权重文件用旧版 key，当前 torch 可能用新版 key
-            # 需要把文件的旧版 key 转成模型当前格式的 key
+            # 权重文件可能用新版 key，模型可能用旧版 key（或反过来），需要互转
             remapped = {}
             model_keys_actual = set(embed_layer.state_dict().keys())
-            has_new_keys = any(
-                ".parametrizations.weight." in k for k in model_keys_actual
+            model_has_old_keys = any(
+                k.endswith(".weight_g") or k.endswith(".weight_v")
+                for k in model_keys_actual
             )
-            if has_new_keys:
-                # 模型用新版 key，文件用旧版 key，需要转换文件 key
+            file_has_new_keys = any(
+                ".parametrizations.weight." in k for k in embed_state.keys()
+            )
+            if model_has_old_keys and file_has_new_keys:
+                # 模型用旧版 key，文件用新版 key，转换文件 key
+                for k, v in embed_state.items():
+                    if k.endswith(".parametrizations.weight.original0"):
+                        new_k = k.replace(".parametrizations.weight.original0", ".weight_g")
+                        remapped[new_k] = v
+                    elif k.endswith(".parametrizations.weight.original1"):
+                        new_k = k.replace(".parametrizations.weight.original1", ".weight_v")
+                        remapped[new_k] = v
+                    else:
+                        remapped[k] = v
+                embed_state = remapped
+            elif not model_has_old_keys and not file_has_new_keys:
+                # 模型用新版 key，文件用旧版 key，转换文件 key
                 for k, v in embed_state.items():
                     if k.endswith(".weight_g"):
                         new_k = k.replace(".weight_g", ".parametrizations.weight.original0")
