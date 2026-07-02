@@ -548,7 +548,11 @@ class LlamaARModel(LlamaARModelBase):
     # 权重加载
     # ------------------------------------------------------------------
     def load_weights(
-        self, weights_path: str, device: str = "cuda", dtype: str = "float16"
+        self,
+        weights_path: str,
+        device: str = "cuda",
+        dtype: str = "float16",
+        embed_path: str | None = None,
     ) -> None:
         """加载模型权重。
 
@@ -560,7 +564,7 @@ class LlamaARModel(LlamaARModelBase):
         3. 创建 :class:`LlamaForCausalLM` 实例；
         4. 加载权重（从 safetensors 或 pytorch checkpoint）；
         5. 创建 :class:`DualEmbedding` 实例；
-        6. 加载 Embed 权重（如果有单独的 embed 权重文件）；
+        6. 加载 Embed 权重（优先用 embed_path，否则在 weights_path 下查找）；
         7. 移动到指定 device 和 dtype；
         8. 设置为 eval 模式；
         9. 设置 ``_is_loaded = True``。
@@ -590,11 +594,13 @@ class LlamaARModel(LlamaARModelBase):
         # 6. 加载 Embed 权重
         # 官方 Embed.safetensors 包含 emb_text/emb_code/head_text/head_code
         # head_text/head_code 是输出投影层，缺失会导致 GPT 无法正确生成 token
-        embed_path = self._find_embed_file(weights_path)
-        if embed_path:
+        # 优先使用外部传入的 embed_path（ChatTTS 权重目录下 edge-tts/asset/Embed.safetensors），
+        # 否则在 GPT 模型目录下查找
+        resolved_embed_path = embed_path or self._find_embed_file(weights_path)
+        if resolved_embed_path:
             from safetensors.torch import load_file  # type: ignore
 
-            embed_state = load_file(embed_path)
+            embed_state = load_file(resolved_embed_path)
             result = embed_layer.load_state_dict(embed_state, strict=False)
             import logging
             logger = logging.getLogger(__name__)
@@ -608,7 +614,7 @@ class LlamaARModel(LlamaARModelBase):
                 "匹配 %d, 缺失 %d, 多余 %d (path=%s)",
                 len(model_keys), len(file_keys),
                 len(matched), len(missing), len(unexpected),
-                embed_path,
+                resolved_embed_path,
             )
             if missing:
                 logger.warning("Embed 缺失 key: %s", sorted(missing)[:10])

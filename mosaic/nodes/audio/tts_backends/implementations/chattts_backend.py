@@ -427,6 +427,7 @@ class ChatTTSBackend(TTSBackend):
             weights_path=gpt_weights_path,
             device=self._device,
             dtype=self._dtype,
+            embed_path=self._embed_path or None,
         )
 
         # ------------------------------------------------------------------
