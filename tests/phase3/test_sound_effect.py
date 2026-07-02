@@ -21,9 +21,7 @@ from mosaic.core.types import MosaicData
 # ---------------------------------------------------------------------------
 @pytest.fixture
 def mock_audioldm():
-    """Mock AudioLDMPipeline。"""
-    import diffusers as _df
-
+    """Mock auto_load_pipeline（SoundEffectGenerator 通过它加载 AudioLDM2）。"""
     mock_pipe = MagicMock()
     mock_output = MagicMock()
     mock_output.audios = [
@@ -32,8 +30,10 @@ def mock_audioldm():
     mock_pipe.return_value = mock_output
     mock_pipe.to.return_value = mock_pipe
 
-    with patch.object(_df, "AudioLDMPipeline") as mock_pipe_cls:
-        mock_pipe_cls.from_pretrained.return_value = mock_pipe
+    with patch(
+        "mosaic.nodes._model_loader.auto_load_pipeline",
+        return_value=mock_pipe,
+    ):
         yield mock_pipe
 
 

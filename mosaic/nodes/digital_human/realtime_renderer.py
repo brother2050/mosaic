@@ -279,11 +279,18 @@ class RealtimeRenderer(BaseDigitalHumanNode):
         try:
             from transformers import AutoModel  # type: ignore
 
-            self._pipeline = AutoModel.from_pretrained(
-                self._model_name,
-                torch_dtype=torch_dtype,
-                trust_remote_code=True,
-            )
+            try:
+                self._pipeline = AutoModel.from_pretrained(
+                    self._model_name,
+                    dtype=torch_dtype,
+                    trust_remote_code=True,
+                )
+            except TypeError:
+                self._pipeline = AutoModel.from_pretrained(
+                    self._model_name,
+                    torch_dtype=torch_dtype,
+                    trust_remote_code=True,
+                )
             self._pipeline = self._safe_to_device(self._pipeline, device)
             self._placeholder_mode = False
             self._logger.info(

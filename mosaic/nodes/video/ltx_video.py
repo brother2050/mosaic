@@ -108,7 +108,7 @@ class LTXVideo(BaseVideoNode):
         """加载 LTX-Video Pipeline。"""
         import os
         import torch  # type: ignore
-        from diffusers import LTXPipeline  # type: ignore
+        from diffusers import DiffusionPipeline  # type: ignore
         from mosaic.nodes._model_loader import safe_load_pipeline
 
         # 校验模型路径：本地路径不存在时给出友好错误（B2）
@@ -122,7 +122,7 @@ class LTXVideo(BaseVideoNode):
         torch_dtype = self._resolve_dtype()
 
         self._pipeline = safe_load_pipeline(
-            LTXPipeline,
+            DiffusionPipeline,
             self._model_name,
             torch_dtype=torch_dtype,
             variant_fp16=self._dtype_str in ("float16", "fp16"),

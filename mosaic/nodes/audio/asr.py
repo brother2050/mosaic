@@ -110,14 +110,24 @@ class ASR(BaseAudioNode):
         self._model.to(device)
 
         # 构造 pipeline，支持长音频分片
-        self._pipeline = pipeline(
-            "automatic-speech-recognition",
-            model=self._model,
-            tokenizer=self._processor.tokenizer,
-            feature_extractor=self._processor.feature_extractor,
-            device=device,
-            torch_dtype=resolved_dtype,
-        )
+        try:
+            self._pipeline = pipeline(
+                "automatic-speech-recognition",
+                model=self._model,
+                tokenizer=self._processor.tokenizer,
+                feature_extractor=self._processor.feature_extractor,
+                device=device,
+                dtype=resolved_dtype,
+            )
+        except TypeError:
+            self._pipeline = pipeline(
+                "automatic-speech-recognition",
+                model=self._model,
+                tokenizer=self._processor.tokenizer,
+                feature_extractor=self._processor.feature_extractor,
+                device=device,
+                torch_dtype=resolved_dtype,
+            )
 
         self._logger.info(
             "Whisper model loaded (model=%s, device=%s).",

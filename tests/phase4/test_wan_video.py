@@ -50,9 +50,9 @@ class TestWanVideo:
 
         mock_pipe = _make_mock_pipeline()
 
-        with patch("diffusers.WanPipeline", return_value=mock_pipe):
+        with patch("diffusers.DiffusionPipeline", return_value=mock_pipe):
             with patch(
-                "diffusers.WanPipeline.from_pretrained",
+                "diffusers.DiffusionPipeline.from_pretrained",
                 return_value=mock_pipe,
             ):
                 self.wan = WanVideo(

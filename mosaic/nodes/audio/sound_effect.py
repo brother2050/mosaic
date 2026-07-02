@@ -6,7 +6,8 @@
 
 设计要点
 --------
-* 使用 ``diffusers.AudioLDMPipeline`` 加载 AudioLDM2 模型。
+* 通过 ``DiffusionPipeline`` 自动检测加载 AudioLDM2 模型（避免使用已
+  弃用的 ``AudioLDMPipeline``，并修正类与模型不匹配的问题）。
 * 支持正向/反向提示词、推理步数控制。
 * 输出重采样到标准采样率并归一化。
 * AudioLDM2 适合短音效（< 10 秒），超长时给出警告。
@@ -76,10 +77,14 @@ class SoundEffectGenerator(BaseAudioNode):
         super().__init__(model=model, **kwargs)
 
     def _load_model(self) -> None:
-        """加载 AudioLDM2 模型。"""
+        """加载 AudioLDM2 模型。
+
+        使用 ``DiffusionPipeline`` 自动检测（由 :func:`auto_load_pipeline`
+        内部完成），避免使用已弃用的 ``AudioLDMPipeline``，并修正类与模型
+        不匹配的问题（``cvssp/audioldm2`` 应由 ``AudioLDM2Pipeline`` 加载）。
+        """
         import torch  # type: ignore
-        from diffusers import AudioLDMPipeline  # type: ignore
-        from mosaic.nodes._model_loader import safe_load_pipeline
+        from mosaic.nodes._model_loader import auto_load_pipeline
 
         device = self._resolve_device()
         try:
@@ -87,11 +92,15 @@ class SoundEffectGenerator(BaseAudioNode):
         except (AttributeError, RuntimeError):
             torch_dtype = torch.float32
 
-        # AudioLDM2 使用 T5 文本编码器，needs_t5=True 预导入 T5 组件
-        self._pipeline = safe_load_pipeline(
-            AudioLDMPipeline,
+        # AudioLDM2 本质是 text-to-audio diffusion。AutoPipeline 不识别音频
+        # 模型，auto_load_pipeline 会回退到 DiffusionPipeline 读取
+        # model_index.json 自动加载 AudioLDM2Pipeline（解决类与模型不匹配）。
+        # AudioLDM2 使用 T5 文本编码器，needs_t5=True 预导入 T5 组件。
+        self._pipeline = auto_load_pipeline(
             self._model_name,
+            task="text-to-image",  # AudioLDM2 本质是 text-to-audio diffusion
             needs_t5=True,
+            dtype_str=self._dtype_str if hasattr(self, "_dtype_str") else "default",
             torch_dtype=torch_dtype,
         )
         self._pipeline = self._pipeline.to(device)

@@ -114,6 +114,8 @@ def _inject_mock_diffusers():
     if "diffusers" not in sys.modules:
         dm = types.ModuleType("diffusers")
         dm.__spec__ = MagicMock()
+        dm.DiffusionPipeline = MagicMock()
+        dm.DiffusionPipeline.from_pretrained = MagicMock()
         dm.CogVideoXPipeline = MagicMock()
         dm.CogVideoXPipeline.from_pretrained = MagicMock()
         dm.StableVideoDiffusionPipeline = MagicMock()
@@ -127,6 +129,9 @@ def _inject_mock_diffusers():
         sys.modules["diffusers"] = dm
     else:
         dm = sys.modules["diffusers"]
+        if not hasattr(dm, "DiffusionPipeline"):
+            dm.DiffusionPipeline = MagicMock()
+            dm.DiffusionPipeline.from_pretrained = MagicMock()
         if not hasattr(dm, "CogVideoXPipeline"):
             dm.CogVideoXPipeline = MagicMock()
             dm.CogVideoXPipeline.from_pretrained = MagicMock()

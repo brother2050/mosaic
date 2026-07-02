@@ -226,27 +226,17 @@ class CrossFrameConsistency(BaseConsistencyNode):
         """加载 SDXL Pipeline 并启用交叉注意力 KV 共享（Consistory）。"""
         from diffusers import StableDiffusionXLPipeline  # type: ignore
 
+        from mosaic.nodes._model_loader import safe_load_pipeline
+
+        # 走 safe_load_pipeline：统一 model_cache 缓存、fp16 variant 回退、
+        # cache_dir 解析与版本诊断，避免直接调用具体 Pipeline 类的 from_pretrained。
         torch_dtype = self._resolve_dtype()
-        variant = "fp16" if self._dtype_str in ("float16", "fp16") else None
-
-        from mosaic.nodes._model_loader import _build_error_message
-
-        try:
-            self._pipeline = StableDiffusionXLPipeline.from_pretrained(
-                self._effective_model_name,
-                torch_dtype=torch_dtype,
-                variant=variant,
-            )
-        except (
-            ImportError,
-            AttributeError,
-            ValueError,
-            OSError,
-            EnvironmentError,
-        ) as exc:
-            raise RuntimeError(
-                _build_error_message(self._effective_model_name, exc)
-            ) from exc
+        self._pipeline = safe_load_pipeline(
+            StableDiffusionXLPipeline,
+            self._effective_model_name,
+            torch_dtype=torch_dtype,
+            dtype_str=self._dtype_str,
+        )
         self._pipeline = self._pipeline.to(self._resolve_device())
         self._apply_optimizations()
         self._enable_attention_sharing(target="cross")
@@ -259,27 +249,17 @@ class CrossFrameConsistency(BaseConsistencyNode):
         """加载 SD Pipeline 并启用自注意力 KV 共享（Story-Diffusion）。"""
         from diffusers import StableDiffusionPipeline  # type: ignore
 
+        from mosaic.nodes._model_loader import safe_load_pipeline
+
+        # 走 safe_load_pipeline：统一 model_cache 缓存、fp16 variant 回退、
+        # cache_dir 解析与版本诊断，避免直接调用具体 Pipeline 类的 from_pretrained。
         torch_dtype = self._resolve_dtype()
-        variant = "fp16" if self._dtype_str in ("float16", "fp16") else None
-
-        from mosaic.nodes._model_loader import _build_error_message
-
-        try:
-            self._pipeline = StableDiffusionPipeline.from_pretrained(
-                self._effective_model_name,
-                torch_dtype=torch_dtype,
-                variant=variant,
-            )
-        except (
-            ImportError,
-            AttributeError,
-            ValueError,
-            OSError,
-            EnvironmentError,
-        ) as exc:
-            raise RuntimeError(
-                _build_error_message(self._effective_model_name, exc)
-            ) from exc
+        self._pipeline = safe_load_pipeline(
+            StableDiffusionPipeline,
+            self._effective_model_name,
+            torch_dtype=torch_dtype,
+            dtype_str=self._dtype_str,
+        )
         self._pipeline = self._pipeline.to(self._resolve_device())
         self._apply_optimizations()
         self._enable_attention_sharing(target="self")
@@ -292,27 +272,17 @@ class CrossFrameConsistency(BaseConsistencyNode):
         """加载 SDXL Pipeline + IP-Adapter（all-in-one 简化方案）。"""
         from diffusers import StableDiffusionXLPipeline  # type: ignore
 
+        from mosaic.nodes._model_loader import safe_load_pipeline
+
+        # 走 safe_load_pipeline：统一 model_cache 缓存、fp16 variant 回退、
+        # cache_dir 解析与版本诊断，避免直接调用具体 Pipeline 类的 from_pretrained。
         torch_dtype = self._resolve_dtype()
-        variant = "fp16" if self._dtype_str in ("float16", "fp16") else None
-
-        from mosaic.nodes._model_loader import _build_error_message
-
-        try:
-            self._pipeline = StableDiffusionXLPipeline.from_pretrained(
-                self._effective_model_name,
-                torch_dtype=torch_dtype,
-                variant=variant,
-            )
-        except (
-            ImportError,
-            AttributeError,
-            ValueError,
-            OSError,
-            EnvironmentError,
-        ) as exc:
-            raise RuntimeError(
-                _build_error_message(self._effective_model_name, exc)
-            ) from exc
+        self._pipeline = safe_load_pipeline(
+            StableDiffusionXLPipeline,
+            self._effective_model_name,
+            torch_dtype=torch_dtype,
+            dtype_str=self._dtype_str,
+        )
         self._pipeline = self._pipeline.to(self._resolve_device())
         self._apply_optimizations()
         self._load_ip_adapter()

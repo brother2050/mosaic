@@ -319,12 +319,6 @@ class StyleKeeper(BaseConsistencyNode):
         upcast_pipeline_components(self._pipeline, self._model_name, self._logger)
         self._loaded = True
 
-    def _resolve_dtype_and_variant(self) -> tuple[Any, str | None]:
-        """返回 (torch.dtype, variant) 用于 from_pretrained。"""
-        torch_dtype = self._resolve_dtype()
-        variant = "fp16" if self._dtype_str in ("float16", "fp16") else None
-        return torch_dtype, variant
-
     def _move_pipeline_to_device(self) -> None:
         """将 Pipeline 迁移到目标设备，CUDA 不可用时回退到 CPU。"""
         target = self._resolve_device()
@@ -346,24 +340,17 @@ class StyleKeeper(BaseConsistencyNode):
         """加载 SDXL Pipeline 并挂载 IP-Adapter（全局风格）权重。"""
         from diffusers import StableDiffusionXLPipeline  # type: ignore
 
-        torch_dtype, variant = self._resolve_dtype_and_variant()
+        from mosaic.nodes._model_loader import safe_load_pipeline
 
-        from mosaic.nodes._model_loader import _build_error_message
-
-        try:
-            self._pipeline = StableDiffusionXLPipeline.from_pretrained(
-                self._base_model,
-                torch_dtype=torch_dtype,
-                variant=variant,
-            )
-        except (
-            ImportError,
-            AttributeError,
-            ValueError,
-            OSError,
-            EnvironmentError,
-        ) as exc:
-            raise RuntimeError(_build_error_message(self._base_model, exc)) from exc
+        # 走 safe_load_pipeline：统一 model_cache 缓存、fp16 variant 回退、
+        # cache_dir 解析与版本诊断，避免直接调用具体 Pipeline 类的 from_pretrained。
+        torch_dtype = self._resolve_dtype()
+        self._pipeline = safe_load_pipeline(
+            StableDiffusionXLPipeline,
+            self._base_model,
+            torch_dtype=torch_dtype,
+            dtype_str=self._dtype_str,
+        )
         self._move_pipeline_to_device()
 
         try:
@@ -389,24 +376,17 @@ class StyleKeeper(BaseConsistencyNode):
         """加载普通 SDXL Pipeline（StyleAligned 无需额外权重）。"""
         from diffusers import StableDiffusionXLPipeline  # type: ignore
 
-        torch_dtype, variant = self._resolve_dtype_and_variant()
+        from mosaic.nodes._model_loader import safe_load_pipeline
 
-        from mosaic.nodes._model_loader import _build_error_message
-
-        try:
-            self._pipeline = StableDiffusionXLPipeline.from_pretrained(
-                self._base_model,
-                torch_dtype=torch_dtype,
-                variant=variant,
-            )
-        except (
-            ImportError,
-            AttributeError,
-            ValueError,
-            OSError,
-            EnvironmentError,
-        ) as exc:
-            raise RuntimeError(_build_error_message(self._base_model, exc)) from exc
+        # 走 safe_load_pipeline：统一 model_cache 缓存、fp16 variant 回退、
+        # cache_dir 解析与版本诊断，避免直接调用具体 Pipeline 类的 from_pretrained。
+        torch_dtype = self._resolve_dtype()
+        self._pipeline = safe_load_pipeline(
+            StableDiffusionXLPipeline,
+            self._base_model,
+            torch_dtype=torch_dtype,
+            dtype_str=self._dtype_str,
+        )
         self._move_pipeline_to_device()
         self._logger.info(
             "SDXL pipeline loaded for StyleAligned (dtype=%s, device=%s).",
@@ -418,24 +398,17 @@ class StyleKeeper(BaseConsistencyNode):
         """加载普通 SD1.5 Pipeline（Reference-Only 经由注意力注入实现）。"""
         from diffusers import StableDiffusionPipeline  # type: ignore
 
-        torch_dtype, variant = self._resolve_dtype_and_variant()
+        from mosaic.nodes._model_loader import safe_load_pipeline
 
-        from mosaic.nodes._model_loader import _build_error_message
-
-        try:
-            self._pipeline = StableDiffusionPipeline.from_pretrained(
-                self._base_model,
-                torch_dtype=torch_dtype,
-                variant=variant,
-            )
-        except (
-            ImportError,
-            AttributeError,
-            ValueError,
-            OSError,
-            EnvironmentError,
-        ) as exc:
-            raise RuntimeError(_build_error_message(self._base_model, exc)) from exc
+        # 走 safe_load_pipeline：统一 model_cache 缓存、fp16 variant 回退、
+        # cache_dir 解析与版本诊断，避免直接调用具体 Pipeline 类的 from_pretrained。
+        torch_dtype = self._resolve_dtype()
+        self._pipeline = safe_load_pipeline(
+            StableDiffusionPipeline,
+            self._base_model,
+            torch_dtype=torch_dtype,
+            dtype_str=self._dtype_str,
+        )
         self._move_pipeline_to_device()
         self._logger.info(
             "SD1.5 pipeline loaded for Reference-Only "

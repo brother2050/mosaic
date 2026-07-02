@@ -106,11 +106,18 @@ class BackgroundRemover(BaseImageNode):
 
         torch_dtype = self._resolve_dtype()
 
-        self._pipeline = AutoModelForImageSegmentation.from_pretrained(
-            self._model_name,
-            torch_dtype=torch_dtype,
-            trust_remote_code=True,
-        )
+        try:
+            self._pipeline = AutoModelForImageSegmentation.from_pretrained(
+                self._model_name,
+                dtype=torch_dtype,
+                trust_remote_code=True,
+            )
+        except TypeError:
+            self._pipeline = AutoModelForImageSegmentation.from_pretrained(
+                self._model_name,
+                torch_dtype=torch_dtype,
+                trust_remote_code=True,
+            )
         self._pipeline = self._pipeline.to(self._device)
         self._pipeline.eval()
 

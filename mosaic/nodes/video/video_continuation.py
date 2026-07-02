@@ -149,7 +149,7 @@ class VideoContinuation(BaseVideoNode):
     def _load_model(self) -> None:
         """加载 CogVideoXPipeline（与 TextToVideo 相同）。"""
         import torch  # type: ignore
-        from diffusers import CogVideoXPipeline  # type: ignore
+        from diffusers import DiffusionPipeline  # type: ignore
         from mosaic.nodes._model_loader import safe_load_pipeline
 
         device = self._resolve_device()
@@ -157,7 +157,7 @@ class VideoContinuation(BaseVideoNode):
 
         # CogVideoX 内部使用 T5 文本编码器，needs_t5=True 预导入 T5 组件
         self._pipeline = safe_load_pipeline(
-            CogVideoXPipeline,
+            DiffusionPipeline,
             self._model_name,
             needs_t5=True,
             torch_dtype=torch_dtype,

@@ -56,11 +56,11 @@ class TestImageToVideo:
         mock_pipe = _make_mock_svd_pipeline()
 
         with patch(
-            "diffusers.StableVideoDiffusionPipeline",
+            "diffusers.DiffusionPipeline",
             return_value=mock_pipe,
         ):
             with patch(
-                "diffusers.StableVideoDiffusionPipeline.from_pretrained",
+                "diffusers.DiffusionPipeline.from_pretrained",
                 return_value=mock_pipe,
             ):
                 self.i2v = ImageToVideo(

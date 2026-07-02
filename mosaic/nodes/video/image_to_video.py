@@ -124,7 +124,7 @@ class ImageToVideo(BaseVideoNode):
     def _load_model(self) -> None:
         """加载 StableVideoDiffusion Pipeline。"""
         import torch  # type: ignore
-        from diffusers import StableVideoDiffusionPipeline  # type: ignore
+        from diffusers import DiffusionPipeline  # type: ignore
         from mosaic.nodes._model_loader import safe_load_pipeline
 
         device = self._resolve_device()
@@ -132,7 +132,7 @@ class ImageToVideo(BaseVideoNode):
 
         # SVD 不使用 T5 文本编码器，无需 needs_t5
         self._pipeline = safe_load_pipeline(
-            StableVideoDiffusionPipeline,
+            DiffusionPipeline,
             self._model_name,
             torch_dtype=torch_dtype,
             variant_fp16=self._dtype_str in ("float16", "fp16"),

@@ -123,7 +123,7 @@ class TextToVideo(BaseVideoNode):
         """加载 CogVideoX Pipeline。"""
         import os
         import torch  # type: ignore
-        from diffusers import CogVideoXPipeline  # type: ignore
+        from diffusers import DiffusionPipeline  # type: ignore
         from mosaic.nodes._model_loader import safe_load_pipeline
 
         # 校验模型路径：本地路径不存在时给出友好错误（B2）
@@ -141,7 +141,7 @@ class TextToVideo(BaseVideoNode):
 
         # CogVideoX 内部使用 T5 文本编码器，needs_t5=True 预导入 T5 组件
         self._pipeline = safe_load_pipeline(
-            CogVideoXPipeline,
+            DiffusionPipeline,
             self._model_name,
             needs_t5=True,
             torch_dtype=torch_dtype,

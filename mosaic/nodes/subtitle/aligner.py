@@ -122,14 +122,24 @@ class SubtitleAligner(BaseSubtitleNode):
             )
         model.to(device)
 
-        self._pipeline = pipeline(
-            "automatic-speech-recognition",
-            model=model,
-            tokenizer=processor.tokenizer,
-            feature_extractor=processor.feature_extractor,
-            device=device,
-            torch_dtype=resolved_dtype,
-        )
+        try:
+            self._pipeline = pipeline(
+                "automatic-speech-recognition",
+                model=model,
+                tokenizer=processor.tokenizer,
+                feature_extractor=processor.feature_extractor,
+                device=device,
+                dtype=resolved_dtype,
+            )
+        except TypeError:
+            self._pipeline = pipeline(
+                "automatic-speech-recognition",
+                model=model,
+                tokenizer=processor.tokenizer,
+                feature_extractor=processor.feature_extractor,
+                device=device,
+                torch_dtype=resolved_dtype,
+            )
         self._model = model
 
     def unload(self) -> None:

@@ -42,14 +42,14 @@ dependencies = [
     # Torchvision: 图像预处理（BackgroundRemover 的 transforms 需要）
     # 与 torch 同版本线，但允许 patch 版本独立
     "torchvision>=0.17.0,<1.0.0",
-    # Transformers: >=4.41.2（diffusers 0.38 要求）；<5.0.0 避免 v5 与
-    # chromadb/sentence-transformers 的依赖冲突（chromadb 0.x 强制
-    # transformers 4.x）。待 chromadb 1.0+ 稳定后可放开至 <6.0.0
-    "transformers>=4.41.2,<5.0.0",
-    # Diffusers: >=0.30.0 保证 VAE/scheduling API；<1.0.0 防止大版本破坏
-    "diffusers>=0.30.0,<1.0.0",
+    # Transformers: >=4.51.0 保证 dtype= 参数支持（torch_dtype= 已弃用）；
+    # <5.0.0 避免 v5 与 chromadb/sentence-transformers 的依赖冲突
+    "transformers>=4.51.0,<5.0.0",
+    # Diffusers: >=0.33.1 保证弃用 Pipeline 类的迁移支持；
+    # 0.38+ 推荐 DiffusionPipeline 自动检测替代具体 Pipeline 类
+    "diffusers>=0.33.1,<1.0.0",
     # Safetensors: diffusers 0.38 要求 >=0.8.0-rc.0
-    "safetensors>=0.4.2,<1.0.0",
+    "safetensors>=0.8.0,<1.0.0",
     # HuggingFace Hub: diffusers 0.38 要求 >=0.34.0
     "huggingface-hub>=0.34.0,<2.0.0",
     # PyYAML: CLI 管道文件解析（mosaic run --pipeline xxx.yaml）和

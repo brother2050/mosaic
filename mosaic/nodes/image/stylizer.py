@@ -103,15 +103,19 @@ class Stylizer(BaseImageNode):
         self._ip_adapter_loaded: bool = False
 
     def _load_pipeline(self) -> None:
-        """加载 StableDiffusionXLImg2ImgPipeline（复用图生图流程）。"""
-        from diffusers import StableDiffusionXLImg2ImgPipeline  # type: ignore
-        from mosaic.nodes._model_loader import safe_load_pipeline
+        """加载图生图 Pipeline（自动检测，复用图生图流程）。
+
+        使用 :func:`auto_load_pipeline` 以 ``task="image-to-image"`` 自动匹配
+        Pipeline 类（如 SDXL 模型会加载 ``StableDiffusionXLImg2ImgPipeline``），
+        与 :class:`ImageToImage` 节点保持一致，避免显式引用特定 Pipeline 类。
+        """
+        from mosaic.nodes._model_loader import auto_load_pipeline
 
         torch_dtype = self._resolve_dtype()
 
-        self._pipeline = safe_load_pipeline(
-            StableDiffusionXLImg2ImgPipeline,
+        self._pipeline = auto_load_pipeline(
             self._model_name,
+            task="image-to-image",
             variant_fp16=self._dtype_str in ("float16", "fp16"),
             dtype_str=self._dtype_str,
             torch_dtype=torch_dtype,

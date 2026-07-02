@@ -59,11 +59,11 @@ class TestTextToVideo:
 
         # Mock CogVideoXPipeline.from_pretrained
         with patch(
-            "diffusers.CogVideoXPipeline",
+            "diffusers.DiffusionPipeline",
             return_value=mock_pipe,
         ):
             with patch(
-                "diffusers.CogVideoXPipeline.from_pretrained",
+                "diffusers.DiffusionPipeline.from_pretrained",
                 return_value=mock_pipe,
             ):
                 self.t2v = TextToVideo(

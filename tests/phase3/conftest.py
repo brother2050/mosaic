@@ -97,9 +97,14 @@ def _mock_torch_phase3():
     # 确保 mock diffusers 有 Phase 3 所需属性
     if "diffusers" in sys.modules:
         dm = sys.modules["diffusers"]
+        if not hasattr(dm, "DiffusionPipeline"):
+            dm.DiffusionPipeline = MagicMock()
+            dm.DiffusionPipeline.from_pretrained = MagicMock()
+        if not hasattr(dm, "AutoPipelineForText2Image"):
+            dm.AutoPipelineForText2Image = MagicMock()
+            dm.AutoPipelineForText2Image.from_pretrained = MagicMock()
         if not hasattr(dm, "AudioLDMPipeline"):
             dm.AudioLDMPipeline = MagicMock()
-            dm.AudioLDMPipeline.from_pretrained = MagicMock()
 
     yield
 
@@ -111,13 +116,21 @@ def _inject_mock_diffusers():
     if "diffusers" not in sys.modules:
         dm = types.ModuleType("diffusers")
         dm.__spec__ = MagicMock()
-        dm.AudioLDMPipeline = MagicMock()
-        dm.AudioLDMPipeline.from_pretrained = MagicMock()
+        dm.DiffusionPipeline = MagicMock()
+        dm.DiffusionPipeline.from_pretrained = MagicMock()
+        dm.AutoPipelineForText2Image = MagicMock()
+        dm.AutoPipelineForText2Image.from_pretrained = MagicMock()
         dm.StableDiffusionXLPipeline = MagicMock()
         sys.modules["diffusers"] = dm
     else:
         # Phase 2 可能已注入 mock diffusers，补齐 Phase 3 所需属性
         dm = sys.modules["diffusers"]
+        if not hasattr(dm, "DiffusionPipeline"):
+            dm.DiffusionPipeline = MagicMock()
+            dm.DiffusionPipeline.from_pretrained = MagicMock()
+        if not hasattr(dm, "AutoPipelineForText2Image"):
+            dm.AutoPipelineForText2Image = MagicMock()
+            dm.AutoPipelineForText2Image.from_pretrained = MagicMock()
         if not hasattr(dm, "AudioLDMPipeline"):
             dm.AudioLDMPipeline = MagicMock()
             dm.AudioLDMPipeline.from_pretrained = MagicMock()

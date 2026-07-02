@@ -182,33 +182,33 @@ class IdentityKeeper(BaseConsistencyNode):
         return torch_dtype, variant
 
     def _safe_from_pretrained(self, pipeline_cls: Any, **kwargs: Any) -> Any:
-        """安全加载 pipeline：fp16 variant 失败时回退到 fp32。
+        """安全加载 pipeline，内部委托给 ``safe_load_pipeline`` 走 model_cache。
 
-        与 ``safe_load_pipeline`` 类似的回退逻辑，但用于 identity_keeper
-        需要直接操作 pipeline 类的场景（如加载后挂载 IP-Adapter 权重）。
-        模型路径 (self._model_name) 自动传入 from_pretrained。
+        与直接调用 ``pipeline_cls.from_pretrained`` 相比，本方法通过
+        :func:`safe_load_pipeline` 获得：模型缓存、fp16 variant 回退、
+        cache_dir 解析与版本诊断。模型路径 (``self._model_name``) 自动传入。
+
+        ``variant`` 由调用方基于 ``dtype_str`` 计算后传入，但
+        ``safe_load_pipeline`` 会自行根据 ``dtype_str`` 决定 fp16 variant
+        及其回退策略，故此处不再手动处理 variant（丢弃以免与内部逻辑产生
+        重复关键字），仅透传 ``torch_dtype`` 等剩余参数。
+
+        加载失败时 ``safe_load_pipeline`` 抛出 ``RuntimeError``（含诊断信息），
+        调用方（如 :meth:`_load_instantid` 的回退分支）需据此捕获。
         """
-        import torch  # type: ignore
+        from mosaic.nodes._model_loader import safe_load_pipeline
 
-        variant = kwargs.pop("variant", None)
-        try:
-            if variant:
-                return pipeline_cls.from_pretrained(
-                    self._model_name, variant=variant, **kwargs
-                )
-            return pipeline_cls.from_pretrained(self._model_name, **kwargs)
-        except (OSError, ValueError, RuntimeError, TypeError) as exc:
-            if variant:
-                self._logger.warning(
-                    "fp16 variant load failed for %s: %s; retrying without variant.",
-                    self._model_name, exc,
-                )
-                # fp16 variant 回退：torch_dtype 从 float16 降为 float32，
-                # 避免加载 fp32 权重后再转 fp16 引入数值偏差
-                if kwargs.get("torch_dtype") == torch.float16:
-                    kwargs["torch_dtype"] = torch.float32
-                return pipeline_cls.from_pretrained(self._model_name, **kwargs)
-            raise
+        # safe_load_pipeline 自行根据 dtype_str 决定 fp16 variant 与回退，
+        # 丢弃调用方传入的 variant 以免与内部逻辑冲突（重复关键字参数）。
+        kwargs.pop("variant", None)
+        torch_dtype = kwargs.pop("torch_dtype", None)
+        return safe_load_pipeline(
+            pipeline_cls,
+            self._model_name,
+            torch_dtype=torch_dtype,
+            dtype_str=self._dtype_str,
+            **kwargs,
+        )
 
     def _move_pipeline_to_device(self) -> None:
         """将 Pipeline 迁移到目标设备，CUDA 不可用时回退到 CPU。"""
@@ -244,7 +244,9 @@ class IdentityKeeper(BaseConsistencyNode):
                 variant=variant,
             )
             self._native_instantid = True
-        except (ImportError, AttributeError, ValueError, OSError):
+        except (ImportError, AttributeError, ValueError, OSError, RuntimeError):
+            # safe_load_pipeline 把加载失败统一包成 RuntimeError（含诊断信息），
+            # 需一并捕获以触发向 ControlNet 回退分支的降级。
             self._logger.warning(
                 "StableDiffusionXLInstantIDPipeline not available "
                 "(diffusers too old or model incompatible). "
@@ -283,24 +285,13 @@ class IdentityKeeper(BaseConsistencyNode):
 
         torch_dtype, variant = self._resolve_dtype_and_variant()
 
-        from mosaic.nodes._model_loader import _build_error_message
-
-        try:
-            self._pipeline = self._safe_from_pretrained(
-                StableDiffusionXLPipeline,
-                torch_dtype=torch_dtype,
-                variant=variant,
-            )
-        except (
-            ImportError,
-            AttributeError,
-            ValueError,
-            OSError,
-            EnvironmentError,
-        ) as exc:
-            raise RuntimeError(
-                _build_error_message(self._model_name, exc)
-            ) from exc
+        # _safe_from_pretrained 内部走 safe_load_pipeline，加载失败已统一抛出
+        # RuntimeError（含 _build_error_message 诊断），无需在此重复包装。
+        self._pipeline = self._safe_from_pretrained(
+            StableDiffusionXLPipeline,
+            torch_dtype=torch_dtype,
+            variant=variant,
+        )
         self._move_pipeline_to_device()
 
         # 加载 IP-Adapter Face 权重
@@ -327,24 +318,13 @@ class IdentityKeeper(BaseConsistencyNode):
 
         torch_dtype, variant = self._resolve_dtype_and_variant()
 
-        from mosaic.nodes._model_loader import _build_error_message
-
-        try:
-            self._pipeline = self._safe_from_pretrained(
-                PhotoMakerPipeline,
-                torch_dtype=torch_dtype,
-                variant=variant,
-            )
-        except (
-            ImportError,
-            AttributeError,
-            ValueError,
-            OSError,
-            EnvironmentError,
-        ) as exc:
-            raise RuntimeError(
-                _build_error_message(self._model_name, exc)
-            ) from exc
+        # _safe_from_pretrained 内部走 safe_load_pipeline，加载失败已统一抛出
+        # RuntimeError（含 _build_error_message 诊断），无需在此重复包装。
+        self._pipeline = self._safe_from_pretrained(
+            PhotoMakerPipeline,
+            torch_dtype=torch_dtype,
+            variant=variant,
+        )
         self._move_pipeline_to_device()
         self._logger.info(
             "PhotoMaker pipeline loaded (dtype=%s, device=%s).",
