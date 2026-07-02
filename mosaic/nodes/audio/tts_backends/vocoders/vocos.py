@@ -639,59 +639,91 @@ class VocosVocoder(Vocoder):
     def _try_load_official(
         self, weights_path: str, device: str, torch_dtype: Any
     ) -> Any:
-        """尝试加载官方 ``vocos.Vocos`` 模型，失败返回 ``None``。"""
+        """尝试加载官方 ``vocos.Vocos`` 模型，失败返回 ``None``。
+
+        使用 ChatTTS.config.Config 的默认 Vocos 配置创建官方 Vocos 实例，
+        确保结构与权重文件完全匹配。不依赖外部 yaml 文件。
+        """
         try:
             from vocos import Vocos as VocosOfficial
+            from vocos.pretrained import instantiate_class
         except ImportError:
             return None
 
         try:
+            import os
+            import torch
+            from dataclasses import asdict
+
             if os.path.isdir(weights_path):
                 model = VocosOfficial.from_pretrained(weights_path)
             else:
-                # 单文件权重：尝试在同级/父目录 config/ 下找到 config.yaml
-                # 例如 weights_path=edge-tts/asset/Vocos.safetensors
-                # 则 config_path=edge-tts/config/vocos.yaml
-                import os
+                # 用 ChatTTS 默认 Config 创建官方 Vocos
+                try:
+                    from ChatTTS.config import Config
+                    config = Config()
+                    feature_extractor = instantiate_class(
+                        args=(), init=asdict(config.vocos.feature_extractor)
+                    )
+                    backbone = instantiate_class(
+                        args=(), init=asdict(config.vocos.backbone)
+                    )
+                    head = instantiate_class(
+                        args=(), init=asdict(config.vocos.head)
+                    )
+                    model = VocosOfficial(
+                        feature_extractor=feature_extractor,
+                        backbone=backbone,
+                        head=head,
+                    )
+                except ImportError:
+                    # ChatTTS 不可用时，尝试从 yaml 加载
+                    weights_dir = os.path.dirname(weights_path)
+                    parent_dir = os.path.dirname(weights_dir)
+                    basename = os.path.splitext(
+                        os.path.basename(weights_path)
+                    )[0]
+                    config_candidates = [
+                        os.path.join(weights_dir, "config.yaml"),
+                        os.path.join(
+                            parent_dir, "config", f"{basename.lower()}.yaml"
+                        ),
+                        os.path.join(parent_dir, "config", "vocos.yaml"),
+                    ]
+                    config_path = None
+                    for c in config_candidates:
+                        if os.path.isfile(c):
+                            config_path = c
+                            break
+                    if config_path is None:
+                        return None
+                    model = VocosOfficial.from_hparams(config_path)
 
-                weights_dir = os.path.dirname(weights_path)
-                parent_dir = os.path.dirname(weights_dir)
-                basename = os.path.splitext(os.path.basename(weights_path))[0]
-                # 尝试多种 config 路径
-                config_candidates = [
-                    os.path.join(weights_dir, "config.yaml"),
-                    os.path.join(parent_dir, "config", f"{basename.lower()}.yaml"),
-                    os.path.join(parent_dir, "config", "vocos.yaml"),
-                ]
-                config_path = None
-                for c in config_candidates:
-                    if os.path.isfile(c):
-                        config_path = c
-                        break
-                if config_path is None:
-                    return None
-
-                model = VocosOfficial.from_hparams(config_path)
                 # 加载权重文件
-                import torch
-
                 if weights_path.endswith(".safetensors"):
                     from safetensors.torch import load_file
-
                     state_dict = load_file(weights_path)
                 else:
                     state_dict = torch.load(
                         weights_path, map_location="cpu", weights_only=False
                     )
                 model.load_state_dict(state_dict, strict=True)
-        except Exception:  # noqa: BLE001
+        except Exception as e:  # noqa: BLE001
+            import logging
+            logging.getLogger(__name__).warning(
+                "Vocos official load failed: %s", e
+            )
             return None
 
         try:
             model = model.to(device=device, dtype=torch_dtype)
             model.eval()
             return model
-        except Exception:  # noqa: BLE001
+        except Exception as e:  # noqa: BLE001
+            import logging
+            logging.getLogger(__name__).warning(
+                "Vocos device transfer failed: %s", e
+            )
             return None
 
     @staticmethod

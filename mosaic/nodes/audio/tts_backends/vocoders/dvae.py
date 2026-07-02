@@ -426,62 +426,54 @@ def _get_dvae_class() -> Any:
 
                 ChatTTS 的 DVAE 结构（GFSQ + DVAEDecoder + coef 缩放）与自实现
                 完全不同，strict=False 会静默忽略所有权重导致电子音。
-                直接使用官方包可确保结构完全匹配。
+                直接使用官方包的默认 Config 创建模型，确保结构完全匹配。
                 """
                 try:
                     from ChatTTS.model.dvae import DVAE as OfficialDVAE
-                    from ChatTTS.config import Config as ChatTTSConfig
+                    from ChatTTS.config import Config
+                    from dataclasses import asdict
                 except ImportError:
                     return None
 
                 try:
                     import os
+                    import torch
 
-                    # 查找对应的 config yaml
-                    weights_dir = os.path.dirname(weights_path)
-                    parent_dir = os.path.dirname(weights_dir)
+                    config = Config()
                     basename = os.path.splitext(
                         os.path.basename(weights_path)
                     )[0].lower()
 
-                    config_candidates = [
-                        os.path.join(parent_dir, "config", f"{basename}.yaml"),
-                        os.path.join(parent_dir, "config", "dvae.yaml"),
-                        os.path.join(parent_dir, "config", "decoder.yaml"),
-                    ]
-                    config_path = None
-                    for c in config_candidates:
-                        if os.path.isfile(c):
-                            config_path = c
-                            break
-                    if config_path is None:
-                        return None
+                    if basename == "decoder":
+                        # Decoder 模式：只有 decoder config，无 encoder/vq
+                        # 输入是 GPT hidden states，不是 token_ids
+                        official = OfficialDVAE(
+                            decoder_config=asdict(config.decoder),
+                            dim=config.decoder.idim,
+                            device=torch.device(device),
+                        )
+                    else:
+                        # DVAE 模式：有 encoder + decoder + vq
+                        # 输入是 token_ids，通过 GFSQ._embed 量化
+                        official = OfficialDVAE(
+                            decoder_config=asdict(config.dvae.decoder),
+                            encoder_config=asdict(config.dvae.encoder),
+                            vq_config=asdict(config.dvae.vq),
+                            dim=config.dvae.decoder.idim,
+                            device=torch.device(device),
+                        )
 
-                    import yaml
-
-                    with open(config_path) as f:
-                        cfg = yaml.safe_load(f)
-
-                    # 官方 DVAE 需要 decoder_config / encoder_config / vq_config
-                    decoder_config = cfg.get("decoder", cfg)
-                    encoder_config = cfg.get("encoder")
-                    vq_config = cfg.get("vq")
-                    dim = decoder_config.get("idim", 512)
-
-                    official = OfficialDVAE(
-                        decoder_config=decoder_config,
-                        encoder_config=encoder_config,
-                        vq_config=vq_config,
-                        dim=dim,
-                        device=__import__("torch").device(device),
-                    )
                     official.load_pretrained(
-                        weights_path, __import__("torch").device(device)
+                        weights_path, torch.device(device)
                     )
                     official = official.to(device=device, dtype=torch_dtype)
                     official.eval()
                     return official
-                except Exception:  # noqa: BLE001
+                except Exception as e:  # noqa: BLE001
+                    import logging
+                    logging.getLogger(__name__).warning(
+                        "DVAE official load failed: %s", e
+                    )
                     return None
 
             # ----------------------------------------------------------
