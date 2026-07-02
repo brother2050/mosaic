@@ -639,6 +639,11 @@ class ChatTTSBackend(TTSBackend):
             speaker_embedding,
             **params,
         )
+        self._logger.info(
+            "audio_codes shape: %s, dtype: %s",
+            audio_codes.shape if hasattr(audio_codes, "shape") else type(audio_codes),
+            audio_codes.dtype if hasattr(audio_codes, "dtype") else "N/A",
+        )
 
         # 10. 复合声码器解码 —— VQ token -> mel -> waveform
         waveform, sample_rate = self._decode_full(audio_codes)
