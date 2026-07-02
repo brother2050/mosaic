@@ -312,18 +312,19 @@ def upcast_pipeline_components(
 ) -> None:
     """上转 pipeline 的 VAE 为 float32，防止 float16 下的黑图/NaN 问题。
 
-    **仅上转 VAE**。VAE 只在最后 decode 阶段调用一次，对 SDXL/SD1.5/HunyuanVideo/
-    WanVideo/LTXVideo 等 diffusers pipeline 安全（decode 时内部做
-    ``latents.to(vae.dtype)``）。
-
-    **不上转 text_encoder**。text_encoder 的输出直接传给 UNet，如果
-    text_encoder 是 float32 而 UNet 是 float16，会触发
-    ``RuntimeError: mat1 and mat2 must have the same dtype``。
+    **仅上转 VAE**。VAE 只在最后 decode 阶段调用一次，上转为 float32 可
+    避免 float16 下的数值精度问题导致的黑图/NaN。
 
     **例外：CogVideoX 和 SVD 跳过 VAE 上转**。这两类 pipeline 的 decode_latents
     不做 ``latents.to(vae.dtype)`` 转换，VAE 上转会导致 dtype 不匹配报错。
     SVD 还依赖 diffusers 自身的 force_upcast→cast-back 机制，永久 float32 会
     破坏该机制。
+
+    **SDXL 也跳过 VAE 上转**：SDXL 的 ``AutoencoderKL.decode()`` 在部分
+    diffusers 版本中不做 ``latents.to(vae.dtype)`` 转换，VAE 上转后会导致
+    ``RuntimeError: Input type (c10::Half) and bias type (float) should be
+    the same``。改用 ``vae.enable_tiling()`` 在 fp16 下避免黑图，同时保持
+    dtype 一致。
 
     Parameters
     ----------
@@ -339,17 +340,45 @@ def upcast_pipeline_components(
 
     import torch  # type: ignore
 
-    # CogVideoX 和 SVD 跳过 VAE 上转：diffusers 不做 latents→vae.dtype 转换
     pipeline_cls_name = type(pipeline).__name__
+    model_lower = model_name.lower()
+
+    # CogVideoX 和 SVD 跳过 VAE 上转：diffusers 不做 latents→vae.dtype 转换
     skip_vae_upcast = (
         "CogVideoX" in pipeline_cls_name
         or "StableVideoDiffusion" in pipeline_cls_name
-        or "cogvideo" in model_name.lower()
-        or "svd" in model_name.lower()
-        or "stable-video-diffusion" in model_name.lower()
+        or "cogvideo" in model_lower
+        or "svd" in model_lower
+        or "stable-video-diffusion" in model_lower
     )
+    # SDXL 也跳过 VAE 上转：decode 不做 latents.to(vae.dtype) 导致 dtype 不匹配
+    if not skip_vae_upcast:
+        skip_vae_upcast = (
+            "StableDiffusionXL" in pipeline_cls_name
+            or "sdxl" in model_lower
+            or "stable-diffusion-xl" in model_lower
+        )
+
     if skip_vae_upcast:
-        if logger is not None:
+        # SDXL：用 VAE tiling 代替上转，在 fp16 下避免黑图同时保持 dtype 一致
+        if (
+            "StableDiffusionXL" in pipeline_cls_name
+            or "sdxl" in model_lower
+            or "stable-diffusion-xl" in model_lower
+        ):
+            vae = getattr(pipeline, "vae", None)
+            if vae is not None:
+                try:
+                    vae.enable_tiling()
+                    if logger is not None:
+                        logger.debug(
+                            "VAE tiling enabled for %s (fp16 black-image "
+                            "prevention without dtype upcast).",
+                            pipeline_cls_name,
+                        )
+                except Exception:
+                    pass  # 不支持 tiling 的 VAE 静默跳过
+        elif logger is not None:
             logger.debug(
                 "Skipping VAE upcast for %s (diffusers doesn't convert "
                 "latents dtype in decode_latents).",
@@ -357,7 +386,7 @@ def upcast_pipeline_components(
             )
         return
 
-    # VAE → float32（仅对 decode 时做 latents.to(vae.dtype) 的 pipeline 安全）
+    # 非 SDXL/CogVideoX/SVD：VAE → float32（decode 时做 latents.to(vae.dtype)）
     vae = getattr(pipeline, "vae", None)
     if vae is not None:
         try:
