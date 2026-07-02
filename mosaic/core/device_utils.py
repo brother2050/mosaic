@@ -360,7 +360,25 @@ def upcast_pipeline_components(
         )
 
     if skip_vae_upcast:
-        # SDXL：用 VAE tiling 代替手动上转，在 fp16 下避免黑图同时保持 dtype 一致
+        # SDXL：不手动上转 VAE，交给 pipeline 自己处理。
+        #
+        # diffusers SDXL pipeline 在 __call__ 中的逻辑（L1254-1258）：
+        #   needs_upcasting = vae.dtype==float16 and vae.config.force_upcast
+        #   if needs_upcasting:
+        #       self.upcast_vae()                        # VAE.to(float32)
+        #       latents = latents.to(vae.post_quant_conv.parameters().dtype)
+        #
+        # 如果我们手动 vae.to(float32)，needs_upcasting 变 False，pipeline
+        # 不会转 latents → float16 latents 传入 float32 VAE → 崩溃。
+        #
+        # 如果手动 vae.to(float32) + force_upcast=False，needs_upcasting 仍
+        # False，pipeline 仍不转 latents → 同样崩溃。
+        #
+        # 所以只能保持 force_upcast=True，让 pipeline 自己调 upcast_vae()
+        # （会同步转 VAE 和 latents）。upcast_vae() 已弃用（FutureWarning），
+        # 但 pipeline 内部的调用无法从外部消除该警告。
+        #
+        # 启用 VAE tiling 减少 fp16 下的显存占用和精度问题。
         if (
             "StableDiffusionXL" in pipeline_cls_name
             or "sdxl" in model_lower
@@ -372,25 +390,10 @@ def upcast_pipeline_components(
                     vae.enable_tiling()
                     if logger is not None:
                         logger.debug(
-                            "VAE tiling enabled for %s (fp16 black-image "
-                            "prevention without dtype upcast).",
-                            pipeline_cls_name,
+                            "VAE tiling enabled for %s.", pipeline_cls_name
                         )
                 except Exception:
-                    pass  # 不支持 tiling 的 VAE 静默跳过
-                # 保持 force_upcast=True（默认值），让 diffusers pipeline 在
-                # __call__ 内部自动调用 upcast_vae()：
-                #   1. VAE 上转为 float32（最佳解码质量）
-                #   2. latents 同步转为 float32（避免 dtype 不匹配）
-                # 我们之前手动上转 VAE 会导致 dtype 不匹配崩溃，因为手动上转
-                # 发生在 pipeline.__call__ 之前，pipeline 不知道 VAE 已被上转，
-                # 不会转换 latents。而 pipeline 自己的 upcast_vae() 会同时处理
-                # VAE 上转和 latents 转换，是安全的。
-                #
-                # upcast_vae() 已在 diffusers 0.38 标记为弃用（FutureWarning），
-                # 推荐改用 pipe.vae.to(torch.float32)，但 pipeline 内部的调用
-                # 仍会触发该警告。由于这是 diffusers 内部行为，我们无法从外部
-                # 消除，只能接受该警告（不影响功能）。
+                    pass
         elif logger is not None:
             logger.debug(
                 "Skipping VAE upcast for %s (diffusers doesn't convert "
