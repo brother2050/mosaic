@@ -813,8 +813,15 @@ class LlamaARModel(LlamaARModelBase):
                 if torch.all(recent == recent[0:1]):
                     finished = True
 
-            new_token_embed_input = new_token.unsqueeze(1)
-            new_embeds = self._embed_layer(new_token_embed_input)
+            # 将新 token 嵌入为下一轮输入
+            # head_code 输出的 token 范围 [0, num_audio_tokens-1]，无偏移
+            # 直接用 emb_code[i] 嵌入并求和（与官方一致）
+            new_embeds_list = []
+            for i in range(num_vq):
+                token_i = new_token[:, i].clamp(min=0, max=self._num_audio_tokens - 1)
+                new_embeds_list.append(self._embed_layer.emb_code[i](token_i))
+            new_embeds = torch.stack(new_embeds_list, dim=-1).sum(dim=-1)  # [B, hidden]
+            new_embeds = new_embeds.unsqueeze(1)  # [B, 1, hidden]
             cur_embeds = new_embeds
 
         if not generated_tokens:
