@@ -21,6 +21,21 @@ from mosaic.core.types import MosaicData
 
 from mosaic.nodes.image._base import BaseImageNode, _VRAM_ESTIMATES, _LICENSE_INFO
 
+
+def _check_optional_dep(pkg_name: str, feature: str) -> None:
+    """检查可选依赖是否已安装，未安装时抛出带安装指引的 ImportError。"""
+    import importlib
+
+    try:
+        importlib.import_module(pkg_name)
+    except ImportError:
+        raise ImportError(
+            f"{feature} 需要安装 `{pkg_name}`。请运行：\n"
+            f"  pip install {pkg_name}\n"
+            f"或一次性安装所有媒体依赖：\n"
+            f"  pip install -e \".[media]\""
+        ) from None
+
 __all__ = ["BackgroundRemover"]
 
 
@@ -103,6 +118,11 @@ class BackgroundRemover(BaseImageNode):
         """使用 transformers 加载图像分割模型。"""
         from transformers import AutoModelForImageSegmentation  # type: ignore
         import torch  # type: ignore
+
+        # briaai/RMBG-2.0（BiRefNet）依赖 kornia 和 timm，缺失时
+        # transformers 的 trust_remote_code 会报 ImportError 但信息晦涩
+        _check_optional_dep("kornia", "BackgroundRemover（briaai/RMBG-2.0）")
+        _check_optional_dep("timm", "BackgroundRemover（briaai/RMBG-2.0）")
 
         torch_dtype = self._resolve_dtype()
 
@@ -231,6 +251,14 @@ class BackgroundRemover(BaseImageNode):
         ])
 
         input_tensor = preprocess(image.convert("RGB")).unsqueeze(0).to(self._device)
+
+        # 输入张量需与模型权重的 dtype 一致，否则 conv2d 报
+        # "Input type (float) and bias type (c10::Half) should be the same"
+        try:
+            model_dtype = next(self._pipeline.parameters()).dtype
+            input_tensor = input_tensor.to(model_dtype)
+        except Exception:
+            pass
 
         with torch.inference_mode():
             # 显式转 float32，避免 float16 tensor 传入 ToPILImage
