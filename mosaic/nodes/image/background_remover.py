@@ -116,6 +116,7 @@ class BackgroundRemover(BaseImageNode):
 
     def _load_segmentation_model(self) -> None:
         """使用 transformers 加载图像分割模型。"""
+        import warnings
         from transformers import AutoModelForImageSegmentation  # type: ignore
         import torch  # type: ignore
 
@@ -126,17 +127,26 @@ class BackgroundRemover(BaseImageNode):
 
         torch_dtype = self._resolve_dtype()
 
-        try:
-            self._pipeline = AutoModelForImageSegmentation.from_pretrained(
-                self._model_name,
-                dtype=torch_dtype,
-                trust_remote_code=True,
+        # RMBG-2.0 的 trust_remote_code 代码内部使用了 timm 已弃用的导入路径
+        # （from timm.models.layers import ...），会触发 FutureWarning。
+        # 这是第三方模型仓库的代码问题，非项目代码，在此过滤该特定警告。
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore",
+                message=r".*Importing from timm\.models\.(layers|registry).*",
+                category=FutureWarning,
             )
-        except TypeError:
-            self._pipeline = AutoModelForImageSegmentation.from_pretrained(
-                self._model_name,
-                torch_dtype=torch_dtype,
-                trust_remote_code=True,
+            try:
+                self._pipeline = AutoModelForImageSegmentation.from_pretrained(
+                    self._model_name,
+                    dtype=torch_dtype,
+                    trust_remote_code=True,
+                )
+            except TypeError:
+                self._pipeline = AutoModelForImageSegmentation.from_pretrained(
+                    self._model_name,
+                    torch_dtype=torch_dtype,
+                    trust_remote_code=True,
             )
         self._pipeline = self._pipeline.to(self._device)
         self._pipeline.eval()
