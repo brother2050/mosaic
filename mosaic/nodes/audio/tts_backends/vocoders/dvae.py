@@ -18,9 +18,8 @@ Layer 3 前置步骤：将 VQ 音频码 token 解码为 mel 频谱。
 * ``encoder`` —— ``DVAEDecoder`` 子模块（encode 路径，decode 时不使用）；
 * ``decoder`` —— ``DVAEDecoder`` 子模块（decode 主干）；
 * ``out_conv`` —— ``Conv1d(dim, mel_bins, 3, 1, 1, bias=False)``；
-* ``vq_layer`` —— ``GFSQ``，内部用
-  :class:`vector_quantize_pytorch.GroupedResidualFSQ` 将 token ids 嵌入为
-  连续特征。
+* ``vq_layer`` —— ``GFSQ``，自实现 ``GroupedResidualFSQ``（不依赖
+  ``vector_quantize_pytorch``），将 token ids 嵌入为连续特征。
 
 ``DVAEDecoder`` 子模块结构：
 
@@ -213,11 +212,96 @@ def _get_dvae_class() -> Any:
                 x = self.conv_out(y)
                 return x
 
+        class _ResidualFSQ(nn.Module):
+            """对应官方 ``ResidualFSQ``，仅保留推理（decode）所需结构。
+
+            可学习参数只有 ``project_in`` 和 ``project_out``（当
+            ``codebook_dim != dim`` 时）。FSQ 量化本身无可学习参数。
+            state_dict key: ``rvqs.{g}.project_in/project_out.{weight,bias}``
+            """
+
+            def __init__(self, dim: int, levels: list, num_quantizers: int):
+                super().__init__()
+                codebook_dim = len(levels)
+                self.dim = dim
+                self.codebook_dim = codebook_dim
+                self.num_quantizers = num_quantizers
+                self.levels = levels
+
+                requires_projection = codebook_dim != dim
+                self.project_in = nn.Linear(dim, codebook_dim) if requires_projection else nn.Identity()
+                self.project_out = nn.Linear(codebook_dim, dim) if requires_projection else nn.Identity()
+                self.has_projections = requires_projection
+
+                # 非持久化 buffer（不出现在 state_dict 中，与官方一致）
+                levels_t = torch.tensor(levels, dtype=torch.float32)
+                basis = torch.cumprod(
+                    torch.tensor([1] + levels[:-1], dtype=torch.long), dim=0
+                )
+                self.register_buffer("_basis", basis, persistent=False)
+                scales = torch.stack([levels_t ** (-i) for i in range(num_quantizers)])
+                self.register_buffer("scales", scales, persistent=False)
+
+            def _indices_to_codes(self, flat_indices: Any) -> Any:
+                """将 flat index 转为量化值（preserve_symmetry=True）。
+
+                levels=5 时: index {0..624} → 4 维向量, 每维 ∈ {-1, -0.5, 0, 0.5, 1}
+                """
+                # flat_indices: [...] → [..., 1]
+                idx = flat_indices.unsqueeze(-1)
+                level_indices = (idx // self._basis) % torch.tensor(
+                    self.levels, device=idx.device
+                )
+                # preserve_symmetry: code = level_idx * (2/(levels-1)) - 1
+                levels_t = torch.tensor(
+                    self.levels, dtype=torch.float32, device=idx.device
+                )
+                codes = level_indices.float() * (2.0 / (levels_t - 1)) - 1.0
+                return codes
+
+            def get_output_from_indices(self, indices: Any) -> Any:
+                """indices: [B, T, R] → [B, T, dim]"""
+                # 对每个残差量化器，取出索引、转为量化值、按 scales 缩放
+                codes_summed = None
+                for r in range(self.num_quantizers):
+                    flat_idx = indices[..., r]  # [B, T]
+                    codes = self._indices_to_codes(flat_idx)  # [B, T, codebook_dim]
+                    codes = codes * self.scales[r]  # 逐维缩放
+                    codes_summed = codes if codes_summed is None else codes_summed + codes
+                # project_out: [B, T, dim]
+                return self.project_out(codes_summed)
+
+        class _GroupedResidualFSQ(nn.Module):
+            """对应官方 ``GroupedResidualFSQ``。
+
+            state_dict key: ``quantizer.rvqs.{g}.project_in/project_out.*``
+            """
+
+            def __init__(self, dim: int, levels: list, num_quantizers: int, groups: int):
+                super().__init__()
+                self.dim = dim
+                self.groups = groups
+                dim_per_group = dim // groups
+                self.rvqs = nn.ModuleList([
+                    _ResidualFSQ(dim_per_group, levels, num_quantizers)
+                    for _ in range(groups)
+                ])
+
+            def get_output_from_indices(self, indices: Any) -> Any:
+                """indices: [G, B, T, R] → [B, T, dim]"""
+                outputs = [
+                    rvq.get_output_from_indices(indices[g])
+                    for g, rvq in enumerate(self.rvqs)
+                ]
+                return torch.cat(outputs, dim=-1)  # [B, T, dim]
+
         class _GFSQ(nn.Module):
-            """官方 ChatTTS ``GFSQ``：基于 ``GroupedResidualFSQ`` 的量化嵌入。
+            """官方 ChatTTS ``GFSQ``：自实现，不依赖 vector_quantize_pytorch。
 
             将 token ids ``[B, num_vq, T]``（``num_vq = G * R``）嵌入为连续
             特征 ``[B, dim, T]``。
+
+            state_dict key: ``vq_layer.quantizer.rvqs.{g}.project_in/out.*``
             """
 
             def __init__(
@@ -230,9 +314,7 @@ def _get_dvae_class() -> Any:
                 transpose: bool = True,
             ) -> None:
                 super().__init__()
-                from vector_quantize_pytorch import GroupedResidualFSQ
-
-                self.quantizer = GroupedResidualFSQ(
+                self.quantizer = _GroupedResidualFSQ(
                     dim=dim,
                     levels=list(levels),
                     num_quantizers=R,
@@ -267,7 +349,7 @@ def _get_dvae_class() -> Any:
                     x
                 )  # [B, T, dim]
                 if self.transpose:
-                    return feat.transpose(1, 2)  # [B, dim, T]
+                    return feat.transpose_(1, 2)  # [B, dim, T]
                 return feat
 
         class _DVAEDecoder(nn.Module):
