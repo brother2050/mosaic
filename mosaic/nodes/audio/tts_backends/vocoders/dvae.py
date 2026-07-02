@@ -570,7 +570,26 @@ def _get_dvae_class() -> Any:
                 state_dict = self._load_state_dict(weights_path)
                 if state_dict:
                     # key 与官方 DVAE.safetensors 完全匹配，直接载入
-                    self.load_state_dict(state_dict, strict=False)
+                    result = self.load_state_dict(state_dict, strict=False)
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    model_keys = set(self.state_dict().keys())
+                    file_keys = set(state_dict.keys())
+                    matched = model_keys & file_keys
+                    missing = model_keys - file_keys
+                    unexpected = file_keys - model_keys
+                    logger.info(
+                        "DVAE 权重加载: 模型 %d key, 文件 %d key, "
+                        "匹配 %d, 缺失 %d, 多余 %d",
+                        len(model_keys), len(file_keys),
+                        len(matched), len(missing), len(unexpected),
+                    )
+                    if missing:
+                        logger.warning("DVAE 缺失 key (前10): %s",
+                                       sorted(missing)[:10])
+                    if unexpected:
+                        logger.warning("DVAE 多余 key (前10): %s",
+                                       sorted(unexpected)[:10])
 
                 self.to(device=resolved, dtype=torch_dtype)
                 self.eval()

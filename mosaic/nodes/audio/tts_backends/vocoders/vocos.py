@@ -551,6 +551,25 @@ class VocosVocoder(Vocoder):
         state_dict = self._load_state_dict(weights_path)
         if state_dict:
             impl.load_state_dict(state_dict, strict=False)
+            import logging
+            logger = logging.getLogger(__name__)
+            model_keys = set(impl.state_dict().keys())
+            file_keys = set(state_dict.keys())
+            matched = model_keys & file_keys
+            missing = model_keys - file_keys
+            unexpected = file_keys - model_keys
+            logger.info(
+                "Vocos 权重加载: 模型 %d key, 文件 %d key, "
+                "匹配 %d, 缺失 %d, 多余 %d",
+                len(model_keys), len(file_keys),
+                len(matched), len(missing), len(unexpected),
+            )
+            if missing:
+                logger.warning("Vocos 缺失 key (前10): %s",
+                               sorted(missing)[:10])
+            if unexpected:
+                logger.warning("Vocos 多余 key (前10): %s",
+                               sorted(unexpected)[:10])
         impl = impl.to(device=resolved, dtype=torch_dtype)
         impl.eval()
         self._impl = impl
