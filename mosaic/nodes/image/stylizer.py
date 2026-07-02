@@ -87,8 +87,8 @@ class Stylizer(BaseImageNode):
         "watercolor, anime, etc.). Uses SDXL Img2Img under the hood."
     )
     version: str = "0.1.0"
-    input_types = ["image", "mosaic"]
-    output_types = ["image"]
+    input_types = ("image", "mosaic")
+    output_types = ("image",)
 
     # IP-Adapter 默认权重（F2：避免魔法数字）
     DEFAULT_IP_ADAPTER_SCALE: float = 0.6
@@ -106,7 +106,7 @@ class Stylizer(BaseImageNode):
     def _load_pipeline(self) -> None:
         """加载 StableDiffusionXLImg2ImgPipeline（复用图生图流程）。"""
         from diffusers import StableDiffusionXLImg2ImgPipeline  # type: ignore
-        from mosaic.nodes._pipeline_utils import safe_load_pipeline
+        from mosaic.nodes._model_loader import safe_load_pipeline
 
         torch_dtype = self._resolve_dtype()
 

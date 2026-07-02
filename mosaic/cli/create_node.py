@@ -17,8 +17,8 @@
         domain="text",
         node_name="SentimentAnalyzer",
         description="情感分析节点",
-        input_types=["text"],
-        output_types=["text"],
+        input_types=("text",),
+        output_types=("text",),
         model_name="uer/roberta-base-finetuned-jd-binary-chinese",
         author="Alice",
         output_dir="./my_nodes",
@@ -91,10 +91,10 @@ class NodeGenerator:
 
     #: 模板文件名 -> 生成文件名的映射
     _FILE_MAPPING: dict[str, str] = {
-        "node.py.j2": "{node_name_snake}.py",
-        "init.py.j2": "__init__.py",
-        "test.py.j2": "test_{node_name_snake}.py",
-        "readme.md.j2": "README.md",
+        "node.py.tpl": "{node_name_snake}.py",
+        "init.py.tpl": "__init__.py",
+        "test.py.tpl": "test_{node_name_snake}.py",
+        "readme.md.tpl": "README.md",
     }
 
     def __init__(self) -> None:
@@ -161,9 +161,9 @@ class NodeGenerator:
 
         # 默认类型
         if input_types is None:
-            input_types = ["text"]
+            input_types = ("text",)
         if output_types is None:
-            output_types = ["text"]
+            output_types = ("text",)
 
         # 构造模板变量（input_types / output_types 转为 Python 字面量）
         variables: dict[str, str] = {

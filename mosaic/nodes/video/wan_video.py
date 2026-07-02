@@ -106,8 +106,8 @@ class WanVideo(BaseVideoNode):
         "and VAE tiling for memory efficiency."
     )
     version: str = "0.1.0"
-    input_types = ["text", "mosaic"]
-    output_types = ["video"]
+    input_types = ("text", "mosaic")
+    output_types = ("video",)
 
     def __init__(
         self,
@@ -145,7 +145,7 @@ class WanVideo(BaseVideoNode):
         import os
         import torch  # type: ignore
         from diffusers import WanPipeline  # type: ignore
-        from mosaic.nodes._pipeline_utils import safe_load_pipeline
+        from mosaic.nodes._model_loader import safe_load_pipeline
 
         # 校验模型路径：本地路径不存在时给出友好错误（B2）
         validate_model_path(self._model_name, self._logger)

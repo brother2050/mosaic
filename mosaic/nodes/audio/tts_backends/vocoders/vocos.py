@@ -458,7 +458,7 @@ class VocosVocoder(Vocoder):
                     self._impl.to("cpu")
                 except Exception:  # noqa: BLE001
                     pass
-            from mosaic.core._device_utils import empty_device_cache
+            from mosaic.core.device_utils import empty_device_cache
 
             empty_device_cache()
         except ImportError:

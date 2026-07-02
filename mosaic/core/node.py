@@ -60,8 +60,8 @@ class NodeSpec:
     domain: str
     description: str = ""
     version: str = "0.1.0"
-    input_types: list[str] = field(default_factory=list)
-    output_types: list[str] = field(default_factory=list)
+    input_types: tuple[str, ...] = ()
+    output_types: tuple[str, ...] = ()
     model_info: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -111,8 +111,8 @@ class Node(abc.ABC):
     ...     domain = "text"
     ...     description = "示例节点"
     ...     version = "0.1.0"
-    ...     input_types = ["text"]
-    ...     output_types = ["text"]
+    ...     input_types = ("text",)
+    ...     output_types = ("text",)
     ...
     ...     def load(self) -> None:
     ...         self._loaded = True

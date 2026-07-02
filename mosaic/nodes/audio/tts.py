@@ -29,7 +29,7 @@ from typing import Any
 from mosaic.core.registry import registry
 from mosaic.core.types import AudioData, MosaicData
 
-from mosaic.nodes._coerce import safe_float
+from mosaic.nodes.coerce import safe_float
 from mosaic.nodes.audio._base import BaseAudioNode
 
 __all__ = ["TTS"]
@@ -513,8 +513,8 @@ class TTS(BaseAudioNode):
         "Supports emotion styles, speed control, and streaming output."
     )
     version: str = "0.3.0"
-    input_types = ["text", "mosaic"]
-    output_types = ["audio"]
+    input_types = ("text", "mosaic")
+    output_types = ("audio",)
 
     def __init__(
         self,

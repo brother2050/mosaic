@@ -26,7 +26,7 @@ from mosaic.core.registry import registry
 from mosaic.core.scheduler import Scheduler, get_scheduler
 from mosaic.core.types import MosaicData, RagQueryResult
 
-from mosaic.nodes._coerce import safe_float, safe_int
+from mosaic.nodes.coerce import safe_float, safe_int
 from mosaic.nodes.rag._base import BaseRagNode, _EMBEDDING_VRAM
 
 __all__ = ["Retriever"]
@@ -72,8 +72,8 @@ class Retriever(BaseRagNode):
         "Supports FAISS and ChromaDB backends."
     )
     version: str = "0.1.0"
-    input_types: list[str] = ["text", "mosaic"]
-    output_types: list[str] = ["rag_query_result", "mosaic"]
+    input_types: tuple[str, ...] = ("text", "mosaic")
+    output_types: tuple[str, ...] = ("rag_query_result", "mosaic")
 
     def __init__(
         self,

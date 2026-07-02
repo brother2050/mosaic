@@ -30,7 +30,7 @@ from mosaic.core.node import NodeSpec
 from mosaic.core.registry import registry
 from mosaic.core.types import MosaicData
 
-from mosaic.nodes._coerce import safe_float, safe_int
+from mosaic.nodes.coerce import safe_float, safe_int
 from mosaic.nodes.consistency._base import BaseConsistencyNode
 
 __all__ = ["IdentityKeeper"]
@@ -112,8 +112,8 @@ class IdentityKeeper(BaseConsistencyNode):
         "identity consistency score between the reference and the output."
     )
     version: str = "0.1.0"
-    input_types: list[str] = ["image", "mosaic"]
-    output_types: list[str] = ["image"]
+    input_types: tuple[str, ...] = ("image", "mosaic")
+    output_types: tuple[str, ...] = ("image",)
 
     def __init__(
         self,
@@ -282,7 +282,7 @@ class IdentityKeeper(BaseConsistencyNode):
 
         torch_dtype, variant = self._resolve_dtype_and_variant()
 
-        from mosaic.nodes._pipeline_utils import _build_error_message
+        from mosaic.nodes._model_loader import _build_error_message
 
         try:
             self._pipeline = self._safe_from_pretrained(
@@ -326,7 +326,7 @@ class IdentityKeeper(BaseConsistencyNode):
 
         torch_dtype, variant = self._resolve_dtype_and_variant()
 
-        from mosaic.nodes._pipeline_utils import _build_error_message
+        from mosaic.nodes._model_loader import _build_error_message
 
         try:
             self._pipeline = self._safe_from_pretrained(
@@ -664,7 +664,7 @@ class IdentityKeeper(BaseConsistencyNode):
                 pass
             self._pipeline = None
             # 触发 GPU 显存回收
-            from mosaic.core._device_utils import empty_device_cache
+            from mosaic.core.device_utils import empty_device_cache
 
             empty_device_cache()
         self._native_instantid = False

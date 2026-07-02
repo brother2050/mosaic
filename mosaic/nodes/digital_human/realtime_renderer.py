@@ -35,7 +35,7 @@ from mosaic.core.node import NodeSpec
 from mosaic.core.registry import registry
 from mosaic.core.types import AudioData, MosaicData, MotionData
 
-from mosaic.nodes._coerce import safe_int
+from mosaic.nodes.coerce import safe_int
 from mosaic.nodes.digital_human._base import BaseDigitalHumanNode
 
 __all__ = ["RealtimeRenderer"]
@@ -140,8 +140,8 @@ class RealtimeRenderer(BaseDigitalHumanNode):
         "and adaptive frame-skipping to maintain target FPS."
     )
     version: str = "0.1.0"
-    input_types: list[str] = ["image", "audio", "text", "motion", "mosaic"]
-    output_types: list[str] = ["video", "image", "mosaic"]
+    input_types: tuple[str, ...] = ("image", "audio", "text", "motion", "mosaic")
+    output_types: tuple[str, ...] = ("video", "image", "mosaic")
 
     # -- 占位渲染调制的魔法数字（提取为类常量便于调参） -------------------
     #: 音频能量到亮度波动系数。
@@ -1261,7 +1261,7 @@ class RealtimeRenderer(BaseDigitalHumanNode):
                 pass
             self._pipeline = None
             # 触发 GPU 显存回收
-            from mosaic.core._device_utils import empty_device_cache
+            from mosaic.core.device_utils import empty_device_cache
 
             empty_device_cache()
         self._tts_node = None

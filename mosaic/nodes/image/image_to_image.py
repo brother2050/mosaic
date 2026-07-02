@@ -58,8 +58,8 @@ class ImageToImage(BaseImageNode):
         "The 'strength' parameter controls the degree of modification."
     )
     version: str = "0.1.0"
-    input_types = ["image", "mosaic"]
-    output_types = ["image"]
+    input_types = ("image", "mosaic")
+    output_types = ("image",)
 
     def __init__(
         self,
@@ -70,7 +70,7 @@ class ImageToImage(BaseImageNode):
 
     def _load_pipeline(self) -> None:
         """加载 diffusers Image2Image Pipeline（自动检测）。"""
-        from mosaic.nodes._pipeline_utils import auto_load_pipeline
+        from mosaic.nodes._model_loader import auto_load_pipeline
 
         torch_dtype = self._resolve_dtype()
 

@@ -56,8 +56,8 @@ class BackgroundRemover(BaseImageNode):
         "image and a foreground mask. Supports both model-based and rembg backends."
     )
     version: str = "0.1.0"
-    input_types = ["image", "mosaic"]
-    output_types = ["image"]
+    input_types = ("image", "mosaic")
+    output_types = ("image",)
 
     # 分割模型期望的输入尺寸（F2：避免魔法数字）
     DEFAULT_INPUT_SIZE: tuple[int, int] = (1024, 1024)

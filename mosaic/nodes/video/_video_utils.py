@@ -24,7 +24,7 @@ import random
 import re
 from typing import Any
 
-from mosaic.nodes._coerce import safe_float, safe_int  # noqa: F401
+from mosaic.nodes.coerce import safe_float, safe_int  # noqa: F401
 
 __all__ = [
     "safe_int",
@@ -44,9 +44,9 @@ _HF_REPO_ID_RE = re.compile(r"^[A-Za-z0-9][\w.-]*/[A-Za-z0-9][\w.-]*$")
 
 
 # ----------------------------------------------------------------------
-# 安全类型转换（A1，re-export 自 mosaic.nodes._coerce）
+# 安全类型转换（A1，re-export 自 mosaic.nodes.coerce）
 # ----------------------------------------------------------------------
-# safe_int / safe_float 由 mosaic.nodes._coerce 统一实现，此处仅 re-export，
+# safe_int / safe_float 由 mosaic.nodes.coerce 统一实现，此处仅 re-export，
 # 以兼容历史导入 ``from mosaic.nodes.video._video_utils import safe_int``。
 # 注意：旧版 safe_int 签名含未使用的 ``default`` 参数（死参数），统一后
 # ``default`` 生效——当 ``value`` 为 None 且提供 ``default`` 时返回 ``default``，

@@ -14,7 +14,7 @@ from typing import Any
 from mosaic.core.registry import registry
 from mosaic.core.types import MosaicData
 
-from mosaic.nodes._coerce import safe_float, safe_int
+from mosaic.nodes.coerce import safe_float, safe_int
 from mosaic.nodes.text._base import BaseTextNode
 
 __all__ = ["TextRewriter"]
@@ -52,8 +52,8 @@ class TextRewriter(BaseTextNode):
         "while preserving the original meaning."
     )
     version: str = "0.1.0"
-    input_types = ["text", "mosaic"]
-    output_types = ["text"]
+    input_types = ("text", "mosaic")
+    output_types = ("text",)
 
     def run(self, input_data: MosaicData) -> MosaicData:
         """执行文本改写。

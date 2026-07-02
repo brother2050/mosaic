@@ -62,8 +62,8 @@ class BaseRagNode(Node):
     domain: str = "rag"
     description: str = "Base RAG node."
     version: str = "0.1.0"
-    input_types: list[str] = ["text", "mosaic"]
-    output_types: list[str] = ["text", "mosaic"]
+    input_types: tuple[str, ...] = ("text", "mosaic")
+    output_types: tuple[str, ...] = ("text", "mosaic")
 
     def __init__(
         self,

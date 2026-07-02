@@ -108,8 +108,8 @@ class ImageToVideo(BaseVideoNode):
         "Motion intensity is controlled by motion_bucket_id; no text prompt is used."
     )
     version: str = "0.1.0"
-    input_types = ["image", "mosaic"]
-    output_types = ["video"]
+    input_types = ("image", "mosaic")
+    output_types = ("video",)
 
     def __init__(
         self,
@@ -128,7 +128,7 @@ class ImageToVideo(BaseVideoNode):
         """加载 StableVideoDiffusion Pipeline。"""
         import torch  # type: ignore
         from diffusers import StableVideoDiffusionPipeline  # type: ignore
-        from mosaic.nodes._pipeline_utils import safe_load_pipeline
+        from mosaic.nodes._model_loader import safe_load_pipeline
 
         device = self._resolve_device()
         torch_dtype = self._resolve_dtype()

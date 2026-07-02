@@ -29,7 +29,7 @@ from typing import Any
 from mosaic.core.registry import registry
 from mosaic.core.types import AudioData, MosaicData
 
-from mosaic.nodes._coerce import safe_float, safe_int
+from mosaic.nodes.coerce import safe_float, safe_int
 from mosaic.nodes.audio._base import BaseAudioNode
 
 __all__ = ["SoundEffectGenerator"]
@@ -65,8 +65,8 @@ class SoundEffectGenerator(BaseAudioNode):
         "Supports negative prompts and inference step control."
     )
     version: str = "0.1.0"
-    input_types = ["text", "mosaic"]
-    output_types = ["audio"]
+    input_types = ("text", "mosaic")
+    output_types = ("audio",)
 
     def __init__(
         self,
@@ -79,7 +79,7 @@ class SoundEffectGenerator(BaseAudioNode):
         """加载 AudioLDM2 模型。"""
         import torch  # type: ignore
         from diffusers import AudioLDMPipeline  # type: ignore
-        from mosaic.nodes._pipeline_utils import safe_load_pipeline
+        from mosaic.nodes._model_loader import safe_load_pipeline
 
         device = self._resolve_device()
         try:
@@ -128,7 +128,7 @@ class SoundEffectGenerator(BaseAudioNode):
                 pass
             self._model = None
             self._pipeline = None
-            from mosaic.core._device_utils import empty_device_cache
+            from mosaic.core.device_utils import empty_device_cache
 
             empty_device_cache()
         if self._processor is not None:

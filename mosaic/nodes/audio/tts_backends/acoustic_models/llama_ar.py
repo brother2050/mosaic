@@ -221,7 +221,7 @@ class LlamaARModelBase(AcousticModel):
         try:
             import torch
 
-            from mosaic.core._device_utils import empty_device_cache
+            from mosaic.core.device_utils import empty_device_cache
 
             empty_device_cache()
         except ImportError:

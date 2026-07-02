@@ -76,8 +76,8 @@ class VectorIndexer(BaseRagNode):
         "(FAISS or ChromaDB) for retrieval."
     )
     version: str = "0.1.0"
-    input_types: list[str] = ["document", "mosaic"]
-    output_types: list[str] = ["mosaic"]
+    input_types: tuple[str, ...] = ("document", "mosaic")
+    output_types: tuple[str, ...] = ("mosaic",)
 
     def __init__(
         self,

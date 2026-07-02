@@ -63,8 +63,8 @@ class ASR(BaseAudioNode):
         "long-audio chunking."
     )
     version: str = "0.1.0"
-    input_types = ["audio", "mosaic"]
-    output_types = ["text"]
+    input_types = ("audio", "mosaic")
+    output_types = ("text",)
 
     def __init__(
         self,

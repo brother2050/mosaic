@@ -61,8 +61,8 @@ class SubtitleAligner(BaseSubtitleNode):
         "timestamps, aeneas, or DTW. Outputs alignment quality score."
     )
     version: str = "0.1.0"
-    input_types = ["subtitle", "audio", "mosaic"]
-    output_types = ["subtitle"]
+    input_types = ("subtitle", "audio", "mosaic")
+    output_types = ("subtitle",)
 
     def __init__(
         self,

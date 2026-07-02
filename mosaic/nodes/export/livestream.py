@@ -113,8 +113,8 @@ class Livestreamer(Node):
         "Supports audio merging and real-time encoding."
     )
     version: str = "0.1.0"
-    input_types: list[str] = ["video", "image", "mosaic"]
-    output_types: list[str] = ["file"]
+    input_types: tuple[str, ...] = ("video", "image", "mosaic")
+    output_types: tuple[str, ...] = ("file",)
 
     def __init__(
         self,

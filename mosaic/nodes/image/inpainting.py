@@ -59,8 +59,8 @@ class Inpainting(BaseImageNode):
         "Only the masked area is regenerated based on the prompt."
     )
     version: str = "0.1.0"
-    input_types = ["image", "mosaic"]
-    output_types = ["image"]
+    input_types = ("image", "mosaic")
+    output_types = ("image",)
 
     def __init__(
         self,
@@ -71,7 +71,7 @@ class Inpainting(BaseImageNode):
 
     def _load_pipeline(self) -> None:
         """加载 diffusers Inpainting Pipeline（自动检测）。"""
-        from mosaic.nodes._pipeline_utils import auto_load_pipeline
+        from mosaic.nodes._model_loader import auto_load_pipeline
 
         torch_dtype = self._resolve_dtype()
 

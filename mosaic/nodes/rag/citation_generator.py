@@ -19,7 +19,7 @@ import re
 import time
 from typing import Any
 
-from mosaic.core._device_utils import infer_device
+from mosaic.core.device_utils import infer_device
 from mosaic.core.events import EventBus, EventType, get_event_bus
 from mosaic.core.node import NodeSpec
 from mosaic.core.registry import registry
@@ -109,8 +109,8 @@ class CitationGenerator(BaseRagNode):
         "context and user query."
     )
     version: str = "0.1.0"
-    input_types: list[str] = ["rag_query_result", "mosaic"]
-    output_types: list[str] = ["text", "mosaic"]
+    input_types: tuple[str, ...] = ("rag_query_result", "mosaic")
+    output_types: tuple[str, ...] = ("text", "mosaic")
 
     def __init__(
         self,

@@ -73,8 +73,8 @@ class DocumentParser(BaseRagNode):
         "text chunks with metadata for RAG pipelines."
     )
     version: str = "0.1.0"
-    input_types: list[str] = ["text", "mosaic"]
-    output_types: list[str] = ["document", "mosaic"]
+    input_types: tuple[str, ...] = ("text", "mosaic")
+    output_types: tuple[str, ...] = ("document", "mosaic")
 
     def __init__(
         self,

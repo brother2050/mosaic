@@ -60,8 +60,8 @@ class SubtitleTranslator(BaseSubtitleNode):
         "Supports batch translation and automatic long-line splitting."
     )
     version: str = "0.1.0"
-    input_types = ["subtitle", "mosaic"]
-    output_types = ["subtitle"]
+    input_types = ("subtitle", "mosaic")
+    output_types = ("subtitle",)
 
     def __init__(
         self,

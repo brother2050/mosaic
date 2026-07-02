@@ -77,7 +77,7 @@ class $node_name(Node):
         """
         # TODO: 实现资源释放逻辑，例如：
         #   del self._model
-        #   from mosaic.core._device_utils import empty_device_cache; empty_device_cache()
+        #   from mosaic.core.device_utils import empty_device_cache; empty_device_cache()
         self._model = None
         self._loaded = False
 

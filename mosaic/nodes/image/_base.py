@@ -25,7 +25,7 @@ import logging
 import random
 from typing import Any
 
-from mosaic.core._device_utils import (
+from mosaic.core.device_utils import (
     apply_optimizations,
     auto_resolve_device_dtype,
     infer_device,
@@ -100,8 +100,8 @@ class BaseImageNode(Node):
     domain: str = "image"
     description: str = "Base image node."
     version: str = "0.1.0"
-    input_types: list[str] = ["image", "mosaic"]
-    output_types: list[str] = ["image"]
+    input_types: tuple[str, ...] = ("image", "mosaic")
+    output_types: tuple[str, ...] = ("image",)
 
     def __init__(
         self,
@@ -244,7 +244,7 @@ class BaseImageNode(Node):
                 pass
             self._pipeline = None
             # 触发 GPU 显存回收
-            from mosaic.core._device_utils import empty_device_cache
+            from mosaic.core.device_utils import empty_device_cache
 
             empty_device_cache()
         self._loaded = False
@@ -273,7 +273,7 @@ class BaseImageNode(Node):
     def _apply_optimizations(self) -> None:
         """对已加载的 Pipeline 应用显存优化配置。
 
-        委托给 :func:`mosaic.core._device_utils.apply_optimizations`，兼容
+        委托给 :func:`mosaic.core.device_utils.apply_optimizations`，兼容
         diffusers 0.40+ 的 VAE slicing API 变更（优先 ``pipe.vae.enable_slicing()``，
         回退 ``pipe.enable_vae_slicing()``）。
         """

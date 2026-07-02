@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import logging
 
-from mosaic.nodes._coerce import safe_float, safe_int  # noqa: F401
+from mosaic.nodes.coerce import safe_float, safe_int  # noqa: F401
 
 __all__ = [
     "MAX_CONTEXT_LENGTH",
@@ -49,9 +49,9 @@ MAX_TEMPERATURE = 2.0
 
 
 # ---------------------------------------------------------------------------
-# 安全类型转换（re-export 自 mosaic.nodes._coerce，保持向后兼容）
+# 安全类型转换（re-export 自 mosaic.nodes.coerce，保持向后兼容）
 # ---------------------------------------------------------------------------
-# safe_int / safe_float 由 mosaic.nodes._coerce 统一实现，此处仅 re-export，
+# safe_int / safe_float 由 mosaic.nodes.coerce 统一实现，此处仅 re-export，
 # 以兼容历史导入 ``from mosaic.nodes.text._text_utils import safe_int``。
 
 

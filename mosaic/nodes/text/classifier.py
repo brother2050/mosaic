@@ -83,8 +83,8 @@ class TextClassifier(BaseTextNode):
         "models, LLM-based selection (<=10 labels), and zero-shot (>10 labels)."
     )
     version: str = "0.1.0"
-    input_types = ["text", "mosaic"]
-    output_types = ["text"]
+    input_types = ("text", "mosaic")
+    output_types = ("text",)
 
     def __init__(
         self,

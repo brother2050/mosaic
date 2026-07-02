@@ -81,8 +81,8 @@ class TextSummarizer(BaseTextNode):
         "Supports both specialized summarization models and generic LLMs."
     )
     version: str = "0.1.0"
-    input_types = ["text", "mosaic"]
-    output_types = ["text"]
+    input_types = ("text", "mosaic")
+    output_types = ("text",)
 
     def __init__(self, model: str = "Qwen/Qwen2.5-7B-Instruct", **kwargs: Any) -> None:
         super().__init__(model=model, **kwargs)

@@ -20,7 +20,7 @@ from typing import Any
 from mosaic.core.registry import registry
 from mosaic.core.types import AudioData, MosaicData
 
-from mosaic.nodes._coerce import safe_float
+from mosaic.nodes.coerce import safe_float
 from mosaic.nodes.audio._base import BaseAudioNode
 
 __all__ = ["MusicGenerator"]
@@ -56,8 +56,8 @@ class MusicGenerator(BaseAudioNode):
         "Supports duration control and guidance scale."
     )
     version: str = "0.1.0"
-    input_types = ["text", "mosaic"]
-    output_types = ["audio"]
+    input_types = ("text", "mosaic")
+    output_types = ("audio",)
 
     def __init__(
         self,
@@ -73,7 +73,7 @@ class MusicGenerator(BaseAudioNode):
             AutoProcessor,
             MusicgenForConditionalGeneration,
         )
-        from mosaic.nodes._pipeline_utils import (
+        from mosaic.nodes._model_loader import (
             safe_load_processor,
             safe_load_model,
         )
@@ -121,7 +121,7 @@ class MusicGenerator(BaseAudioNode):
             except Exception:
                 pass
             self._model = None
-            from mosaic.core._device_utils import empty_device_cache
+            from mosaic.core.device_utils import empty_device_cache
 
             empty_device_cache()
         if self._processor is not None:

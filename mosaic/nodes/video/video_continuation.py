@@ -131,8 +131,8 @@ class VideoContinuation(BaseVideoNode):
         "transition; the original video's fps is preserved."
     )
     version: str = "0.1.0"
-    input_types = ["video", "mosaic"]
-    output_types = ["video"]
+    input_types = ("video", "mosaic")
+    output_types = ("video",)
 
     def __init__(
         self,
@@ -151,7 +151,7 @@ class VideoContinuation(BaseVideoNode):
         """加载 CogVideoXPipeline（与 TextToVideo 相同）。"""
         import torch  # type: ignore
         from diffusers import CogVideoXPipeline  # type: ignore
-        from mosaic.nodes._pipeline_utils import safe_load_pipeline
+        from mosaic.nodes._model_loader import safe_load_pipeline
 
         device = self._resolve_device()
         torch_dtype = self._resolve_dtype()

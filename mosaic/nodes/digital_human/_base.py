@@ -22,7 +22,7 @@ import abc
 import logging
 from typing import Any
 
-from mosaic.core._device_utils import (
+from mosaic.core.device_utils import (
     apply_optimizations,
     auto_resolve_device_dtype,
     infer_device,
@@ -80,8 +80,8 @@ class BaseDigitalHumanNode(Node):
     domain: str = "digital_human"
     description: str = "Base digital human node."
     version: str = "0.1.0"
-    input_types: list[str] = ["image", "audio", "video", "text", "mosaic"]
-    output_types: list[str] = ["video", "image", "mosaic"]
+    input_types: tuple[str, ...] = ("image", "audio", "video", "text", "mosaic")
+    output_types: tuple[str, ...] = ("video", "image", "mosaic")
 
     def __init__(
         self,

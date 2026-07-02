@@ -22,7 +22,7 @@ import logging
 import os
 from typing import Any
 
-from mosaic.core._device_utils import infer_device, resolve_device
+from mosaic.core.device_utils import infer_device, resolve_device
 from mosaic.core.events import EventBus, EventType, get_event_bus
 from mosaic.core.node import Node, NodeSpec
 from mosaic.core.scheduler import Scheduler, get_scheduler
@@ -93,8 +93,8 @@ class BaseAudioNode(Node):
     domain: str = "audio"
     description: str = "Base audio node."
     version: str = "0.1.0"
-    input_types: list[str] = ["text", "audio", "mosaic"]
-    output_types: list[str] = ["audio"]
+    input_types: tuple[str, ...] = ("text", "audio", "mosaic")
+    output_types: tuple[str, ...] = ("audio",)
 
     def __init__(
         self,
@@ -165,7 +165,7 @@ class BaseAudioNode(Node):
             except Exception:
                 pass
             self._model = None
-            from mosaic.core._device_utils import empty_device_cache
+            from mosaic.core.device_utils import empty_device_cache
 
             empty_device_cache()
         if self._processor is not None:

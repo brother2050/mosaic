@@ -128,8 +128,8 @@ class FrameInterpolator(BaseVideoNode):
         "to increase fps. Supports RIFE (ONNX), FILM, and linear blending."
     )
     version: str = "0.1.0"
-    input_types = ["video", "mosaic"]
-    output_types = ["video"]
+    input_types = ("video", "mosaic")
+    output_types = ("video",)
 
     def __init__(
         self,

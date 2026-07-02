@@ -57,8 +57,8 @@ class Chat(BaseTextNode):
         "Supports an optional system prompt and returns updated messages."
     )
     version: str = "0.1.0"
-    input_types = ["text", "mosaic"]
-    output_types = ["text"]
+    input_types = ("text", "mosaic")
+    output_types = ("text",)
 
     def run(self, input_data: MosaicData) -> MosaicData:
         """执行多轮对话生成。

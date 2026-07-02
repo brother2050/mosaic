@@ -34,7 +34,7 @@ from mosaic.core.node import NodeSpec
 from mosaic.core.registry import registry
 from mosaic.core.types import AudioData, MotionData, MosaicData
 
-from mosaic.nodes._coerce import safe_float, safe_int
+from mosaic.nodes.coerce import safe_float, safe_int
 from mosaic.nodes.digital_human._base import BaseDigitalHumanNode
 
 __all__ = ["MotionGenerator"]
@@ -523,8 +523,8 @@ class MotionGenerator(BaseDigitalHumanNode):
         "smoothing."
     )
     version: str = "0.1.0"
-    input_types: list[str] = ["text", "audio", "mosaic"]
-    output_types: list[str] = ["motion", "mosaic"]
+    input_types: tuple[str, ...] = ("text", "audio", "mosaic")
+    output_types: tuple[str, ...] = ("motion", "mosaic")
 
     def __init__(
         self,
@@ -1275,7 +1275,7 @@ class MotionGenerator(BaseDigitalHumanNode):
                 pass
             self._pipeline = None
             # 触发 GPU 显存回收
-            from mosaic.core._device_utils import empty_device_cache
+            from mosaic.core.device_utils import empty_device_cache
 
             empty_device_cache()
         self._tokenizer = None

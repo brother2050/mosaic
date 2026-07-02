@@ -67,8 +67,8 @@ class TextToImage(BaseImageNode):
         "Supports negative prompts, resolution, steps, guidance scale, and seed."
     )
     version: str = "0.1.0"
-    input_types = ["text", "mosaic"]
-    output_types = ["image"]
+    input_types = ("text", "mosaic")
+    output_types = ("image",)
 
     # 默认输出尺寸（F2：避免魔法数字）
     DEFAULT_WIDTH: int = 1024
@@ -91,7 +91,7 @@ class TextToImage(BaseImageNode):
         2. 否则用 ``AutoPipelineForText2Image`` 自动匹配
         3. 若 AutoPipeline 不认识该模型，回退到 ``DiffusionPipeline`` 终极检测
         """
-        from mosaic.nodes._pipeline_utils import auto_load_pipeline
+        from mosaic.nodes._model_loader import auto_load_pipeline
 
         torch_dtype = self._resolve_dtype()
 

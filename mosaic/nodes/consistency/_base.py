@@ -21,7 +21,7 @@ import logging
 import random
 from typing import Any
 
-from mosaic.core._device_utils import (
+from mosaic.core.device_utils import (
     apply_optimizations,
     auto_resolve_device_dtype,
     infer_device,
@@ -79,8 +79,8 @@ class BaseConsistencyNode(Node):
     domain: str = "consistency"
     description: str = "Base consistency node."
     version: str = "0.1.0"
-    input_types: list[str] = ["image", "mosaic"]
-    output_types: list[str] = ["image"]
+    input_types: tuple[str, ...] = ("image", "mosaic")
+    output_types: tuple[str, ...] = ("image",)
 
     #: 图像尺寸上限（单边像素），超过则抛出 ValueError 以避免内存溢出。
     MAX_DIMENSION: int = 4096

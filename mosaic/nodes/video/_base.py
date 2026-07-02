@@ -27,7 +27,7 @@ import logging
 import os
 from typing import Any
 
-from mosaic.core._device_utils import (
+from mosaic.core.device_utils import (
     auto_resolve_device_dtype,
     infer_device,
     resolve_device,
@@ -110,8 +110,8 @@ class BaseVideoNode(Node):
     domain: str = "video"
     description: str = "Base video node."
     version: str = "0.1.0"
-    input_types: list[str] = ["text", "image", "video", "mosaic"]
-    output_types: list[str] = ["video"]
+    input_types: tuple[str, ...] = ("text", "image", "video", "mosaic")
+    output_types: tuple[str, ...] = ("video",)
 
     def __init__(
         self,
@@ -192,7 +192,7 @@ class BaseVideoNode(Node):
             except Exception:
                 pass
             self._pipeline = None
-            from mosaic.core._device_utils import empty_device_cache
+            from mosaic.core.device_utils import empty_device_cache
 
             empty_device_cache()
         self._loaded = False

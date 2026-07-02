@@ -54,8 +54,8 @@ class TextGenerator(BaseTextNode):
         "Supports temperature, top-p, and sampling controls."
     )
     version: str = "0.1.0"
-    input_types = ["text", "mosaic"]
-    output_types = ["text"]
+    input_types = ("text", "mosaic")
+    output_types = ("text",)
 
     def run(self, input_data: MosaicData) -> MosaicData:
         """执行文本生成。

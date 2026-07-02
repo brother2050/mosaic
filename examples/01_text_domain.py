@@ -7,8 +7,9 @@ examples/01_text_domain.py
 """
 from __future__ import annotations
 
+import os
 import sys
-sys.path.insert(0, "/workspace/mosaic")
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from mosaic.core import MosaicData
 from mosaic.nodes.text import (

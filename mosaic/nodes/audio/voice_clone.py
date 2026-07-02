@@ -27,7 +27,7 @@ from typing import Any
 from mosaic.core.registry import registry
 from mosaic.core.types import AudioData, MosaicData
 
-from mosaic.nodes._coerce import safe_float
+from mosaic.nodes.coerce import safe_float
 from mosaic.nodes.audio._base import BaseAudioNode
 from mosaic.nodes.audio._ref_audio_utils import load_reference_audio
 from mosaic.nodes.audio.tts import (
@@ -106,8 +106,8 @@ class VoiceClone(BaseAudioNode):
         "supports multi-language and speed transfer from reference audio."
     )
     version: str = "0.2.0"
-    input_types = ["audio", "text", "mosaic"]
-    output_types = ["audio"]
+    input_types = ("audio", "text", "mosaic")
+    output_types = ("audio",)
 
     def __init__(
         self,

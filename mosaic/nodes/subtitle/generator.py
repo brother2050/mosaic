@@ -24,7 +24,7 @@ from typing import Any
 from mosaic.core.registry import registry
 from mosaic.core.types import AudioData, MosaicData, SubtitleData
 
-from mosaic.nodes._coerce import safe_int
+from mosaic.nodes.coerce import safe_int
 from mosaic.nodes.audio._base import BaseAudioNode
 from mosaic.nodes.subtitle._base import BaseSubtitleNode
 
@@ -62,8 +62,8 @@ class SubtitleGenerator(BaseSubtitleNode):
         "Supports SRT/VTT output, word-level timestamps, and long-sentence splitting."
     )
     version: str = "0.1.0"
-    input_types = ["audio", "mosaic"]
-    output_types = ["subtitle"]
+    input_types = ("audio", "mosaic")
+    output_types = ("subtitle",)
 
     def __init__(
         self,

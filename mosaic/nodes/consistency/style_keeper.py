@@ -34,7 +34,7 @@ from mosaic.core.node import NodeSpec
 from mosaic.core.registry import registry
 from mosaic.core.types import MosaicData
 
-from mosaic.nodes._coerce import safe_float, safe_int
+from mosaic.nodes.coerce import safe_float, safe_int
 from mosaic.nodes.consistency._base import BaseConsistencyNode
 
 __all__ = ["StyleKeeper"]
@@ -242,8 +242,8 @@ class StyleKeeper(BaseConsistencyNode):
         "style_strength controls the degree of style transfer."
     )
     version: str = "0.1.0"
-    input_types: list[str] = ["image", "mosaic"]
-    output_types: list[str] = ["image"]
+    input_types: tuple[str, ...] = ("image", "mosaic")
+    output_types: tuple[str, ...] = ("image",)
 
     def __init__(
         self,
@@ -347,7 +347,7 @@ class StyleKeeper(BaseConsistencyNode):
 
         torch_dtype, variant = self._resolve_dtype_and_variant()
 
-        from mosaic.nodes._pipeline_utils import _build_error_message
+        from mosaic.nodes._model_loader import _build_error_message
 
         try:
             self._pipeline = StableDiffusionXLPipeline.from_pretrained(
@@ -390,7 +390,7 @@ class StyleKeeper(BaseConsistencyNode):
 
         torch_dtype, variant = self._resolve_dtype_and_variant()
 
-        from mosaic.nodes._pipeline_utils import _build_error_message
+        from mosaic.nodes._model_loader import _build_error_message
 
         try:
             self._pipeline = StableDiffusionXLPipeline.from_pretrained(
@@ -419,7 +419,7 @@ class StyleKeeper(BaseConsistencyNode):
 
         torch_dtype, variant = self._resolve_dtype_and_variant()
 
-        from mosaic.nodes._pipeline_utils import _build_error_message
+        from mosaic.nodes._model_loader import _build_error_message
 
         try:
             self._pipeline = StableDiffusionPipeline.from_pretrained(
@@ -916,7 +916,7 @@ class StyleKeeper(BaseConsistencyNode):
                 pass
             self._pipeline = None
             # 触发 GPU 显存回收
-            from mosaic.core._device_utils import empty_device_cache
+            from mosaic.core.device_utils import empty_device_cache
 
             empty_device_cache()
         self._orig_attn_procs = None

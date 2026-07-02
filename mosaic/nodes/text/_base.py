@@ -25,7 +25,7 @@ import logging
 import time
 from typing import Any
 
-from mosaic.core._device_utils import infer_device
+from mosaic.core.device_utils import infer_device
 from mosaic.core.events import EventBus, EventType, get_event_bus
 from mosaic.core.node import Node, NodeSpec
 from mosaic.core.scheduler import Scheduler, get_scheduler
@@ -72,8 +72,8 @@ class BaseTextNode(Node):
     domain: str = "text"
     description: str = "Base text node."
     version: str = "0.1.0"
-    input_types: list[str] = ["text"]
-    output_types: list[str] = ["text"]
+    input_types: tuple[str, ...] = ("text",)
+    output_types: tuple[str, ...] = ("text",)
 
     def __init__(
         self,
@@ -123,7 +123,7 @@ class BaseTextNode(Node):
         from transformers import AutoModelForCausalLM, AutoTokenizer  # type: ignore
         import torch  # type: ignore
 
-        from mosaic.nodes._pipeline_utils import _resolve_cache_dir
+        from mosaic.nodes._model_loader import _resolve_cache_dir
 
         # 显式传递 cache_dir，确保 HF_HOME 对所有文本节点生效
         cache_dir = _resolve_cache_dir()
@@ -199,7 +199,7 @@ class BaseTextNode(Node):
             import gc
 
             gc.collect()
-            from mosaic.core._device_utils import empty_device_cache
+            from mosaic.core.device_utils import empty_device_cache
 
             empty_device_cache()
         if self._tokenizer is not None:

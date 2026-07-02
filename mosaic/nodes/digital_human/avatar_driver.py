@@ -57,7 +57,7 @@ from mosaic.core.node import NodeSpec
 from mosaic.core.registry import registry
 from mosaic.core.types import MosaicData, VideoData
 
-from mosaic.nodes._coerce import safe_float, safe_int
+from mosaic.nodes.coerce import safe_float, safe_int
 from mosaic.nodes.digital_human._base import BaseDigitalHumanNode
 
 __all__ = ["AvatarDriver"]
@@ -122,8 +122,8 @@ class AvatarDriver(BaseDigitalHumanNode):
         "SadTalker and MuseTalk backends; output background matches the source."
     )
     version: str = "0.1.0"
-    input_types: list[str] = ["image", "video", "audio", "mosaic"]
-    output_types: list[str] = ["video", "image", "mosaic"]
+    input_types: tuple[str, ...] = ("image", "video", "audio", "mosaic")
+    output_types: tuple[str, ...] = ("video", "image", "mosaic")
 
     # -- 表情参数推导的魔法数字（提取为类常量便于调参） -------------------
     #: 音频能量到嘴部张开度的缩放系数。
@@ -428,7 +428,7 @@ class AvatarDriver(BaseDigitalHumanNode):
         self._onnx_session = None
         self._use_onnx = False
         self._loaded = False
-        from mosaic.core._device_utils import empty_device_cache
+        from mosaic.core.device_utils import empty_device_cache
 
         empty_device_cache()
         self._logger.info("Avatar driver unloaded (method=%s).", self._method)

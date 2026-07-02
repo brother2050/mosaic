@@ -160,7 +160,7 @@ class ModelCache:
             if count:
                 logger.info("Model cache cleared (%d entries)", count)
         # 在锁外触发 GPU 显存回收（CUDA/MPS）
-        from mosaic.core._device_utils import empty_device_cache
+        from mosaic.core.device_utils import empty_device_cache
 
         empty_device_cache()
 

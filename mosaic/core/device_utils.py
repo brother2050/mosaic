@@ -1,4 +1,4 @@
-# mosaic/core/_device_utils.py
+# mosaic/core/device_utils.py
 """设备与 dtype 解析工具（跨域共享）。
 
 本模块集中实现了原本在各个域基类（``image``、``video``、``consistency``、
@@ -30,7 +30,7 @@ __all__ = [
     "empty_device_cache",
 ]
 
-logger = logging.getLogger("mosaic.core._device_utils")
+logger = logging.getLogger("mosaic.core.device_utils")
 
 
 def resolve_dtype(dtype: str) -> Any:
@@ -200,7 +200,7 @@ def auto_resolve_device_dtype(
             if logger is not None:
                 logger.warning(msg)
             else:
-                logging.getLogger("mosaic.core._device_utils").warning(msg)
+                logging.getLogger("mosaic.core.device_utils").warning(msg)
         else:
             # MPS + SDXL/其它模型：保持 float16，但提示部分算子兼容性问题
             msg = (
@@ -210,7 +210,7 @@ def auto_resolve_device_dtype(
             if logger is not None:
                 logger.info(msg)
             else:
-                logging.getLogger("mosaic.core._device_utils").info(msg)
+                logging.getLogger("mosaic.core.device_utils").info(msg)
 
     # SD 1.5 系列：text_encoder/UNet 对 float16 敏感，整体降为 float32
     if resolved_dtype in ("float16", "fp16") and _is_sd15_model(model_name):
@@ -222,7 +222,7 @@ def auto_resolve_device_dtype(
         if logger is not None:
             logger.warning(msg)
         else:
-            logging.getLogger("mosaic.core._device_utils").warning(msg)
+            logging.getLogger("mosaic.core.device_utils").warning(msg)
 
     return resolved_device, resolved_dtype
 

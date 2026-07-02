@@ -46,8 +46,8 @@ class BaseSubtitleNode(Node):
     domain: str = "subtitle"
     description: str = "Base subtitle node."
     version: str = "0.1.0"
-    input_types: list[str] = ["audio", "subtitle", "text", "mosaic"]
-    output_types: list[str] = ["subtitle"]
+    input_types: tuple[str, ...] = ("audio", "subtitle", "text", "mosaic")
+    output_types: tuple[str, ...] = ("subtitle",)
 
     def __init__(
         self,

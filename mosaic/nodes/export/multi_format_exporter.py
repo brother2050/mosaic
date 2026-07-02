@@ -108,10 +108,10 @@ class MultiFormatExporter(Node):
         "Supports batch conversion with graceful error handling."
     )
     version: str = "0.1.0"
-    input_types: list[str] = [
+    input_types: tuple[str, ...] = (
         "video", "image", "audio", "subtitle", "mosaic",
-    ]
-    output_types: list[str] = ["file"]
+    )
+    output_types: tuple[str, ...] = ("file",)
 
     def __init__(
         self,

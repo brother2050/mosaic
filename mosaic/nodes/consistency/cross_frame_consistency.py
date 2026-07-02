@@ -53,7 +53,7 @@ from mosaic.core.node import NodeSpec
 from mosaic.core.registry import registry
 from mosaic.core.types import MosaicData
 
-from mosaic.nodes._coerce import safe_float, safe_int
+from mosaic.nodes.coerce import safe_float, safe_int
 from mosaic.nodes.consistency._base import BaseConsistencyNode
 
 __all__ = ["CrossFrameConsistency"]
@@ -124,8 +124,8 @@ class CrossFrameConsistency(BaseConsistencyNode):
         "methods."
     )
     version: str = "0.1.0"
-    input_types: list[str] = ["image", "text", "mosaic"]
-    output_types: list[str] = ["image"]
+    input_types: tuple[str, ...] = ("image", "text", "mosaic")
+    output_types: tuple[str, ...] = ("image",)
 
     #: 支持的一致性方法集合。
     _SUPPORTED_METHODS: tuple[str, ...] = (
@@ -237,7 +237,7 @@ class CrossFrameConsistency(BaseConsistencyNode):
         torch_dtype = self._resolve_dtype()
         variant = "fp16" if self._dtype_str in ("float16", "fp16") else None
 
-        from mosaic.nodes._pipeline_utils import _build_error_message
+        from mosaic.nodes._model_loader import _build_error_message
 
         try:
             self._pipeline = StableDiffusionXLPipeline.from_pretrained(
@@ -270,7 +270,7 @@ class CrossFrameConsistency(BaseConsistencyNode):
         torch_dtype = self._resolve_dtype()
         variant = "fp16" if self._dtype_str in ("float16", "fp16") else None
 
-        from mosaic.nodes._pipeline_utils import _build_error_message
+        from mosaic.nodes._model_loader import _build_error_message
 
         try:
             self._pipeline = StableDiffusionPipeline.from_pretrained(
@@ -303,7 +303,7 @@ class CrossFrameConsistency(BaseConsistencyNode):
         torch_dtype = self._resolve_dtype()
         variant = "fp16" if self._dtype_str in ("float16", "fp16") else None
 
-        from mosaic.nodes._pipeline_utils import _build_error_message
+        from mosaic.nodes._model_loader import _build_error_message
 
         try:
             self._pipeline = StableDiffusionXLPipeline.from_pretrained(
@@ -362,7 +362,7 @@ class CrossFrameConsistency(BaseConsistencyNode):
                 pass
             self._pipeline = None
             # 触发 GPU 显存回收
-            from mosaic.core._device_utils import empty_device_cache
+            from mosaic.core.device_utils import empty_device_cache
 
             empty_device_cache()
         self._loaded = False

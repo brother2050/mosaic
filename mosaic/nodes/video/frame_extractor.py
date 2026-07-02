@@ -46,7 +46,7 @@ from typing import Any
 from mosaic.core.registry import registry
 from mosaic.core.types import MosaicData, VideoData
 
-from mosaic.nodes._coerce import safe_int
+from mosaic.nodes.coerce import safe_int
 from mosaic.nodes.video._base import BaseVideoNode
 
 __all__ = ["FrameExtractor"]
@@ -114,8 +114,8 @@ class FrameExtractor(BaseVideoNode):
         "PIL / numpy / file-path output formats."
     )
     version: str = "0.1.0"
-    input_types = ["video", "mosaic"]
-    output_types = ["image"]
+    input_types = ("video", "mosaic")
+    output_types = ("image",)
 
     def __init__(
         self,

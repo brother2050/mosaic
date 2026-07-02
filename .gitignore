@@ -11,6 +11,8 @@ build/
 
 # 测试
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
 .tox/
 .coverage
 htmlcov/

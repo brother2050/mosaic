@@ -390,7 +390,7 @@ class Pipeline(Node):
         :meth:`describe` 报告的类型契约一致。
         """
         self._build_dag_if_needed()
-        output_types: list[str] = []
+        output_types: tuple[str, ...] = ()
         for _label, tid in self._terminals:
             output_types.extend(self._dag[tid].node.output_types)
         return list(dict.fromkeys(output_types))
