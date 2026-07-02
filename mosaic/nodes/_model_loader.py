@@ -22,6 +22,17 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 
+def _resolve_hf_token() -> str | None:
+    """获取 HuggingFace 访问令牌（集中式注入点）。
+
+    从 MosaicEnv 统一读取，供 safe_load_pipeline / safe_load_model /
+    safe_load_processor / auto_load_pipeline 的所有 from_pretrained 调用使用。
+    """
+    from mosaic.core.env import MosaicEnv
+
+    return MosaicEnv.get_hf_token()
+
+
 def _resolve_cache_dir() -> str | None:
     """解析 HuggingFace 缓存目录。
 
@@ -287,6 +298,11 @@ def safe_load_pipeline(
     cache_dir = _resolve_cache_dir()
     if cache_dir is not None and "cache_dir" not in kwargs:
         kwargs["cache_dir"] = cache_dir
+
+    # 集中式注入 HuggingFace 访问令牌（variant 路径与无 variant 回退路径共用）
+    hf_token = _resolve_hf_token()
+    if hf_token and "token" not in kwargs:
+        kwargs["token"] = hf_token
 
     # 解析 torch_dtype
     torch_dtype = kwargs.pop("torch_dtype", None)
@@ -561,6 +577,11 @@ def safe_load_processor(
         if cache_dir is not None and "cache_dir" not in kwargs:
             kwargs["cache_dir"] = cache_dir
 
+        # 集中式注入 HuggingFace 访问令牌
+        hf_token = _resolve_hf_token()
+        if hf_token and "token" not in kwargs:
+            kwargs["token"] = hf_token
+
         # 查询缓存：processor/tokenizer 通常无 dtype 概念，统一以 "default"
         # 作为 dtype 维度的键；device 纳入键以区分不同设备实例。
         cache_device = kwargs.get("device")
@@ -627,6 +648,11 @@ def safe_load_model(
     cache_dir = _resolve_cache_dir()
     if cache_dir is not None and "cache_dir" not in kwargs:
         kwargs["cache_dir"] = cache_dir
+
+    # 集中式注入 HuggingFace 访问令牌（dtype= / torch_dtype= / 无 dtype 三条路径共用）
+    hf_token = _resolve_hf_token()
+    if hf_token and "token" not in kwargs:
+        kwargs["token"] = hf_token
 
     # 查询缓存：将 dtype 转为字符串作为缓存键（与 pipeline 的 dtype_str 维度
     # 对齐），确保同 dtype 实例命中；device 纳入键以区分不同设备实例。

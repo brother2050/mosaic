@@ -276,6 +276,48 @@ export MOSAIC_HF_MIRROR=https://hf-mirror.com
 
 ---
 
+## HuggingFace 认证
+
+部分模型（如 Stable Video Diffusion、Llama 系列）是 **gated 模型**，
+需要先在 HuggingFace 上接受协议并配置认证令牌才能下载。
+
+### 需要认证的模型
+
+| 模型 | 节点 | 说明 |
+|------|------|------|
+| `stabilityai/stable-video-diffusion-img2vid-xt` | ImageToVideo | SVD 默认模型，需接受协议 |
+| `meta-llama/Llama-3.1-8B-Instruct` | TextGenerator | Llama 系列，需 Meta 授权 |
+
+### 配置认证
+
+**方式 1：huggingface-cli login（推荐）**
+
+```bash
+huggingface-cli login
+# 输入你的 HF Access Token（从 https://huggingface.co/settings/tokens 获取）
+```
+
+**方式 2：环境变量**
+
+```bash
+export HF_TOKEN=hf_xxxxxxxxxxxx
+```
+
+**方式 3：mosaic login**
+
+```bash
+mosaic login --token hf_xxxxxxxxxxxx
+```
+
+### 验证认证状态
+
+```bash
+mosaic doctor
+# 查看 [HuggingFace] 行的认证状态
+```
+
+---
+
 ## 第一个示例：文字生成图片
 
 ```bash

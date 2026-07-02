@@ -298,6 +298,25 @@ def _check_model_cache() -> CheckResult:
     )
 
 
+def _check_hf_auth() -> CheckResult:
+    """检查 HuggingFace 认证状态。"""
+    from mosaic.core.env import MosaicEnv
+
+    token = MosaicEnv.get_hf_token()
+    if token:
+        # 验证 token 有效性（可选，避免网络请求）
+        return CheckResult(
+            "ok",
+            "HuggingFace 认证已配置（HF_TOKEN 或 huggingface-cli login）",
+        )
+    return CheckResult(
+        "warn",
+        "未配置 HuggingFace 认证。下载 gated 模型（如 SVD、Llama）"
+        "需要认证。设置方法：huggingface-cli login 或 "
+        "export HF_TOKEN=your_token",
+    )
+
+
 # ---------------------------------------------------------------------------
 # 主入口
 # ---------------------------------------------------------------------------
@@ -344,6 +363,9 @@ def run_doctor() -> int:
 
     # 模型缓存目录
     checks.append(("模型缓存", _check_model_cache()))
+
+    # HuggingFace 认证
+    checks.append(("HuggingFace", _check_hf_auth()))
 
     # 输出结果（按分组打印）
     warn_count = 0

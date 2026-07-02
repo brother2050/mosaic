@@ -196,9 +196,13 @@ class HFModelManager:
         # 策略 1: huggingface_hub
         try:
             from huggingface_hub import snapshot_download  # type: ignore
+            from mosaic.core.env import MosaicEnv
 
             mirror = HFModelManager.get_mirror()
             os.environ.setdefault("HF_ENDPOINT", mirror)
+
+            # 集中式读取 HuggingFace 访问令牌
+            hf_token = MosaicEnv.get_hf_token()
 
             logger.info(
                 "Using huggingface_hub to download %r to %s ...",
@@ -208,6 +212,7 @@ class HFModelManager:
             result = snapshot_download(
                 repo_id=repo_id,
                 local_dir=local_dir,
+                token=hf_token,
                 # 不设置 allow_patterns，下载全部文件
             )
             if isinstance(result, str):
@@ -228,7 +233,16 @@ class HFModelManager:
         mirror = HFModelManager.get_mirror()
         clone_url = f"{mirror}/{repo_id}"
 
-        logger.info("Cloning %s to %s ...", clone_url, local_dir)
+        # git clone 不直接支持 token 参数，通过 URL 嵌入进行认证
+        from mosaic.core.env import MosaicEnv
+
+        hf_token = MosaicEnv.get_hf_token()
+        if hf_token and "://" in mirror:
+            scheme, rest = mirror.split("://", 1)
+            clone_url = f"{scheme}://user:{hf_token}@{rest}/{repo_id}"
+
+        # 日志输出不含 token 的脱敏 URL，避免令牌泄露
+        logger.info("Cloning %s to %s ...", f"{mirror}/{repo_id}", local_dir)
 
         env = os.environ.copy()
         # 跳过 LFS 大文件下载（用户可后续按需拉取）

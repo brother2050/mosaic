@@ -12,6 +12,7 @@
 - ``run``          从 YAML/JSON 文件运行管道
 - ``version``      显示版本号
 - ``doctor``       环境诊断
+- ``login``        配置 HuggingFace 认证
 
 使用示例
 --------
@@ -25,6 +26,7 @@
     mosaic run pipeline.yaml
     mosaic create-node --domain text --name sentiment --output ./my_nodes/
     mosaic doctor
+    mosaic login --token hf_xxxxxxxxxxxx
 """
 
 from __future__ import annotations
@@ -317,6 +319,15 @@ def _build_parser() -> argparse.ArgumentParser:
 
     # doctor 命令
     subparsers.add_parser("doctor", help="环境诊断")
+
+    # login 命令
+    p_login = subparsers.add_parser(
+        "login", help="配置 HuggingFace 认证"
+    )
+    p_login.add_argument(
+        "--token", "-t",
+        help="HuggingFace Access Token",
+    )
 
     return parser
 
@@ -670,6 +681,41 @@ def _cmd_doctor(args: argparse.Namespace) -> int:
 
 
 # ---------------------------------------------------------------------------
+# 子命令实现：login
+# ---------------------------------------------------------------------------
+def _cmd_login(args: argparse.Namespace) -> int:
+    """配置 HuggingFace 认证。"""
+    token = getattr(args, "token", None)
+
+    if token:
+        # 直接通过 --token 参数设置
+        import os
+
+        # 写入 ~/.cache/huggingface/token 文件
+        from pathlib import Path
+
+        token_path = Path.home() / ".cache" / "huggingface" / "token"
+        token_path.parent.mkdir(parents=True, exist_ok=True)
+        token_path.write_text(token.strip())
+        token_path.chmod(0o600)
+        print(f"HuggingFace token 已保存到 {token_path}")
+        print("配置完成。现在可以下载 gated 模型。")
+        return 0
+
+    # 无 --token 参数，引导用户使用 huggingface-cli login
+    print("配置 HuggingFace 认证有两种方式：\n")
+    print("方式 1：使用 huggingface-cli login（推荐）")
+    print("  huggingface-cli login")
+    print("  # 然后输入你的 HF Access Token\n")
+    print("方式 2：使用环境变量")
+    print("  export HF_TOKEN=your_token\n")
+    print("方式 3：使用 mosaic login --token")
+    print("  mosaic login --token hf_xxxxxxxxxxxx\n")
+    print("获取 Token：访问 https://huggingface.co/settings/tokens")
+    return 0
+
+
+# ---------------------------------------------------------------------------
 # 主入口
 # ---------------------------------------------------------------------------
 def main(argv: Sequence[str] | None = None) -> int:
@@ -695,6 +741,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "run": _cmd_run,
         "version": _cmd_version,
         "doctor": _cmd_doctor,
+        "login": _cmd_login,
     }
 
     handler = handlers.get(args.command)

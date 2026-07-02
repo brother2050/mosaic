@@ -142,6 +142,42 @@ class MosaicEnv:
             or (default.rstrip("/") if default else None)
         )
 
+    @staticmethod
+    def get_hf_token() -> str | None:
+        """返回 HuggingFace 认证令牌。
+
+        优先级：
+
+        1. ``HF_TOKEN`` 环境变量
+        2. ``HUGGING_FACE_HUB_TOKEN`` 环境变量（旧名，向后兼容）
+        3. ``huggingface-cli login`` 保存的 token 文件
+           （``{HF_HOME}/token``，未设置 ``HF_HOME`` 时为
+           ``~/.cache/huggingface/token``）
+
+        与 ``mosaic login --token`` 写入的路径一致（默认缓存目录下），
+        因此 ``mosaic login`` 配置后 ``mosaic doctor`` 可正确识别。
+
+        未找到时返回 ``None``。
+        """
+        # 1. 环境变量（优先）
+        for var in ("HF_TOKEN", "HUGGING_FACE_HUB_TOKEN"):
+            raw = os.environ.get(var)
+            if raw and raw.strip():
+                return raw.strip()
+
+        # 2. huggingface-cli login 保存的 token 文件（跟随 HF_HOME）
+        token_path = os.path.join(MosaicEnv.get_hf_home(), "token")
+        if os.path.isfile(token_path):
+            try:
+                with open(token_path, "r", encoding="utf-8") as f:
+                    token = f.read().strip()
+            except OSError:
+                return None
+            if token:
+                return token
+
+        return None
+
     # ------------------------------------------------------------------
     # 日志相关
     # ------------------------------------------------------------------
