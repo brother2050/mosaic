@@ -161,6 +161,9 @@ class ImageToImage(BaseImageNode):
 
             # 将输入图片尺寸对齐到 8 的倍数
             image = self._resize_to_multiple_of_8(image)
+            # pipeline 期望 RGB（3通道），RGBA（4通道）会导致通道数不匹配
+            if image.mode != "RGB":
+                image = image.convert("RGB")
             # 校验尺寸上下限（A2/E3：防止过大导致显存溢出）
             validate_image_dimensions(image.size[0], image.size[1])
 

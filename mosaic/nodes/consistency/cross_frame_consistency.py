@@ -337,7 +337,7 @@ class CrossFrameConsistency(BaseConsistencyNode):
                 cache_device = None
             released = model_cache.remove(
                 cache_cls,
-                self._model_name,
+                self._effective_model_name,
                 cache_dtype,
                 cache_device,
             )

@@ -118,6 +118,7 @@ class Stylizer(BaseImageNode):
             task="image-to-image",
             variant_fp16=self._dtype_str in ("float16", "fp16"),
             dtype_str=self._dtype_str,
+            pipeline_class=self._pipeline_class,
             torch_dtype=torch_dtype,
         )
 
@@ -224,6 +225,9 @@ class Stylizer(BaseImageNode):
 
             # 将输入图片尺寸对齐到 8 的倍数
             image = self._resize_to_multiple_of_8(image)
+            # pipeline 期望 RGB（3通道），RGBA（4通道）会导致通道数不匹配
+            if image.mode != "RGB":
+                image = image.convert("RGB")
             # 校验尺寸上下限（A2/E3：防止过大导致显存溢出）
             validate_image_dimensions(image.size[0], image.size[1])
 
@@ -241,6 +245,9 @@ class Stylizer(BaseImageNode):
             # IP-Adapter 模式（参考图驱动）
             if self._ip_adapter_loaded and self._reference_image is not None:
                 ref_image = self._ensure_pil_image(self._reference_image)
+                # IP-Adapter 参考图同样需要 RGB（3通道）
+                if ref_image.mode != "RGB":
+                    ref_image = ref_image.convert("RGB")
                 ref_image = self._resize_to_multiple_of_8(ref_image, (1024, 1024))
                 pipe_kwargs["ip_adapter_image"] = ref_image
                 # 设置 IP-Adapter scale

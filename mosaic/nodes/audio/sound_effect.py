@@ -105,6 +105,11 @@ class SoundEffectGenerator(BaseAudioNode):
         )
         self._pipeline = self._pipeline.to(device)
 
+        # AudioLDM2 的 VAE 在 float16 下会产生 NaN/垃圾音频，将 VAE 上转为
+        # float32（AudioLDM2 非 SDXL/CogVideoX/SVD，走默认 VAE float32 路径）。
+        from mosaic.core.device_utils import upcast_pipeline_components
+        upcast_pipeline_components(self._pipeline, self._model_name, self._logger)
+
         # 保存 pipeline 引用以便基类统一管理
         self._model = self._pipeline
 

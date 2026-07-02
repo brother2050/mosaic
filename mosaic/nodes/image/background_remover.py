@@ -266,9 +266,12 @@ class BackgroundRemover(BaseImageNode):
         # "Input type (float) and bias type (c10::Half) should be the same"
         try:
             model_dtype = next(self._pipeline.parameters()).dtype
-            input_tensor = input_tensor.to(model_dtype)
-        except Exception:
-            pass
+            input_tensor = input_tensor.to(dtype=model_dtype)
+        except Exception as exc:
+            self._logger.warning(
+                "Failed to align input dtype with model: %s. "
+                "Using float32 fallback.", exc
+            )
 
         with torch.inference_mode():
             # 显式转 float32，避免 float16 tensor 传入 ToPILImage

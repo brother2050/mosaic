@@ -33,16 +33,23 @@ __all__ = [
 logger = logging.getLogger("mosaic.core.device_utils")
 
 
-def resolve_dtype(dtype: str) -> Any:
+def resolve_dtype(dtype: str, device: str = "") -> Any:
     """将 dtype 字符串解析为 torch dtype。
 
     支持的字符串：``float16``/``fp16``、``float32``/``fp32``、
     ``bfloat16``/``bf16``；未能识别的字符串回退为 ``torch.float16``。
 
+    当 ``device`` 指向 CUDA 且 GPU 不支持 bfloat16（如 T4 / Turing 架构，
+    compute capability < 8.0）时，自动将 ``bfloat16``/``bf16`` 降级为
+    ``float16``，避免缺少 bf16 CUDA kernel 导致崩溃。
+
     Parameters
     ----------
     dtype:
         dtype 字符串。
+    device:
+        推理设备字符串（如 ``"cuda"``、``"cuda:0"``）。为空或非 CUDA 设备时
+        不触发 bf16 降级。默认 ``""``。
 
     Returns
     -------
@@ -60,6 +67,20 @@ def resolve_dtype(dtype: str) -> Any:
         raise ImportError(
             "torch is required to resolve dtype, but it is not installed."
         ) from exc
+
+    # T4 (Turing, compute capability 7.5) 不支持 bfloat16 CUDA kernel。
+    # 在不支持 bf16 的 GPU 上自动降级为 float16。
+    if dtype in ("bfloat16", "bf16") and "cuda" in device:
+        try:
+            major, minor = torch.cuda.get_device_capability(0)
+            if major < 8:  # Ampere (8.0+) 才支持 bf16
+                logger.warning(
+                    "GPU compute capability %d.%d does not support bfloat16. "
+                    "Falling back to float16.", major, minor
+                )
+                dtype = "float16"
+        except Exception:  # noqa: BLE001 - 无法检测时保持原样
+            pass
 
     dtype_map = {
         "float16": torch.float16,
@@ -180,6 +201,30 @@ def auto_resolve_device_dtype(
     """
     resolved_device = resolve_device(device, scheduler)
     resolved_dtype = dtype
+
+    # T4 (Turing, compute capability 7.5) 等 GPU 不支持 bfloat16 CUDA kernel。
+    # 在 CUDA 但不支持 bf16 的 GPU 上，将 bfloat16 降级为 float16，避免崩溃。
+    # （cpu/mps 下的 bfloat16 降级为 float32 由后续逻辑处理。）
+    if "cuda" in resolved_device and resolved_dtype in ("bfloat16", "bf16"):
+        try:
+            import torch  # type: ignore
+
+            major, minor = torch.cuda.get_device_capability(0)
+            if major < 8:  # Ampere (8.0+) 才支持 bf16
+                resolved_dtype = "float16"
+                msg = (
+                    "GPU compute capability %d.%d does not support bfloat16 "
+                    "CUDA kernels; auto-switching dtype from bfloat16 to "
+                    "float16 to avoid crashes (e.g. T4 / Turing architecture)."
+                ) % (major, minor)
+                if logger is not None:
+                    logger.warning(msg)
+                else:
+                    logging.getLogger(
+                        "mosaic.core.device_utils"
+                    ).warning(msg)
+        except Exception:  # noqa: BLE001 - 无法检测时保持原样
+            pass
 
     if resolved_device in ("cpu", "mps") and dtype in ("float16", "fp16", "bfloat16", "bf16"):
         if resolved_device == "cpu" or _is_sd15_model(model_name):

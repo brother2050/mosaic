@@ -903,7 +903,7 @@ class StyleKeeper(BaseConsistencyNode):
                 cache_device = None
             released = model_cache.remove(
                 cache_cls,
-                self._model_name,
+                self._base_model,
                 cache_dtype,
                 cache_device,
             )

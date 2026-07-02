@@ -134,6 +134,10 @@ class Inpainting(BaseImageNode):
                     f"got {type(image).__name__}."
                 )
             image = self._ensure_pil_image(image)
+            # pipeline 期望 RGB（3通道），RGBA（4通道）会导致通道数不匹配。
+            # 注意：mask_image 不转换，mask 使用 "L" 模式。
+            if image.mode != "RGB":
+                image = image.convert("RGB")
 
             mask_image = input_data.get("mask_image")
             if mask_image is None:

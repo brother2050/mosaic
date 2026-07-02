@@ -599,9 +599,29 @@ class TTS(BaseAudioNode):
 
         if backend_name == "transformers":
             try:
+                import torch  # type: ignore
                 from transformers import pipeline
                 device = self._resolve_device()
-                self._model = pipeline("text-to-speech", model=self._model_name, device=device)
+                try:
+                    torch_dtype = torch.float16 if "cuda" in device else torch.float32
+                except (AttributeError, RuntimeError):
+                    torch_dtype = torch.float32
+
+                # 优先使用 dtype=（新版 transformers），回退 torch_dtype=（旧版兼容）
+                try:
+                    self._model = pipeline(
+                        "text-to-speech",
+                        model=self._model_name,
+                        device=device,
+                        dtype=torch_dtype,
+                    )
+                except TypeError:
+                    self._model = pipeline(
+                        "text-to-speech",
+                        model=self._model_name,
+                        device=device,
+                        torch_dtype=torch_dtype,
+                    )
                 self._backend = "transformers"
                 self._logger.info("Transformers TTS pipeline loaded (model=%s, device=%s).", self._model_name, device)
                 return
@@ -619,7 +639,12 @@ class TTS(BaseAudioNode):
                 self._backend = "edge_tts"
                 return
             self._tts_backend = backend_class(model_path=self._model_name, **self._backend_kwargs)
-            self._tts_backend.load(device=self._device, dtype=getattr(self, "_dtype", "float16"))
+            # BaseAudioNode 不维护 dtype 字符串属性，根据设备推断 dtype 字符串
+            # （CUDA→float16，其余→float32），避免恒返回 float16。
+            import torch  # type: ignore
+            torch_dtype = torch.float16 if "cuda" in self._device else torch.float32
+            dtype_str = "float16" if torch_dtype == torch.float16 else "float32"
+            self._tts_backend.load(device=self._device, dtype=dtype_str)
             self._backend = backend_name
             self._logger.info("TTS backend '%s' loaded successfully.", backend_name)
             return

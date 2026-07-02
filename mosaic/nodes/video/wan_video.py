@@ -197,7 +197,9 @@ class WanVideo(BaseVideoNode):
 
     def _prepare_seed(self, seed: int | None) -> tuple:
         """准备随机种子与 generator。"""
-        return prepare_seed(seed, self._infer_device())
+        # cpu_offload 时 UNet 在 CPU，_infer_device 返回 "cpu"，
+        # 但 pipeline 实际执行时会在 GPU。使用配置设备（self._device）更可靠。
+        return prepare_seed(seed, self._device)
 
     def _extract_frames_from_output(self, output: Any) -> list:
         """从 Wan Pipeline 输出中提取帧列表。"""

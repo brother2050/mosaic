@@ -166,7 +166,7 @@ class Upscaler(BaseImageNode):
             # SD Upscale 的 UNet 期望 7 通道输入（4 latents + 3 image）。
             # BackgroundRemover 输出 RGBA（4 通道），需转为 RGB（3 通道），
             # 否则报 "expects 7 but received 8" 通道数不匹配。
-            if image.mode == "RGBA":
+            if image.mode != "RGB":
                 image = image.convert("RGB")
 
             # 构造 Pipeline 参数
