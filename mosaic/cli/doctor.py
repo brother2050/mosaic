@@ -65,13 +65,21 @@ _SYMBOLS = {
 # 可选依赖: (import 名, 显示名)
 # 注意：insightface 和 onnxruntime 有专门的检查函数，不在此列表中
 _OPTIONAL_PACKAGES: list[tuple[str, str]] = [
+    # media 组
     ("imageio", "imageio"),
     ("imageio_ffmpeg", "imageio-ffmpeg"),
     ("soundfile", "soundfile"),
     ("librosa", "librosa"),
+    ("edge_tts", "edge-tts"),
+    ("trimesh", "trimesh"),
+    ("skimage", "scikit-image"),
+    # rag 组
     ("faiss", "faiss-cpu"),
     ("chromadb", "chromadb"),
     ("sentence_transformers", "sentence-transformers"),
+    ("pdfplumber", "pdfplumber"),
+    ("docx", "python-docx"),
+    ("bs4", "beautifulsoup4"),
 ]
 
 
@@ -189,22 +197,34 @@ def _check_insightface() -> CheckResult:
 
 
 def _check_gpu() -> CheckResult:
-    """检查 GPU 是否可用，返回名称与显存大小。"""
+    """检查 GPU 是否可用，返回名称与显存大小。
+
+    依次检测 CUDA（NVIDIA）和 MPS（Apple Silicon）。
+    """
     try:
         import torch  # type: ignore
     except ImportError:
         return CheckResult("warn", "GPU 检查跳过：torch 未安装")
 
     try:
-        if not torch.cuda.is_available():
-            return CheckResult("warn", "GPU 不可用（将使用 CPU 推理）")
-        gpu_name = torch.cuda.get_device_name(0)
-        props = torch.cuda.get_device_properties(0)
-        vram_gb = props.total_memory / (1024 ** 3)
-        return CheckResult(
-            "ok",
-            f"GPU 可用: {gpu_name} ({vram_gb:.1f} GB 显存)",
-        )
+        # 1. CUDA (NVIDIA GPU)
+        if torch.cuda.is_available():
+            gpu_name = torch.cuda.get_device_name(0)
+            props = torch.cuda.get_device_properties(0)
+            vram_gb = props.total_memory / (1024 ** 3)
+            return CheckResult(
+                "ok",
+                f"GPU 可用: {gpu_name} ({vram_gb:.1f} GB 显存, CUDA)",
+            )
+
+        # 2. MPS (Apple Silicon)
+        if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+            return CheckResult(
+                "ok",
+                "GPU 可用: Apple Silicon (MPS)",
+            )
+
+        return CheckResult("warn", "GPU 不可用（将使用 CPU 推理）")
     except Exception as exc:  # noqa: BLE001
         return CheckResult("warn", f"GPU 检测失败: {exc}")
 
@@ -297,38 +317,42 @@ def run_doctor() -> int:
     print("=" * 50)
     print()
 
-    checks: list[CheckResult] = []
+    checks: list[tuple[str, CheckResult]] = []
 
     # Python 版本
-    checks.append(_check_python_version())
+    checks.append(("基础环境", _check_python_version()))
 
     # 核心依赖
-    checks.append(_check_package("torch", "torch", required=True))
-    checks.append(_check_package("transformers", "transformers", required=True))
-    checks.append(_check_package("diffusers", "diffusers", required=True))
+    checks.append(("核心依赖", _check_package("torch", "torch", required=True)))
+    checks.append(("核心依赖", _check_package("transformers", "transformers", required=True)))
+    checks.append(("核心依赖", _check_package("diffusers", "diffusers", required=True)))
 
     # GPU
-    checks.append(_check_gpu())
+    checks.append(("GPU", _check_gpu()))
 
     # 可选依赖（简单检查）
     for import_name, display_name in _OPTIONAL_PACKAGES:
-        checks.append(_check_package(import_name, display_name, required=False))
+        checks.append(("可选依赖", _check_package(import_name, display_name, required=False)))
 
     # insightface 和 onnxruntime 需要深度检查（验证关键 API 可用性）
-    checks.append(_check_insightface())
-    checks.append(_check_onnxruntime())
+    checks.append(("可选依赖", _check_insightface()))
+    checks.append(("可选依赖", _check_onnxruntime()))
 
     # 节点与插件
-    checks.append(_check_registered_nodes())
-    checks.append(_check_plugins())
+    checks.append(("框架状态", _check_registered_nodes()))
+    checks.append(("框架状态", _check_plugins()))
 
     # 模型缓存目录
-    checks.append(_check_model_cache())
+    checks.append(("模型缓存", _check_model_cache()))
 
-    # 输出结果
+    # 输出结果（按分组打印）
     warn_count = 0
     error_count = 0
-    for result in checks:
+    current_group = ""
+    for group, result in checks:
+        if group != current_group:
+            current_group = group
+            print(f"\n  [{group}]")
         symbol = _SYMBOLS.get(result.status, "?")
         # 多行消息：首行带符号，后续行缩进对齐
         lines = result.message.split("\n")
