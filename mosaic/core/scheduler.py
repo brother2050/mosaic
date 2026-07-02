@@ -279,6 +279,22 @@ class Scheduler:
 
             # GPU 模式：检查并腾出空间（淘汰在锁内完成，保证 LRU 一致）
             if self._is_gpu:
+                # 优化：如果目标节点的模型已被另一个已加载节点共享（model_cache
+                # 会命中），则实际不需要额外显存，跳过淘汰——避免"先淘汰旧节点
+                # （缓存引用归零被删除）→ 再加载新节点（cache miss 从磁盘重载）"
+                # 的抖动问题。
+                model_name = getattr(node, "_model_name", None)
+                if model_name:
+                    for loaded_name in list(self._loaded_names):
+                        loaded_node = self._nodes.get(loaded_name)
+                        if (
+                            loaded_node is not None
+                            and loaded_name != name
+                            and getattr(loaded_node, "_model_name", None)
+                            == model_name
+                        ):
+                            needed = 0.0
+                            break
                 self._ensure_capacity(needed, exclude=name)
 
         # 实际加载在锁外执行：``node.load()`` 可能耗时（权重加载/设备迁移），

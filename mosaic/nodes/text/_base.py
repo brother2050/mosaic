@@ -210,6 +210,15 @@ class BaseTextNode(Node):
                 cache_device,
             )
             if released:
+                # device_map="auto" 加载的模型被 accelerate hooks 分发，
+                # 直接 .to("cpu") 会报 "You shouldn't move a model that
+                # is dispatched using accelerate hooks"。需先移除 hooks。
+                try:
+                    from accelerate.hooks import remove_hook_from_module
+
+                    remove_hook_from_module(self._model, recurse=True)
+                except Exception:
+                    pass
                 try:
                     self._model = self._model.to("cpu")
                 except Exception:

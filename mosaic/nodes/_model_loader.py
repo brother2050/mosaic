@@ -51,6 +51,42 @@ def _resolve_cache_dir() -> str | None:
     return None
 
 
+def _resolve_max_memory() -> dict | None:
+    """查询 GPU 可用显存，返回 accelerate 的 ``max_memory`` 配置。
+
+    当 ``device_map="auto"`` 时，accelerate 的 ``infer_auto_device_map``
+    默认估算较保守，在 T4(16GB) 等紧张环境下会把部分权重 offload 到 CPU。
+    本函数查询实际可用显存，让 accelerate 更精确地分配——尽量把全部权重
+    放在 GPU 上以获得推理加速。
+
+    Returns
+    -------
+    dict | None
+        ``{0: "NGB", "cpu": "64GB"}`` 格式的 max_memory 配置；
+        无 CUDA 时返回 None。
+    """
+    try:
+        import torch  # type: ignore
+
+        if not torch.cuda.is_available():
+            return None
+
+        free_bytes, total_bytes = torch.cuda.mem_get_info(0)
+        free_gb = free_bytes / (1024**3)
+        total_gb = total_bytes / (1024**3)
+
+        # 保留 1GB 给 CUDA 上下文和激活值，其余全部分配给模型权重
+        usable_gb = max(free_gb - 1.0, 1.0)
+
+        logger.info(
+            "GPU 0: %.1fGB free / %.1fGB total; allocating %.1fGB for model weights.",
+            free_gb, total_gb, usable_gb,
+        )
+        return {0: f"{int(usable_gb)}GB", "cpu": "64GB"}
+    except Exception:
+        return None
+
+
 def _preimport_t5_components() -> None:
     """预导入 T5 相关组件，避免 transformers 懒加载导致 diffusers 无法识别。
 
@@ -600,6 +636,16 @@ def safe_load_model(
     cached = model_cache.get(cache_cls, model_name, cache_dtype, cache_device)
     if cached is not None:
         return cached
+
+    # device_map="auto" 时，自动查询 GPU 可用显存并传入 max_memory。
+    # accelerate 的 infer_auto_device_map 默认估算较保守，在 T4(16GB) 等
+    # 紧张环境下会把部分权重 offload 到 CPU（导致推理跑在 CPU 上，速度与
+    # CPU 持平）。传入实际可用显存让 accelerate 更精确地分配。
+    device_map = kwargs.get("device_map")
+    if device_map == "auto" and "max_memory" not in kwargs:
+        max_mem = _resolve_max_memory()
+        if max_mem is not None:
+            kwargs["max_memory"] = max_mem
 
     model: Any = None
     if dtype is not None:
