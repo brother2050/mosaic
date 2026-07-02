@@ -203,6 +203,10 @@ class VideoEncoder(Node):
         self._emit_start()
         t0 = time.perf_counter()
 
+        # VideoEncoder 不走 scheduler，需确保 FFmpeg 已加载
+        if not self._loaded:
+            self.load()
+
         try:
             # 校验输入：优先从顶层 frames/fps 读取
             frames = input_data.get("frames")

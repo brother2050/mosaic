@@ -254,21 +254,14 @@ class BaseImageNode(Node):
                 cache_device,
             )
             if released:
-                # float16 pipeline 搬到 CPU 时 diffusers 会发出告警
-                # "Pipelines loaded with dtype=torch.float16 cannot run
-                # with cpu device"。此处仅为释放显存，不会在 CPU 上推理，
-                # 抑制该告警避免干扰用户。
-                import warnings
-
-                with warnings.catch_warnings():
-                    warnings.filterwarnings(
-                        "ignore",
-                        message=r".*cannot run with.*cpu.*",
-                    )
-                    try:
-                        self._pipeline.to("cpu")
-                    except Exception:
-                        pass
+                # float16 pipeline 搬到 CPU 时 diffusers 的 logger 会发出告警
+                # "Pipelines loaded with dtype=torch.float16 cannot run with cpu"。
+                # 该告警通过 diffusers 的 logging 模块发出（非 Python warnings），
+                # 用 silence_dtype_warnings=True 抑制（diffusers 内部也这么用）。
+                try:
+                    self._pipeline.to("cpu", silence_dtype_warnings=True)
+                except Exception:
+                    pass
             self._pipeline = None
             # 触发 GC 与 GPU 显存回收
             import gc

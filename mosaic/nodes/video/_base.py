@@ -203,17 +203,10 @@ class BaseVideoNode(Node):
                 cache_device,
             )
             if released:
-                import warnings
-
-                with warnings.catch_warnings():
-                    warnings.filterwarnings(
-                        "ignore",
-                        message=r".*cannot run with.*cpu.*",
-                    )
-                    try:
-                        self._pipeline.to("cpu")
-                    except Exception:
-                        pass
+                try:
+                    self._pipeline.to("cpu", silence_dtype_warnings=True)
+                except Exception:
+                    pass
             self._pipeline = None
             import gc
 
