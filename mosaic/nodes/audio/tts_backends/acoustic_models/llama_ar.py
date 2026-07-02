@@ -718,7 +718,9 @@ class LlamaARModel(LlamaARModelBase):
 
         repetition_penalty: float = kwargs.get("repetition_penalty", 1.3)
         spk_emb_pos: int | None = kwargs.get("spk_emb_pos", None)
-        eos_token_id: int | None = kwargs.get("eos_token_id", None)
+        # 官方 ChatTTS: eos_token = num_audio_tokens
+        # 当任一 VQ 组采样的 token 等于此值时，生成停止
+        eos_token_id: int = kwargs.get("eos_token_id", self._num_audio_tokens)
 
         device = self._device
         num_vq = self._num_vq
@@ -797,8 +799,18 @@ class LlamaARModel(LlamaARModelBase):
             new_token = torch.cat(new_tokens, dim=-1)
             generated_tokens.append(new_token)
 
-            if eos_token_id is not None:
+            # EOS 检测：当任一 VQ 组采样的 token 等于 eos_token_id 时停止
+            # 注意：head_code 输出维度是 num_audio_tokens，token 范围 [0, num_audio_tokens-1]
+            # eos_token_id = num_audio_tokens 可能超出范围，此时依赖重复检测
+            if eos_token_id is not None and eos_token_id < self._num_audio_tokens:
                 if (new_token == eos_token_id).any():
+                    finished = True
+
+            # 重复停止检测：连续 10 帧生成相同 token 时停止
+            # （替代 EOS 机制，避免 GPT 生成到 max_new_tokens 上限）
+            if not finished and len(generated_tokens) >= 10:
+                recent = torch.cat(generated_tokens[-10:], dim=0)
+                if torch.all(recent == recent[0:1]):
                     finished = True
 
             new_token_embed_input = new_token.unsqueeze(1)
