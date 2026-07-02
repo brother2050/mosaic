@@ -430,16 +430,17 @@ class ChatTTSBackend(TTSBackend):
         )
 
         # ------------------------------------------------------------------
-        # Layer 3a: DVAE 解码器 —— VQ token → mel
+        # DVAE 解码器 —— VQ token → mel
         # ------------------------------------------------------------------
-        # DVAE 权重查找：优先 DVAE.safetensors / DVAE.pt，
-        # 回退到 Decoder.safetensors / Decoder.pt
+        # ChatTTS 官方默认 use_decoder=True，使用 Decoder.safetensors（独立的
+        # 解码器 DVAE，结构更优）。DVAE.safetensors 用于编码音频提取 speaker。
+        # 优先 Decoder，回退到 DVAE。
         dvae_path = HFModelManager.find_weight(
-            model_dir, "DVAE", subdirs=["asset", ""]
+            model_dir, "Decoder", subdirs=["asset", ""]
         )
         if not dvae_path:
             dvae_path = HFModelManager.find_weight(
-                model_dir, "Decoder", subdirs=["asset", ""]
+                model_dir, "DVAE", subdirs=["asset", ""]
             )
 
         self._logger.debug(

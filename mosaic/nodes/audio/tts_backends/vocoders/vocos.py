@@ -683,7 +683,7 @@ class VocosVocoder(Vocoder):
                     state_dict = torch.load(
                         weights_path, map_location="cpu", weights_only=False
                     )
-                model.load_state_dict(state_dict, strict=False)
+                model.load_state_dict(state_dict, strict=True)
         except Exception:  # noqa: BLE001
             return None
 

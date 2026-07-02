@@ -271,6 +271,18 @@ def _get_dvae_class() -> Any:
                     输入 2D 时返回 ``[mel_bins, frames]``；
                     输入 3D 时返回 ``[batch, mel_bins, frames]``。
                 """
+                # 如果加载了官方实例，直接转发
+                if hasattr(self, "_official_impl") and self._official_impl is not None:
+                    import torch
+
+                    inp = token_ids
+                    if inp.dim() == 2:
+                        inp = inp.unsqueeze(0)  # [1, num_vq, frames]
+                    mel = self._official_impl(inp, mode="decode")
+                    if token_ids.dim() == 2:
+                        mel = mel.squeeze(0)
+                    return mel
+
                 emb, squeeze_batch = self._embed_tokens(token_ids)
                 mel = self._decode_hidden(emb)
                 if squeeze_batch:
@@ -344,24 +356,18 @@ def _get_dvae_class() -> Any:
 
                 1. 解析 dtype 字符串为 torch dtype；
                 2. 无 GPU 时将设备降级为 CPU；
-                3. 读取权重（safetensors 优先，回退到 .pt/.pth/.bin）；
-                4. 剥离 ``dvae.`` / ``decoder.`` 前缀后 ``strict=False`` 载入；
+                3. 优先尝试用官方 ``ChatTTS.DVAE`` 加载（结构完全匹配）；
+                4. 官方包不可用时，读取权重，剥离前缀后 ``strict=False`` 载入；
                 5. 移动到目标 device / dtype，切换为 eval。
 
                 Parameters
                 ----------
                 weights_path : str
-                    权重文件路径或目录（目录下查找 ``dvae.safetensors`` /
-                    ``decoder.safetensors`` / ``dvae.bin``）。
+                    权重文件路径或目录。
                 device : str
                     目标设备；无 GPU 时自动降级为 CPU。
                 dtype : str
                     数据精度，``"float16"`` / ``"float32"`` / ``"bfloat16"``。
-
-                Raises
-                ------
-                ImportError
-                    ``torch`` / ``safetensors`` 未安装。
                 """
                 import torch
 
@@ -376,6 +382,17 @@ def _get_dvae_class() -> Any:
                 if device.startswith("cuda") and not torch.cuda.is_available():
                     resolved = "cpu"
 
+                # 优先尝试官方 ChatTTS DVAE（结构完全匹配权重文件）
+                official = self._try_load_official(
+                    weights_path, resolved, torch_dtype
+                )
+                if official is not None:
+                    # 用官方实例替换自实现
+                    self._official_impl = official
+                    self._is_loaded = True
+                    return
+
+                # 回退：自实现 strict=False 加载
                 state_dict = self._load_state_dict(weights_path)
                 if state_dict:
                     state_dict = self._strip_prefix(state_dict)
@@ -398,6 +415,74 @@ def _get_dvae_class() -> Any:
                     pass
                 self._stream_buffer = None
                 self._is_loaded = False
+                # 释放官方实例引用
+                if hasattr(self, "_official_impl"):
+                    del self._official_impl
+
+            def _try_load_official(
+                self, weights_path: str, device: str, torch_dtype: Any
+            ) -> Any:
+                """尝试用官方 ChatTTS DVAE 加载权重，失败返回 None。
+
+                ChatTTS 的 DVAE 结构（GFSQ + DVAEDecoder + coef 缩放）与自实现
+                完全不同，strict=False 会静默忽略所有权重导致电子音。
+                直接使用官方包可确保结构完全匹配。
+                """
+                try:
+                    from ChatTTS.model.dvae import DVAE as OfficialDVAE
+                    from ChatTTS.config import Config as ChatTTSConfig
+                except ImportError:
+                    return None
+
+                try:
+                    import os
+
+                    # 查找对应的 config yaml
+                    weights_dir = os.path.dirname(weights_path)
+                    parent_dir = os.path.dirname(weights_dir)
+                    basename = os.path.splitext(
+                        os.path.basename(weights_path)
+                    )[0].lower()
+
+                    config_candidates = [
+                        os.path.join(parent_dir, "config", f"{basename}.yaml"),
+                        os.path.join(parent_dir, "config", "dvae.yaml"),
+                        os.path.join(parent_dir, "config", "decoder.yaml"),
+                    ]
+                    config_path = None
+                    for c in config_candidates:
+                        if os.path.isfile(c):
+                            config_path = c
+                            break
+                    if config_path is None:
+                        return None
+
+                    import yaml
+
+                    with open(config_path) as f:
+                        cfg = yaml.safe_load(f)
+
+                    # 官方 DVAE 需要 decoder_config / encoder_config / vq_config
+                    decoder_config = cfg.get("decoder", cfg)
+                    encoder_config = cfg.get("encoder")
+                    vq_config = cfg.get("vq")
+                    dim = decoder_config.get("idim", 512)
+
+                    official = OfficialDVAE(
+                        decoder_config=decoder_config,
+                        encoder_config=encoder_config,
+                        vq_config=vq_config,
+                        dim=dim,
+                        device=__import__("torch").device(device),
+                    )
+                    official.load_pretrained(
+                        weights_path, __import__("torch").device(device)
+                    )
+                    official = official.to(device=device, dtype=torch_dtype)
+                    official.eval()
+                    return official
+                except Exception:  # noqa: BLE001
+                    return None
 
             # ----------------------------------------------------------
             # 内部辅助：权重读取
