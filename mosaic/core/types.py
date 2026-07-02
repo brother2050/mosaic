@@ -557,7 +557,15 @@ class AudioData(MosaicData):
         metadata: dict[str, Any] | None = None,
         **kwargs: Any,
     ) -> None:
-        # 归一化 waveform dtype 为 float32
+        # 1. torch 张量 → CPU numpy（AudioData 是返回给用户的数据结构，
+        #    不应保留 GPU 张量，避免 soundfile.write 等下游调用报错）
+        if waveform is not None:
+            if hasattr(waveform, "detach") and hasattr(waveform, "cpu"):
+                waveform = waveform.detach().cpu()
+            if hasattr(waveform, "numpy"):
+                waveform = waveform.numpy()
+
+        # 2. 归一化 waveform dtype 为 float32
         # 模型在 float16 精度下推理时，输出波形可能为 float16，
         # 而 soundfile / librosa 等库只支持 float32/float64/int16/int32。
         # 在此处统一转换，从源头消除 dtype 问题。
