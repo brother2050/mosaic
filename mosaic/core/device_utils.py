@@ -360,7 +360,7 @@ def upcast_pipeline_components(
         )
 
     if skip_vae_upcast:
-        # SDXL：用 VAE tiling 代替上转，在 fp16 下避免黑图同时保持 dtype 一致
+        # SDXL：用 VAE tiling 代替手动上转，在 fp16 下避免黑图同时保持 dtype 一致
         if (
             "StableDiffusionXL" in pipeline_cls_name
             or "sdxl" in model_lower
@@ -378,14 +378,19 @@ def upcast_pipeline_components(
                         )
                 except Exception:
                     pass  # 不支持 tiling 的 VAE 静默跳过
-                # 禁用 VAE 的 force_upcast，阻止 diffusers 在 pipeline.__call__
-                # 内部自动调用已弃用的 upcast_vae()（会触发 FutureWarning）。
-                # enable_tiling 已解决 fp16 下的黑图问题，无需再 upcast。
-                try:
-                    if getattr(vae.config, "force_upcast", False):
-                        vae.config.force_upcast = False
-                except Exception:
-                    pass
+                # 保持 force_upcast=True（默认值），让 diffusers pipeline 在
+                # __call__ 内部自动调用 upcast_vae()：
+                #   1. VAE 上转为 float32（最佳解码质量）
+                #   2. latents 同步转为 float32（避免 dtype 不匹配）
+                # 我们之前手动上转 VAE 会导致 dtype 不匹配崩溃，因为手动上转
+                # 发生在 pipeline.__call__ 之前，pipeline 不知道 VAE 已被上转，
+                # 不会转换 latents。而 pipeline 自己的 upcast_vae() 会同时处理
+                # VAE 上转和 latents 转换，是安全的。
+                #
+                # upcast_vae() 已在 diffusers 0.38 标记为弃用（FutureWarning），
+                # 推荐改用 pipe.vae.to(torch.float32)，但 pipeline 内部的调用
+                # 仍会触发该警告。由于这是 diffusers 内部行为，我们无法从外部
+                # 消除，只能接受该警告（不影响功能）。
         elif logger is not None:
             logger.debug(
                 "Skipping VAE upcast for %s (diffusers doesn't convert "
