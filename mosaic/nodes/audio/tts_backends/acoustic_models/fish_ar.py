@@ -189,7 +189,7 @@ class FishLlamaARModel(LlamaARModelBase):
         model = LlamaForCausalLM(config)
 
         # 4. 加载 Transformer 权重
-        self._load_llama_weights(model, weights_path)
+        model = self._load_llama_weights(model, weights_path)
 
         # 5. 创建 UnifiedEmbedding 实例
         embed_layer = UnifiedEmbedding(

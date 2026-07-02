@@ -38,6 +38,7 @@ Layer 2: 声学模型层。将文本 token ids 转换为离散音频码 token。
 
 from __future__ import annotations
 
+import logging
 import os
 from collections.abc import Iterator
 from typing import Any
@@ -45,6 +46,8 @@ from typing import Any
 from mosaic.nodes.audio.tts_backends.acoustic_models.base import AcousticModel
 
 __all__ = ["LlamaARModelBase", "LlamaARModel", "DualEmbedding"]
+
+logger = logging.getLogger(__name__)
 
 
 class LlamaARModelBase(AcousticModel):
@@ -188,7 +191,7 @@ class LlamaARModelBase(AcousticModel):
             )
         return config
 
-    def _load_llama_weights(self, model: Any, weights_path: str) -> None:
+    def _load_llama_weights(self, model: Any, weights_path: str) -> Any:
         """将权重加载到 LlamaForCausalLM 实例。
 
         尝试顺序：safetensors → pytorch checkpoint → from_pretrained。
@@ -199,6 +202,11 @@ class LlamaARModelBase(AcousticModel):
             模型实例。
         weights_path : str
             权重目录路径。
+
+        Returns
+        -------
+        Any
+            加载了权重的模型实例（``from_pretrained`` 路径可能返回新实例）。
         """
         import torch
 
@@ -217,8 +225,13 @@ class LlamaARModelBase(AcousticModel):
                 from transformers import LlamaForCausalLM  # type: ignore
 
                 model = LlamaForCausalLM.from_pretrained(weights_path)
-            except Exception:  # noqa: BLE001
-                pass  # 没有可用权重，使用随机初始化
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "LlamaARModel: from_pretrained 加载失败 (%s)，"
+                    "使用随机初始化",
+                    exc,
+                )
+        return model
 
     def unload_weights(self) -> None:
         """释放模型权重。
@@ -515,7 +528,7 @@ class LlamaARModel(LlamaARModelBase):
         model = LlamaForCausalLM(config)
 
         # 4. 加载权重
-        self._load_llama_weights(model, weights_path)
+        model = self._load_llama_weights(model, weights_path)
 
         # 5. 创建 DualEmbedding 实例
         embed_layer = DualEmbedding(
