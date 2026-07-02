@@ -607,10 +607,11 @@ class LlamaARModel(LlamaARModelBase):
         input_ids = token_ids
         if input_ids.dim() == 1:
             input_ids = input_ids.unsqueeze(0)
+        input_ids = input_ids.to(device=device)
 
         inputs_embeds = self._embed_layer(input_ids)
 
-        # 说话人嵌入条件
+        # 说话人嵌入条件（_apply_speaker_embedding 内部已处理 device）
         if speaker_embedding is not None:
             inputs_embeds = self._apply_speaker_embedding(
                 inputs_embeds, speaker_embedding, spk_emb_pos
@@ -729,9 +730,11 @@ class LlamaARModel(LlamaARModelBase):
         input_ids = token_ids
         if input_ids.dim() == 1:
             input_ids = input_ids.unsqueeze(0)
+        input_ids = input_ids.to(device=device)
 
         inputs_embeds = self._embed_layer(input_ids)
 
+        # 说话人嵌入条件（_apply_speaker_embedding 内部已处理 device）
         if speaker_embedding is not None:
             inputs_embeds = self._apply_speaker_embedding(
                 inputs_embeds, speaker_embedding, spk_emb_pos

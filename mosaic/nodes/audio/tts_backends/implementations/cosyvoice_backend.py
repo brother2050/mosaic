@@ -1120,6 +1120,9 @@ class CosyVoiceBackend(TTSBackend):
             import torch
 
             with torch.no_grad():
+                device = next(self._llm.parameters()).device
+                if hasattr(token_ids, "to"):
+                    token_ids = token_ids.to(device=device)
                 outputs = self._llm(token_ids)
                 # 取最后一层隐藏状态
                 if hasattr(outputs, "last_hidden_state"):

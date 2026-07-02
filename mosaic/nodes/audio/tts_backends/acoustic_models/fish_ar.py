@@ -281,12 +281,14 @@ class FishLlamaARModel(LlamaARModelBase):
         input_ids = token_ids
         if input_ids.dim() == 1:
             input_ids = input_ids.unsqueeze(0)
+        input_ids = input_ids.to(device=device)
 
         # 语音克隆：将参考音频的 codec token ids 拼接到输入前
         if speaker_embedding is not None:
             ref_ids = speaker_embedding
             if ref_ids.dim() == 1:
                 ref_ids = ref_ids.unsqueeze(0)
+            ref_ids = ref_ids.to(device=device)
             # 参考音频的 token ids 已经是音频范围（带偏移）
             input_ids = torch.cat([ref_ids, input_ids], dim=-1)
 
@@ -416,11 +418,13 @@ class FishLlamaARModel(LlamaARModelBase):
         input_ids = token_ids
         if input_ids.dim() == 1:
             input_ids = input_ids.unsqueeze(0)
+        input_ids = input_ids.to(device=device)
 
         if speaker_embedding is not None:
             ref_ids = speaker_embedding
             if ref_ids.dim() == 1:
                 ref_ids = ref_ids.unsqueeze(0)
+            ref_ids = ref_ids.to(device=device)
             input_ids = torch.cat([ref_ids, input_ids], dim=-1)
 
         inputs_embeds = self._embed_layer(input_ids)

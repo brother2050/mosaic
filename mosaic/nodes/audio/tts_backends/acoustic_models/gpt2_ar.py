@@ -460,16 +460,19 @@ class GPT2ARModel(AcousticModel):
             else:
                 ref_tokens = speaker_embedding
 
-        # 构造输入嵌入
+        # 构造输入嵌入（确保输入在目标设备上）
+        token_ids = token_ids.to(device=device)
         text_embeds = self._text_embedding(token_ids)
 
         input_embeds = text_embeds
         if ref_tokens is not None:
+            ref_tokens = ref_tokens.to(device=device)
             ref_embeds = self._semantic_embedding(ref_tokens)
             input_embeds = torch.cat([ref_embeds, text_embeds], dim=1)
 
         # 说话人条件注入
         if spk_emb is not None:
+            spk_emb = spk_emb.to(device=device)
             spk_cond = self._speaker_proj(spk_emb)
             if spk_cond.dim() == 1:
                 spk_cond = spk_cond.unsqueeze(0).unsqueeze(0)
@@ -583,13 +586,17 @@ class GPT2ARModel(AcousticModel):
             else:
                 ref_tokens = speaker_embedding
 
+        # 确保输入在目标设备上
+        token_ids = token_ids.to(device=device)
         text_embeds = self._text_embedding(token_ids)
         input_embeds = text_embeds
         if ref_tokens is not None:
+            ref_tokens = ref_tokens.to(device=device)
             ref_embeds = self._semantic_embedding(ref_tokens)
             input_embeds = torch.cat([ref_embeds, text_embeds], dim=1)
 
         if spk_emb is not None:
+            spk_emb = spk_emb.to(device=device)
             spk_cond = self._speaker_proj(spk_emb)
             if spk_cond.dim() == 1:
                 spk_cond = spk_cond.unsqueeze(0).unsqueeze(0)
