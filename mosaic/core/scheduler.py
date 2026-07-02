@@ -286,7 +286,7 @@ class Scheduler:
                 model_name = getattr(node, "_model_name", None)
                 if model_name:
                     for loaded_name in list(self._loaded_names):
-                        loaded_node = self._nodes.get(loaded_name)
+                        loaded_node = self._tracked.get(loaded_name)
                         if (
                             loaded_node is not None
                             and loaded_name != name
