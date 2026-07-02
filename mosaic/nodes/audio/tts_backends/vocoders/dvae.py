@@ -3,35 +3,55 @@
 
 Layer 3 前置步骤：将 VQ 音频码 token 解码为 mel 频谱。
 
-本模块实现 ChatTTS 离散变分自编码器（Discrete VAE, DVAE）的**解码部分**：
-将多组 VQ 码本 token ids 解码为 mel 频谱。它是声码器管线中的「第一步」
-（token -> mel），其后通常接 Vocos / HiFi-GAN 等声码器（mel -> waveform）。
+本模块实现 ChatTTS 离散变分自编码器（Discrete VAE, DVAE）的**解码部分**，
+结构与官方 ``ChatTTS/model/dvae.py`` 完全一致，``state_dict`` key 与官方
+``DVAE.safetensors`` 权重文件一一对应，可直接通过 ``load_state_dict`` 加载，
+无需前缀剥离，也无需依赖官方 ``ChatTTS`` 包。
 
-架构
-----
-A) 向量量化嵌入层（GFSQ 解码部分）
-   - ``num_vq`` 个 :class:`torch.nn.Embedding`，每码本形状
-     ``(num_audio_tokens, hidden_size)``；
-   - 多组码本嵌入逐元素求和，得到 ``[batch, frames, hidden_size]``。
+架构（与官方一致）
+------------------
+顶层模块（对应官方 ``DVAE``）包含：
 
-B) ConvNeXt 解码主干
-   - 每层：Depthwise Conv1D（膨胀卷积）-> LayerNorm -> Pointwise Conv(1x1)
-     -> GELU -> 残差连接；
-   - 各层膨胀率由 ``dilation_rates`` 指定，逐步扩大感受野；
-   - 主干末端附加一层 :class:`torch.nn.LayerNorm` 以稳定数值。
+* ``coef`` —— buffer，形状 ``[1, mel_bins, 1]``，对输出 mel 做逐通道缩放；
+* ``downsample_conv`` —— 仅在含 encoder 时存在，
+  ``Conv1d -> GELU -> Conv1d(stride=2) -> GELU``，对输入 mel 下采样；
+* ``encoder`` —— ``DVAEDecoder`` 子模块（encode 路径，decode 时不使用）；
+* ``decoder`` —— ``DVAEDecoder`` 子模块（decode 主干）；
+* ``out_conv`` —— ``Conv1d(dim, mel_bins, 3, 1, 1, bias=False)``；
+* ``vq_layer`` —— ``GFSQ``，内部用
+  :class:`vector_quantize_pytorch.GroupedResidualFSQ` 将 token ids 嵌入为
+  连续特征。
 
-C) 输出投影层
-   - :class:`torch.nn.Linear` ``(hidden_size, mel_bins)``，将隐藏特征映射
-     为 mel 频谱，输出 ``[batch, mel_bins, frames]``。
+``DVAEDecoder`` 子模块结构：
+
+* ``conv_in`` —— ``Sequential(Conv1d, GELU, Conv1d)``；
+* ``decoder_block`` —— ``ModuleList`` of ``ConvNeXtBlock``；
+* ``conv_out`` —— ``Conv1d(hidden, odim, 1, bias=False)``。
+
+``ConvNeXtBlock`` 结构（注意 layer scale 参数名为 ``weight``，非 ``gamma``）：
+
+* ``dwconv`` —— Depthwise ``Conv1d``（膨胀，``groups=dim``）；
+* ``norm`` —— ``LayerNorm``；
+* ``pwconv1`` —— ``Linear(dim, dim*4)``；
+* ``act`` —— ``GELU``；
+* ``pwconv2`` —— ``Linear(dim*4, dim)``；
+* ``weight`` —— layer scale ``Parameter``，形状 ``[dim]``。
+
+decode 前向逻辑（与官方一致）
+-----------------------------
+``token_ids[B, num_vq, T]`` -> ``GFSQ._embed`` -> ``[B, 2*dim, T]`` ->
+reshape 拆成 2 组、时间维度翻倍 -> ``[B, dim, T*2]`` -> ``decoder`` ->
+``out_conv`` -> ``× coef`` -> ``[B, mel_bins, T*2]``。
 
 设计要点
 --------
-* ``torch`` / ``safetensors`` 采用惰性导入：模块顶层不导入这些重依赖，
+* ``torch`` / ``safetensors`` / ``vector_quantize_pytorch`` 采用惰性导入，
   真正的 ``nn.Module`` 子类在首次实例化时通过 :func:`_get_dvae_class`
   惰性构建，使本模块在未安装 ``torch`` 时仍可被导入。
 * :class:`DVAEDecoder` 是代理类，将属性访问与方法调用转发给内部
   ``nn.Module`` 实例，从而既保持 ``nn.Module`` 一致的行为，又避免在模块
   顶层硬依赖 ``torch``。
+* 权重加载直接 ``load_state_dict(strict=False)``，无需前缀剥离或官方包。
 * ``token_ids`` / ``mel`` 等参数类型用 :data:`~typing.Any` 标注。
 """
 
@@ -59,49 +79,59 @@ def _unwrap_ckpt(ckpt: Any) -> dict[str, Any]:
 
 
 def _get_dvae_class() -> Any:
-    """惰性创建并返回真正的 DVAE 解码器 ``nn.Module`` 子类。
+    """惰性创建并返回与官方 ChatTTS DVAE 结构完全一致的 ``nn.Module`` 子类。
 
-    首次调用时导入 ``torch`` 并定义 :class:`_ConvNeXtBlock` 与
-    :class:`_DVAEDecoder`，随后缓存到全局变量 :data:`_DVAEDecoderClass`。
+    首次调用时导入 ``torch`` 并定义 :class:`_ConvNeXtBlock`、
+    :class:`_DVAEDecoderModule`、:class:`_GFSQ` 与顶层 :class:`_DVAEDecoder`
+    （对应官方 ``DVAE``），随后缓存到全局变量 :data:`_DVAEDecoderClass`。
 
     Returns
     -------
     type
-        ``nn.Module`` 子类 ``_DVAEDecoder``。
+        ``nn.Module`` 子类 ``_DVAEDecoder``，其 ``state_dict`` key 与官方
+        ``DVAE.safetensors`` 完全一致。
     """
     global _DVAEDecoderClass
     if _DVAEDecoderClass is None:
+        import math
+        import torch
         import torch.nn as nn
 
         class _ConvNeXtBlock(nn.Module):
-            """ConvNeXt 解码块。
+            """官方 ChatTTS ConvNeXt 块。
 
-            结构：Depthwise Conv1D（膨胀）-> LayerNorm -> Pointwise Conv(1x1)
-            -> GELU -> 残差连接。所有运算保持 ``hidden_size`` 维度不变，
-            残差可直接相加。
+            ``dwconv -> LayerNorm -> pwconv1 -> GELU -> pwconv2 -> *weight
+            -> + residual``。注意 layer scale 参数名为 ``weight``（与官方
+            一致，非 ``gamma``）。
             """
 
             def __init__(
                 self,
-                hidden_size: int,
-                dilation_rate: int = 1,
-                kernel_size: int = 7,
+                dim: int,
+                intermediate_dim: int,
+                kernel: int,
+                dilation: int,
+                layer_scale_init_value: float = 1e-6,
             ) -> None:
                 super().__init__()
                 # Depthwise 膨胀卷积（same padding，保持帧长不变）
-                padding = (kernel_size - 1) * dilation_rate // 2
                 self.dwconv = nn.Conv1d(
-                    hidden_size,
-                    hidden_size,
-                    kernel_size=kernel_size,
-                    padding=padding,
-                    dilation=dilation_rate,
-                    groups=hidden_size,
+                    dim,
+                    dim,
+                    kernel_size=kernel,
+                    padding=dilation * (kernel // 2),
+                    dilation=dilation,
+                    groups=dim,
                 )
-                self.norm = nn.LayerNorm(hidden_size)
-                # Pointwise 1x1 卷积
-                self.pwconv = nn.Conv1d(hidden_size, hidden_size, kernel_size=1)
+                self.norm = nn.LayerNorm(dim, eps=1e-6)
+                self.pwconv1 = nn.Linear(dim, intermediate_dim)
                 self.act = nn.GELU()
+                self.pwconv2 = nn.Linear(intermediate_dim, dim)
+                self.weight = (
+                    nn.Parameter(layer_scale_init_value * torch.ones(dim))
+                    if layer_scale_init_value > 0
+                    else None
+                )
 
             def forward(self, x: Any) -> Any:
                 """前向计算。
@@ -109,237 +139,303 @@ def _get_dvae_class() -> Any:
                 Parameters
                 ----------
                 x : torch.Tensor
-                    ``[batch, hidden_size, frames]``。
+                    ``[batch, dim, frames]``。
 
                 Returns
                 -------
                 torch.Tensor
-                    同形状 ``[batch, hidden_size, frames]``。
+                    同形状 ``[batch, dim, frames]``。
                 """
                 residual = x
-                x = self.dwconv(x)            # [B, H, T]
-                x = x.transpose(1, 2)         # [B, T, H]
-                x = self.norm(x)
-                x = x.transpose(1, 2)         # [B, H, T]
-                x = self.pwconv(x)            # pointwise 1x1
-                x = self.act(x)
-                return residual + x
+                y = self.dwconv(x)
+                y.transpose_(1, 2)  # [B, T, C]
+                x = self.norm(y)
+                y = self.pwconv1(x)
+                x = self.act(y)
+                y = self.pwconv2(x)
+                if self.weight is not None:
+                    y *= self.weight
+                y.transpose_(1, 2)  # [B, C, T]
+                x = y + residual
+                return x
 
-        class _DVAEDecoder(nn.Module):
-            """DVAE 解码器真实实现（``nn.Module`` 子类）。
+        class _DVAEDecoderModule(nn.Module):
+            """官方 ChatTTS ``DVAEDecoder`` 子模块。
 
-            将多组 VQ 音频码 token 解码为 mel 频谱。
+            ``conv_in`` (Sequential) + ``decoder_block`` (ModuleList[
+            ConvNeXtBlock]) + ``conv_out``。该子模块既用于 ``encoder`` 也
+            用于 ``decoder``，对应官方 ``DVAEDecoder`` 类。
             """
 
             def __init__(
                 self,
-                num_vq: int = 4,
-                num_audio_tokens: int = 1024,
-                hidden_size: int = 512,
-                mel_bins: int = 80,
-                num_layers: int = 6,
-                dilation_rates: list[int] | None = None,
-                output_length_factor: int = 1,
+                idim: int,
+                odim: int,
+                n_layer: int = 12,
+                bn_dim: int = 64,
+                hidden: int = 256,
+                kernel: int = 7,
+                dilation: int = 2,
+                up: bool = False,
             ) -> None:
                 super().__init__()
-                if dilation_rates is None:
-                    dilation_rates = [1, 2, 4, 8, 1, 2]
-                # 参数记录
-                self.num_vq = num_vq
-                self.num_audio_tokens = num_audio_tokens
-                self.hidden_size = hidden_size
-                self.mel_bins = mel_bins
-                self.num_layers = num_layers
-                self.dilation_rates: list[int] = list(dilation_rates)
-                self.output_length_factor = output_length_factor
-                self._kernel_size = 7
-
-                # A) 向量量化嵌入层（GFSQ 解码部分）
-                self.embeddings = nn.ModuleList(
+                self.conv_in = nn.Sequential(
+                    nn.Conv1d(idim, bn_dim, 3, 1, 1),  # conv_in.0
+                    nn.GELU(),  # conv_in.1
+                    nn.Conv1d(bn_dim, hidden, 3, 1, 1),  # conv_in.2
+                )
+                self.decoder_block = nn.ModuleList(
                     [
-                        nn.Embedding(num_audio_tokens, hidden_size)
-                        for _ in range(num_vq)
+                        _ConvNeXtBlock(hidden, hidden * 4, kernel, dilation)
+                        for _ in range(n_layer)
                     ]
                 )
-
-                # B) ConvNeXt 解码主干
-                self.blocks = nn.ModuleList(
-                    [
-                        _ConvNeXtBlock(
-                            hidden_size,
-                            dilation_rate=self.dilation_rates[
-                                i % len(self.dilation_rates)
-                            ],
-                            kernel_size=self._kernel_size,
-                        )
-                        for i in range(num_layers)
-                    ]
+                self.conv_out = nn.Conv1d(
+                    hidden, odim, kernel_size=1, bias=False
                 )
-                # 主干末端归一化，稳定数值
-                self.final_norm = nn.LayerNorm(hidden_size)
 
-                # C) 输出投影层
-                self.out_proj = nn.Linear(hidden_size, mel_bins)
-
-                # 流式缓冲区（forward_chunk 使用）
-                self._stream_buffer: Any = None
-                self._is_loaded: bool = False
-
-            # ----------------------------------------------------------
-            # 辅助
-            # ----------------------------------------------------------
-            def _receptive_field(self) -> int:
-                """计算主干网络的时间感受野（需要的左侧上下文帧数）。"""
-                rf = 0
-                for i in range(self.num_layers):
-                    d = self.dilation_rates[i % len(self.dilation_rates)]
-                    rf += (self._kernel_size - 1) * d
-                return rf
-
-            def _embed_tokens(self, token_ids: Any) -> tuple[Any, bool]:
-                """将 VQ token ids 转为求和后的嵌入。
+            def forward(self, x: Any) -> Any:
+                """前向计算。
 
                 Parameters
                 ----------
-                token_ids : torch.Tensor
-                    ``[num_vq, frames]`` 或 ``[batch, num_vq, frames]``。
-
-                Returns
-                -------
-                emb : torch.Tensor
-                    ``[batch, frames, hidden_size]``。
-                squeeze_batch : bool
-                    输入是否为 2D（需要在输出时 squeeze 回去）。
-                """
-                squeeze_batch = False
-                if token_ids.dim() == 2:
-                    # [num_vq, frames] -> [1, num_vq, frames]
-                    token_ids = token_ids.unsqueeze(0)
-                    squeeze_batch = True
-                # [batch, num_vq, frames]
-                n_vq = min(self.num_vq, token_ids.size(1))
-                emb: Any = None
-                for i in range(n_vq):
-                    # clamp 防止 AR 模型生成的越界 token id 导致 Embedding 查表报错
-                    safe_ids = token_ids[:, i, :].long().clamp(
-                        min=0, max=self.num_audio_tokens - 1
-                    )
-                    e = self.embeddings[i](safe_ids)
-                    emb = e if emb is None else emb + e
-                return emb, squeeze_batch
-
-            def _decode_hidden(self, emb: Any) -> Any:
-                """对 ``[batch, frames, hidden]`` 嵌入执行主干 + 输出投影。
+                x : torch.Tensor
+                    ``[batch, idim, frames]``。
 
                 Returns
                 -------
                 torch.Tensor
-                    ``[batch, mel_bins, frames]``。
+                    ``[batch, odim, frames]``。
                 """
-                import torch
+                y = self.conv_in(x)
+                for f in self.decoder_block:
+                    y = f(y)
+                x = self.conv_out(y)
+                return x
 
-                x = emb.transpose(1, 2)            # [B, H, T]
-                for block in self.blocks:
-                    x = block(x)
-                x = x.transpose(1, 2)              # [B, T, H]
-                x = self.final_norm(x)
-                mel = self.out_proj(x)             # [B, T, mel_bins]
-                mel = mel.transpose(1, 2)          # [B, mel_bins, T]
-                if self.output_length_factor != 1:
-                    mel = torch.nn.functional.interpolate(
-                        mel,
-                        scale_factor=float(self.output_length_factor),
-                        mode="linear",
-                        align_corners=False,
+        class _GFSQ(nn.Module):
+            """官方 ChatTTS ``GFSQ``：基于 ``GroupedResidualFSQ`` 的量化嵌入。
+
+            将 token ids ``[B, num_vq, T]``（``num_vq = G * R``）嵌入为连续
+            特征 ``[B, dim, T]``。
+            """
+
+            def __init__(
+                self,
+                dim: int,
+                levels: tuple,
+                G: int,
+                R: int,
+                eps: float = 1e-5,
+                transpose: bool = True,
+            ) -> None:
+                super().__init__()
+                from vector_quantize_pytorch import GroupedResidualFSQ
+
+                self.quantizer = GroupedResidualFSQ(
+                    dim=dim,
+                    levels=list(levels),
+                    num_quantizers=R,
+                    groups=G,
+                )
+                self.n_ind = math.prod(levels)
+                self.eps = eps
+                self.transpose = transpose
+                self.G = G
+                self.R = R
+
+            def _embed(self, x: Any) -> Any:
+                """将 token ids 嵌入为连续特征。
+
+                Parameters
+                ----------
+                x : torch.Tensor
+                    ``[B, num_vq, T]``，``num_vq = G * R``。
+
+                Returns
+                -------
+                torch.Tensor
+                    ``[B, dim, T]``（``transpose=True`` 时）。
+                """
+                # x: [B, num_vq, T]
+                if self.transpose:
+                    x = x.transpose(1, 2)  # [B, T, num_vq]
+                x = x.view(
+                    x.size(0), x.size(1), self.G, self.R
+                ).permute(2, 0, 1, 3)  # [G, B, T, R]
+                feat = self.quantizer.get_output_from_indices(
+                    x
+                )  # [B, T, dim]
+                if self.transpose:
+                    return feat.transpose(1, 2)  # [B, dim, T]
+                return feat
+
+        class _DVAEDecoder(nn.Module):
+            """与官方 ChatTTS ``DVAE`` 结构完全一致的解码器实现。
+
+            顶层模块持有 ``coef`` / ``downsample_conv`` / ``encoder`` /
+            ``decoder`` / ``out_conv`` / ``vq_layer``，``state_dict`` key
+            与官方 ``DVAE.safetensors`` 一一对应。
+
+            Parameters
+            ----------
+            dim : int
+                主干维度，等于 ``decoder.idim`` 与 ``decoder.odim``；
+                VQ 维度为 ``2 * dim``。官方默认 ``512``。
+            n_layer : int
+                ConvNeXt 块数，官方默认 ``12``。
+            hidden : int | None
+                ConvNeXt 内部隐藏维度；``None`` 时取 ``dim // 2``（官方
+                ``dim=512`` 时为 ``256``）。
+            bn_dim : int | None
+                ``conv_in`` 瓶颈维度；``None`` 时取 ``dim // 4``（官方
+                ``dim=512`` 时为 ``128``）。
+            kernel : int
+                Depthwise 卷积核大小，官方默认 ``7``。
+            dilation : int
+                膨胀率，官方默认 ``2``。
+            mel_bins : int
+                mel 频谱维度（``coef`` 与 ``out_conv`` 输出通道数），官方
+                ``100``。
+            levels : tuple
+                GFSQ 各码本层级，官方 ``(5, 5, 5, 5)``。
+            G : int
+                GFSQ 分组数，官方 ``2``。
+            R : int
+                GFSQ 每组残差量化器数，官方 ``2``；``num_vq = G * R``。
+            with_encoder : bool
+                是否构建 ``downsample_conv`` + ``encoder``（含 encoder 的
+                ``DVAE.safetensors`` 需 ``True`` 以匹配全部 key）。
+            coef : torch.Tensor | None
+                ``coef`` 初值；``None`` 时随机初始化（加载权重后覆盖）。
+            """
+
+            def __init__(
+                self,
+                dim: int = 512,
+                n_layer: int = 12,
+                hidden: int | None = None,
+                bn_dim: int | None = None,
+                kernel: int = 7,
+                dilation: int = 2,
+                mel_bins: int = 100,
+                levels: tuple = (5, 5, 5, 5),
+                G: int = 2,
+                R: int = 2,
+                with_encoder: bool = True,
+                coef: Any = None,
+            ) -> None:
+                super().__init__()
+                if hidden is None:
+                    hidden = dim // 2
+                if bn_dim is None:
+                    bn_dim = dim // 4
+                vq_dim = 2 * dim  # GFSQ 输出维度，官方 1024
+
+                # coef buffer: [1, mel_bins, 1]
+                if coef is None:
+                    coef = torch.rand(mel_bins)
+                self.register_buffer("coef", coef.unsqueeze(0).unsqueeze_(2))
+
+                if with_encoder:
+                    self.downsample_conv = nn.Sequential(
+                        nn.Conv1d(mel_bins, dim, 3, 1, 1),  # downsample_conv.0
+                        nn.GELU(),  # downsample_conv.1
+                        nn.Conv1d(dim, dim, 4, 2, 1),  # downsample_conv.2
+                        nn.GELU(),  # downsample_conv.3
                     )
-                return mel
+                    self.encoder = _DVAEDecoderModule(
+                        idim=dim,
+                        odim=2 * dim,
+                        n_layer=n_layer,
+                        bn_dim=bn_dim,
+                        hidden=hidden,
+                        kernel=kernel,
+                        dilation=dilation,
+                    )
+
+                self.decoder = _DVAEDecoderModule(
+                    idim=dim,
+                    odim=dim,
+                    n_layer=n_layer,
+                    bn_dim=bn_dim,
+                    hidden=hidden,
+                    kernel=kernel,
+                    dilation=dilation,
+                )
+                self.out_conv = nn.Conv1d(
+                    dim, mel_bins, 3, 1, 1, bias=False
+                )
+                self.vq_layer = _GFSQ(dim=vq_dim, levels=levels, G=G, R=R)
+
+                self._is_loaded: bool = False
 
             # ----------------------------------------------------------
             # 前向
             # ----------------------------------------------------------
-            def forward(self, token_ids: Any) -> Any:
-                """将 VQ token ids 解码为 mel 频谱。
+            def forward(self, inp: Any, mode: str = "decode") -> Any:
+                """将 VQ token ids 解码为 mel 频谱（官方 decode 逻辑）。
 
                 Parameters
                 ----------
-                token_ids : torch.Tensor
-                    ``[num_vq, frames]`` 或 ``[batch, num_vq, frames]``。
+                inp : torch.Tensor
+                    ``[num_vq, frames]`` 或 ``[batch, num_vq, frames]``，
+                    ``num_vq = G * R``。
+                mode : str
+                    仅支持 ``"decode"``。
 
                 Returns
                 -------
                 torch.Tensor
-                    输入 2D 时返回 ``[mel_bins, frames]``；
-                    输入 3D 时返回 ``[batch, mel_bins, frames]``。
+                    输入 2D 时返回 ``[mel_bins, frames*2]``；
+                    输入 3D 时返回 ``[batch, mel_bins, frames*2]``。
+                    时间维度因 reshape 翻倍（与官方一致）。
                 """
-                # 如果加载了官方实例，直接转发
-                if hasattr(self, "_official_impl") and self._official_impl is not None:
-                    import torch
+                squeeze = inp.dim() == 2
+                if squeeze:
+                    inp = inp.unsqueeze(0)  # [1, num_vq, T]
 
-                    inp = token_ids
-                    if inp.dim() == 2:
-                        inp = inp.unsqueeze(0)  # [1, num_vq, frames]
-                    mel = self._official_impl(inp, mode="decode")
-                    if token_ids.dim() == 2:
-                        mel = mel.squeeze(0)
-                    return mel
+                if mode == "decode":
+                    if self.vq_layer is not None:
+                        vq_feats = self.vq_layer._embed(inp)  # [B, 2*dim, T]
+                    else:
+                        vq_feats = inp
+                    # 把 hidden 维度拆成 2 组，时间维度翻倍
+                    vq_feats = vq_feats.view(
+                        (
+                            vq_feats.size(0),
+                            2,
+                            vq_feats.size(1) // 2,
+                            vq_feats.size(2),
+                        )
+                    ).permute(0, 2, 3, 1).flatten(
+                        2
+                    )  # [B, dim, T*2]
+                    dec_out = self.out_conv(
+                        self.decoder(vq_feats)
+                    )  # [B, mel_bins, T*2]
+                    out = torch.mul(dec_out, self.coef)
+                else:
+                    raise NotImplementedError(
+                        f"unsupported mode: {mode!r}"
+                    )
 
-                emb, squeeze_batch = self._embed_tokens(token_ids)
-                mel = self._decode_hidden(emb)
-                if squeeze_batch:
-                    mel = mel.squeeze(0)
-                return mel
+                if squeeze:
+                    out = out.squeeze(0)
+                return out
 
             def forward_chunk(self, token_ids: Any) -> Any:
-                """流式解码：维护膨胀卷积感受野缓冲区。
+                """流式解码兼容接口。
 
-                每次 ``forward_chunk`` 调用时，将上一块末尾的若干帧嵌入缓存
-                作为左侧上下文拼接到当前块前，使膨胀卷积获得正确感受野，从而
-                减小块边界伪影。仅输出当前块对应的新帧。
-
-                使用 :meth:`reset_stream_buffer` 重置流式状态。
-
-                Parameters
-                ----------
-                token_ids : torch.Tensor
-                    ``[num_vq, chunk_frames]`` 或
-                    ``[batch, num_vq, chunk_frames]``。
-
-                Returns
-                -------
-                torch.Tensor
-                    当前块对应的 mel，``[mel_bins, chunk_frames]`` 或
-                    ``[batch, mel_bins, chunk_frames]``。
+                官方 DVAE 解码为无状态的全卷积网络，此处直接对当前块执行
+                完整 decode（与 :meth:`forward` 等价），保留接口供复合声码器
+                流式管线调用。
                 """
-                import torch
-
-                emb, squeeze_batch = self._embed_tokens(token_ids)
-
-                # 拼接上一块缓冲区作为左侧上下文
-                buffer_frames = 0
-                if self._stream_buffer is not None:
-                    emb = torch.cat([self._stream_buffer, emb], dim=1)
-                    buffer_frames = self._stream_buffer.shape[1]
-
-                mel = self._decode_hidden(emb)  # [B, mel_bins, total]
-
-                # 丢弃缓冲区对应的（已在上一次输出过的）部分
-                if buffer_frames > 0 and mel.shape[-1] > buffer_frames:
-                    mel = mel[..., buffer_frames:]
-
-                # 更新缓冲区：保留最近感受野帧
-                rf = self._receptive_field()
-                if rf > 0 and emb.shape[1] >= rf:
-                    self._stream_buffer = emb[:, -rf:, :].detach()
-                else:
-                    self._stream_buffer = emb.detach()
-
-                if squeeze_batch:
-                    mel = mel.squeeze(0)
-                return mel
+                return self.forward(token_ids)
 
             def reset_stream_buffer(self) -> None:
-                """重置流式缓冲区。"""
-                self._stream_buffer = None
+                """重置流式状态（官方 DVAE 无状态，此处为接口兼容空实现）。"""
+                pass
 
             # ----------------------------------------------------------
             # 权重加载 / 释放
@@ -356,14 +452,16 @@ def _get_dvae_class() -> Any:
 
                 1. 解析 dtype 字符串为 torch dtype；
                 2. 无 GPU 时将设备降级为 CPU；
-                3. 优先尝试用官方 ``ChatTTS.DVAE`` 加载（结构完全匹配）；
-                4. 官方包不可用时，读取权重，剥离前缀后 ``strict=False`` 载入；
+                3. 读取权重（safetensors 优先，回退到 .pt/.pth/.bin）；
+                4. 直接 ``load_state_dict(strict=False)`` 载入（key 与官方
+                   完全匹配，无需前缀剥离）；
                 5. 移动到目标 device / dtype，切换为 eval。
 
                 Parameters
                 ----------
                 weights_path : str
-                    权重文件路径或目录。
+                    权重文件路径或目录（目录下查找 ``dvae.safetensors`` /
+                    ``decoder.safetensors``）。
                 device : str
                     目标设备；无 GPU 时自动降级为 CPU。
                 dtype : str
@@ -382,20 +480,9 @@ def _get_dvae_class() -> Any:
                 if device.startswith("cuda") and not torch.cuda.is_available():
                     resolved = "cpu"
 
-                # 优先尝试官方 ChatTTS DVAE（结构完全匹配权重文件）
-                official = self._try_load_official(
-                    weights_path, resolved, torch_dtype
-                )
-                if official is not None:
-                    # 用官方实例替换自实现
-                    self._official_impl = official
-                    self._is_loaded = True
-                    return
-
-                # 回退：自实现 strict=False 加载
                 state_dict = self._load_state_dict(weights_path)
                 if state_dict:
-                    state_dict = self._strip_prefix(state_dict)
+                    # key 与官方 DVAE.safetensors 完全匹配，直接载入
                     self.load_state_dict(state_dict, strict=False)
 
                 self.to(device=resolved, dtype=torch_dtype)
@@ -413,72 +500,7 @@ def _get_dvae_class() -> Any:
                     empty_device_cache()
                 except Exception:  # noqa: BLE001
                     pass
-                self._stream_buffer = None
                 self._is_loaded = False
-                # 释放官方实例引用
-                if hasattr(self, "_official_impl"):
-                    del self._official_impl
-
-            def _try_load_official(
-                self, weights_path: str, device: str, torch_dtype: Any
-            ) -> Any:
-                """尝试用官方 ChatTTS DVAE 加载权重，失败返回 None。
-
-                ChatTTS 的 DVAE 结构（GFSQ + DVAEDecoder + coef 缩放）与自实现
-                完全不同，strict=False 会静默忽略所有权重导致电子音。
-                直接使用官方包的默认 Config 创建模型，确保结构完全匹配。
-                """
-                try:
-                    from ChatTTS.model.dvae import DVAE as OfficialDVAE
-                    from ChatTTS.config import Config
-                    from dataclasses import asdict
-                except ImportError as e:
-                    import logging
-                    logging.getLogger(__name__).warning(
-                        "ChatTTS DVAE 不可用，回退到自实现: %s", e
-                    )
-                    return None
-
-                try:
-                    import os
-                    import torch
-
-                    config = Config()
-                    basename = os.path.splitext(
-                        os.path.basename(weights_path)
-                    )[0].lower()
-
-                    if basename == "decoder":
-                        # Decoder 模式：只有 decoder config，无 encoder/vq
-                        # 输入是 GPT hidden states，不是 token_ids
-                        official = OfficialDVAE(
-                            decoder_config=asdict(config.decoder),
-                            dim=config.decoder.idim,
-                            device=torch.device(device),
-                        )
-                    else:
-                        # DVAE 模式：有 encoder + decoder + vq
-                        # 输入是 token_ids，通过 GFSQ._embed 量化
-                        official = OfficialDVAE(
-                            decoder_config=asdict(config.dvae.decoder),
-                            encoder_config=asdict(config.dvae.encoder),
-                            vq_config=asdict(config.dvae.vq),
-                            dim=config.dvae.decoder.idim,
-                            device=torch.device(device),
-                        )
-
-                    official.load_pretrained(
-                        weights_path, torch.device(device)
-                    )
-                    official = official.to(device=device, dtype=torch_dtype)
-                    official.eval()
-                    return official
-                except Exception as e:  # noqa: BLE001
-                    import logging
-                    logging.getLogger(__name__).warning(
-                        "DVAE official load failed: %s", e
-                    )
-                    return None
 
             # ----------------------------------------------------------
             # 内部辅助：权重读取
@@ -495,7 +517,11 @@ def _get_dvae_class() -> Any:
 
                         state_dict = load_file(weights_path)
                     elif weights_path.endswith((".pt", ".pth", ".bin")):
-                        ckpt = torch.load(weights_path, map_location="cpu", weights_only=False)
+                        ckpt = torch.load(
+                            weights_path,
+                            map_location="cpu",
+                            weights_only=False,
+                        )
                         state_dict = _unwrap_ckpt(ckpt)
                 elif os.path.isdir(weights_path):
                     for fname in ("dvae.safetensors", "decoder.safetensors"):
@@ -509,33 +535,14 @@ def _get_dvae_class() -> Any:
                         for fname in ("dvae.bin", "decoder.bin"):
                             fpath = os.path.join(weights_path, fname)
                             if os.path.isfile(fpath):
-                                ckpt = torch.load(fpath, map_location="cpu", weights_only=False)
+                                ckpt = torch.load(
+                                    fpath,
+                                    map_location="cpu",
+                                    weights_only=False,
+                                )
                                 state_dict = _unwrap_ckpt(ckpt)
                                 break
                 return state_dict
-
-            @staticmethod
-            def _strip_prefix(state_dict: dict[str, Any]) -> dict[str, Any]:
-                """剥离常见前缀（``dvae.`` / ``decoder.``）以提升匹配率。
-
-                当且仅当 state_dict 中存在以这些前缀开头的 key 时才剥离，
-                避免破坏本就无前缀的权重。
-                """
-                prefixes = ("dvae.", "decoder.")
-                has_prefix = any(
-                    any(k.startswith(p) for k in state_dict) for p in prefixes
-                )
-                if not has_prefix:
-                    return state_dict
-                stripped: dict[str, Any] = {}
-                for key, value in state_dict.items():
-                    new_key = key
-                    for p in prefixes:
-                        if key.startswith(p):
-                            new_key = key[len(p):]
-                            break
-                    stripped[new_key] = value
-                return stripped
 
         _DVAEDecoderClass = _DVAEDecoder
     return _DVAEDecoderClass
@@ -544,27 +551,33 @@ def _get_dvae_class() -> Any:
 class DVAEDecoder:
     """DVAE 解码器代理类。
 
-    在首次实例化时惰性创建真正的 ``nn.Module`` 子类实例，并将属性访问与
-    方法调用转发给内部实现。这样既能让本模块在未安装 ``torch`` 时被导入，
-    又能在 ``torch`` 可用时获得完整的 ``nn.Module`` 行为（包括
-    ``isinstance`` 检查与 ``forward`` 调用的一致性）。
+    在首次实例化时惰性创建与官方 ChatTTS DVAE 结构完全一致的
+    ``nn.Module`` 子类实例，并将属性访问与方法调用转发给内部实现。这样
+    既能让本模块在未安装 ``torch`` 时被导入，又能在 ``torch`` 可用时获得
+    完整的 ``nn.Module`` 行为（包括 ``isinstance`` 检查与 ``forward``
+    调用的一致性），同时 ``state_dict`` key 与官方 ``DVAE.safetensors``
+    完全匹配。
 
     Parameters
     ----------
     num_vq : int
-        VQ 码本组数，默认 ``4``。
+        VQ 码本组数，``num_vq = G * R``，默认 ``4``（对应官方 ``G=2, R=2``）。
+        其它偶数值按 ``G = num_vq // 2, R = 2`` 拆分。
     num_audio_tokens : int
-        每个码本的码字数，默认 ``1024``。
+        兼容旧接口的参数（官方 GFSQ 由 ``levels`` 决定码字数，此处保留
+        但不参与建模）。
     hidden_size : int
-        隐藏层维度，默认 ``512``。
+        主干维度 ``dim``，等于 ``decoder.idim`` / ``decoder.odim``，官方
+        ``512``。
     mel_bins : int
-        mel 频谱维度，默认 ``80``。
+        mel 频谱维度（``coef`` 与 ``out_conv`` 输出通道数），官方 ``100``。
     num_layers : int
-        ConvNeXt 解码层数，默认 ``6``。
+        ConvNeXt 块数 ``n_layer``，官方 ``12``。
     dilation_rates : list[int] | None
-        各层膨胀率；``None`` 时使用 ``[1, 2, 4, 8, 1, 2]``。
+        兼容旧接口的参数（官方固定 ``dilation=2``，此处保留但不参与建模）。
     output_length_factor : int
-        输出长度缩放因子，默认 ``1``（不缩放）。
+        兼容旧接口的参数（官方 decode 通过 reshape 使时间翻倍，此处保留
+        但不参与建模）。
     """
 
     def __init__(
@@ -573,19 +586,26 @@ class DVAEDecoder:
         num_audio_tokens: int = 1024,
         hidden_size: int = 512,
         mel_bins: int = 80,
-        num_layers: int = 6,
+        num_layers: int = 12,
         dilation_rates: list[int] | None = None,
         output_length_factor: int = 1,
     ) -> None:
+        # 由 num_vq 推导 G、R（num_vq = G * R）；官方 num_vq=4 -> G=2, R=2
+        if num_vq >= 2 and num_vq % 2 == 0:
+            G, R = num_vq // 2, 2
+        else:
+            G, R = 1, max(1, num_vq)
+        levels = (5,) * (G * R)
+
         cls = _get_dvae_class()
         self._impl = cls(
-            num_vq=num_vq,
-            num_audio_tokens=num_audio_tokens,
-            hidden_size=hidden_size,
+            dim=hidden_size,
+            n_layer=num_layers,
             mel_bins=mel_bins,
-            num_layers=num_layers,
-            dilation_rates=dilation_rates,
-            output_length_factor=output_length_factor,
+            levels=levels,
+            G=G,
+            R=R,
+            with_encoder=True,
         )
 
     def __getattr__(self, name: str) -> Any:
@@ -603,11 +623,11 @@ class DVAEDecoder:
 
     # 显式转发关键方法
     def forward(self, token_ids: Any) -> Any:
-        """将 VQ token ids 解码为 mel 频谱。"""
+        """将 VQ token ids 解码为 mel 频谱（官方 decode 逻辑）。"""
         return self._impl.forward(token_ids)
 
     def forward_chunk(self, token_ids: Any) -> Any:
-        """流式解码：维护膨胀卷积感受野缓冲区。"""
+        """流式解码兼容接口。"""
         return self._impl.forward_chunk(token_ids)
 
     def load_weights(
@@ -619,3 +639,7 @@ class DVAEDecoder:
     def unload_weights(self) -> None:
         """释放权重。"""
         return self._impl.unload_weights()
+
+    def reset_stream_buffer(self) -> None:
+        """重置流式状态（接口兼容）。"""
+        return self._impl.reset_stream_buffer()

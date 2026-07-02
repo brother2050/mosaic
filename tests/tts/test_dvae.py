@@ -19,8 +19,12 @@ pytestmark = pytest.mark.skipif(not _HAS_TORCH, reason="torch 未安装")
 from mosaic.nodes.audio.tts_backends.vocoders.dvae import DVAEDecoder
 
 # 小模型参数，兼顾速度与覆盖
+# 注意：官方 GFSQ 使用 GroupedResidualFSQ，levels=(5,5,5,5)，每个量化器
+# 的有效 token 索引范围为 [0, 5)，因此 _NUM_AUDIO_TOKENS 必须取 5（即
+# levels[0]）。该值同时作为构造参数 num_audio_tokens 传入（兼容旧接口，
+# 不参与建模）。
 _NUM_VQ = 4
-_NUM_AUDIO_TOKENS = 64
+_NUM_AUDIO_TOKENS = 5
 _HIDDEN_SIZE = 32
 _MEL_BINS = 80
 _NUM_LAYERS = 3
@@ -44,24 +48,29 @@ def test_DVAE_01() -> None:
 
 
 def test_DVAE_02() -> None:
-    """forward 输出 mel shape 正确 [mel_bins, frames]。"""
+    """forward 输出 mel shape 正确 [mel_bins, frames*2]。
+
+    官方 decode 逻辑：token_ids -> GFSQ._embed -> reshape（hidden 拆 2 组、
+    时间翻倍）-> decoder -> out_conv -> × coef，因此输出帧数为输入帧数的
+    2 倍（与官方 ChatTTS DVAE 一致）。
+    """
     import torch
 
     decoder = _make_decoder()
     tokens = torch.randint(0, _NUM_AUDIO_TOKENS, (_NUM_VQ, 50))
     mel = decoder.forward(tokens)
     assert mel.shape[0] == _MEL_BINS
-    assert mel.shape[1] == 50
+    assert mel.shape[1] == 50 * 2  # 时间维度因 reshape 翻倍
 
 
 def test_DVAE_03() -> None:
-    """forward batch 输入 [batch, mel_bins, frames]。"""
+    """forward batch 输入 [batch, mel_bins, frames*2]。"""
     import torch
 
     decoder = _make_decoder()
     tokens = torch.randint(0, _NUM_AUDIO_TOKENS, (2, _NUM_VQ, 50))
     mel = decoder.forward(tokens)
-    assert mel.shape == (2, _MEL_BINS, 50)
+    assert mel.shape == (2, _MEL_BINS, 50 * 2)  # 时间维度因 reshape 翻倍
 
 
 def test_DVAE_04() -> None:
