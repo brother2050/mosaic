@@ -643,6 +643,13 @@ class ChatTTSBackend(TTSBackend):
         # 10. 复合声码器解码 —— VQ token -> mel -> waveform
         waveform, sample_rate = self._decode_full(audio_codes)
 
+        # 10.5 峰值归一化：Vocos ISTFT 输出可能超出 [-1, 1]，
+        # 不归一化会导致 soundfile 写入时削波失真（听起来像噪音）
+        if hasattr(waveform, "abs"):
+            peak = waveform.abs().max()
+            if peak > 1.0:
+                waveform = waveform / peak
+
         # 11. 构造 AudioData 返回
         duration = self._compute_duration(waveform, sample_rate)
         metadata: dict[str, Any] = {
