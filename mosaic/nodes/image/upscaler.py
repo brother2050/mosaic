@@ -65,16 +65,18 @@ class Upscaler(BaseImageNode):
 
     def _load_pipeline(self) -> None:
         """通过 DiffusionPipeline 自动检测加载。"""
+        from diffusers import DiffusionPipeline  # type: ignore
         from mosaic.nodes._model_loader import auto_load_pipeline
 
         torch_dtype = self._resolve_dtype()
 
+        # SD Upscale 不是 text-to-image 任务，AutoPipelineForText2Image 会失败。
+        # 直接用 DiffusionPipeline 自动检测（读取 model_index.json 的 _class_name）。
         self._pipeline = auto_load_pipeline(
             self._model_name,
-            task="text-to-image",
+            pipeline_class=DiffusionPipeline,
             variant_fp16=self._dtype_str in ("float16", "fp16"),
             dtype_str=self._dtype_str,
-            pipeline_class=self._pipeline_class,
             torch_dtype=torch_dtype,
         )
 
@@ -160,6 +162,12 @@ class Upscaler(BaseImageNode):
 
             # 对齐到 8 的倍数
             image = self._resize_to_multiple_of_8(image)
+
+            # SD Upscale 的 UNet 期望 7 通道输入（4 latents + 3 image）。
+            # BackgroundRemover 输出 RGBA（4 通道），需转为 RGB（3 通道），
+            # 否则报 "expects 7 but received 8" 通道数不匹配。
+            if image.mode == "RGBA":
+                image = image.convert("RGB")
 
             # 构造 Pipeline 参数
             pipe_kwargs: dict = {

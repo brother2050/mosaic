@@ -378,6 +378,14 @@ def upcast_pipeline_components(
                         )
                 except Exception:
                     pass  # 不支持 tiling 的 VAE 静默跳过
+                # 禁用 VAE 的 force_upcast，阻止 diffusers 在 pipeline.__call__
+                # 内部自动调用已弃用的 upcast_vae()（会触发 FutureWarning）。
+                # enable_tiling 已解决 fp16 下的黑图问题，无需再 upcast。
+                try:
+                    if getattr(vae.config, "force_upcast", False):
+                        vae.config.force_upcast = False
+                except Exception:
+                    pass
         elif logger is not None:
             logger.debug(
                 "Skipping VAE upcast for %s (diffusers doesn't convert "
