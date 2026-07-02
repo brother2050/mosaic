@@ -601,6 +601,30 @@ class LlamaARModel(LlamaARModelBase):
             from safetensors.torch import load_file  # type: ignore
 
             embed_state = load_file(resolved_embed_path)
+
+            # weight_norm key 兼容性转换
+            # 旧版 nn.utils.weight_norm: weight_g / weight_v
+            # 新版 parametrizations.weight_norm: parametrizations.weight.original0 / original1
+            # 官方权重文件用旧版 key，当前 torch 可能用新版 key
+            # 需要把文件的旧版 key 转成模型当前格式的 key
+            remapped = {}
+            model_keys_actual = set(embed_layer.state_dict().keys())
+            has_new_keys = any(
+                ".parametrizations.weight." in k for k in model_keys_actual
+            )
+            if has_new_keys:
+                # 模型用新版 key，文件用旧版 key，需要转换文件 key
+                for k, v in embed_state.items():
+                    if k.endswith(".weight_g"):
+                        new_k = k.replace(".weight_g", ".parametrizations.weight.original0")
+                        remapped[new_k] = v
+                    elif k.endswith(".weight_v"):
+                        new_k = k.replace(".weight_v", ".parametrizations.weight.original1")
+                        remapped[new_k] = v
+                    else:
+                        remapped[k] = v
+                embed_state = remapped
+
             result = embed_layer.load_state_dict(embed_state, strict=False)
             import logging
             logger = logging.getLogger(__name__)
