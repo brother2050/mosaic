@@ -170,6 +170,9 @@ def _get_vocos_class() -> Any:
                 # -> [B, n_bins, T]
                 mag = mag.transpose(1, 2)
                 phase = phase.transpose(1, 2)
+                # torch.polar 在 CUDA 上不支持 float16，先转 float32
+                mag = mag.float()
+                phase = phase.float()
                 complex_spec = torch.polar(mag, phase)  # 复数谱 [B, n_bins, T]
                 waveform = torch.istft(
                     complex_spec,
