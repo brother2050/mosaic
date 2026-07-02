@@ -305,9 +305,9 @@ result = pipeline.run(MosaicData(
     height=1024,
 ))
 
-# 4. 查看结果（TextToImage 输出 images 列表）
-images = result.get("images")
-images[0].save("coffee.png")
+# 4. 查看结果（TextToImage 输出 image）
+image = result.get("image")
+image.save("coffee.png")
 print("Saved to coffee.png")
 ```
 

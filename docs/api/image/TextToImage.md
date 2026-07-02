@@ -24,7 +24,7 @@ Examples
 ...     negative_prompt="blurry, low quality",
 ...     width=1024, height=1024,
 ... ))
->>> result["images"][0].save("cat.png")
+>>> result["image"].save("cat.png")
 
 ## 类属性
 
@@ -87,7 +87,7 @@ input_data:
 Returns
 -------
 MosaicData
-    包含 ``images`` (list[PIL.Image])、``seed`` (int)、
+    包含 ``image`` (PIL.Image)、``seed`` (int)、
     ``prompt`` (str)、``model_name`` (str)。
 
 Raises

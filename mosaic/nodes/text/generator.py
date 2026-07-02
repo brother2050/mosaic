@@ -14,11 +14,10 @@ from mosaic.core.node import NodeSpec
 from mosaic.core.registry import registry
 from mosaic.core.types import MosaicData
 
+from mosaic.nodes.coerce import safe_float, safe_int
 from mosaic.nodes.text._base import BaseTextNode
 from mosaic.nodes.text._text_utils import (
     check_prompt_length,
-    safe_float,
-    safe_int,
     validate_max_new_tokens,
     validate_temperature,
     validate_top_p,
@@ -45,7 +44,7 @@ class TextGenerator(BaseTextNode):
     --------
     >>> gen = TextGenerator(model="Qwen/Qwen2.5-7B-Instruct")
     >>> result = gen(MosaicData(prompt="写一首关于春天的诗"))
-    >>> print(result["prompt"])
+    >>> print(result["text"])
     """
 
     name: str = "text-generator"
@@ -70,7 +69,7 @@ class TextGenerator(BaseTextNode):
         Returns
         -------
         MosaicData
-            包含 ``prompt`` (str)、``input_tokens`` (int)、
+            包含 ``text`` (str)、``input_tokens`` (int)、
             ``output_tokens`` (int)。
 
         Raises
@@ -130,7 +129,7 @@ class TextGenerator(BaseTextNode):
 
         elapsed = time.perf_counter() - t0
         result = MosaicData(
-            prompt=generated_text,
+            text=generated_text,
             input_tokens=input_tokens,
             output_tokens=output_tokens,
         )

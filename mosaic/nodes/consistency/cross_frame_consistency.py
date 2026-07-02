@@ -49,6 +49,7 @@ from __future__ import annotations
 import time
 from typing import Any
 
+from mosaic.core.device_utils import upcast_pipeline_components
 from mosaic.core.node import NodeSpec
 from mosaic.core.registry import registry
 from mosaic.core.types import MosaicData
@@ -188,15 +189,6 @@ class CrossFrameConsistency(BaseConsistencyNode):
             return "runwayml/stable-diffusion-v1-5"
         return self._model_name
 
-    def _resolve_target_device(self) -> str:
-        """解析实际推理设备，无 GPU 时从调度器降级。
-
-        .. deprecated::
-            委托给基类统一的 :meth:`BaseConsistencyNode._resolve_device`，
-            保留仅为向后兼容。
-        """
-        return self._resolve_device()
-
     # ------------------------------------------------------------------
     # 加载 / 卸载
     # ------------------------------------------------------------------
@@ -227,7 +219,7 @@ class CrossFrameConsistency(BaseConsistencyNode):
 
         # SD 1.5 (story-diffusion) 的 VAE 在 float16 下会产生 NaN → 黑图；
         # SDXL (consistory / all-in-one) 的 VAE 已兼容 fp16，upcast 幂等。
-        self._upcast_vae_fp32()
+        upcast_pipeline_components(self._pipeline, self._model_name, self._logger)
         self._loaded = True
 
     def _load_consistory(self) -> None:

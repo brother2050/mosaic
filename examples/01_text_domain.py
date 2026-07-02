@@ -35,7 +35,7 @@ def example_1_text_generation():
         )
     )
 
-    text = result.get("prompt")
+    text = result.get("text")
     print(f"生成的文本：\n{text}\n")
     return text
 
@@ -148,9 +148,9 @@ def example_6_classifier():
 def example_7_combined_pipeline():
     """示例 7：文本处理流水线（生成 → 翻译 → 摘要）。
 
-    TextGenerator 输出 ``prompt`` 字段，Translator 需要输入字段 ``text``，
-    字段名不一致时用显式的逐节点调用来展示数据流转。在字段名匹配的
-    场景下可直接使用 ``|`` 管道运算符。
+    TextGenerator 输出 ``text`` 字段，Translator 同样接受 ``text`` 输入，
+    字段名已统一，可直接使用 ``|`` 管道运算符；此处用显式的逐节点
+    调用来展示完整数据流转。
     """
     print("\n=== 示例 7：组合流水线（生成 → 翻译 → 摘要）===")
 
@@ -160,7 +160,7 @@ def example_7_combined_pipeline():
 
     # 1. 生成
     r1 = gen.run(MosaicData(prompt="用一段话介绍北京"))
-    generated = r1.get("prompt")
+    generated = r1.get("text")
     print(f"生成：{generated}\n")
 
     # 2. 翻译（将生成文本作为输入）

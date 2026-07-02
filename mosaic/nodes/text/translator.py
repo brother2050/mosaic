@@ -21,11 +21,10 @@ from mosaic.core.node import NodeSpec
 from mosaic.core.registry import registry
 from mosaic.core.types import MosaicData
 
+from mosaic.nodes.coerce import safe_float, safe_int
 from mosaic.nodes.text._base import BaseTextNode
 from mosaic.nodes.text._text_utils import (
     check_prompt_length,
-    safe_float,
-    safe_int,
     validate_max_new_tokens,
     validate_temperature,
 )
@@ -160,8 +159,8 @@ class Translator(BaseTextNode):
         self._emit_start()
         t0 = time.perf_counter()
         try:
-            # 校验输入（兼容上游输出 prompt 字段）
-            text = input_data.get("text") or input_data.get("prompt")
+            # 校验输入
+            text = input_data.get("text")
             if not isinstance(text, str):
                 raise ValueError(
                     f"Translator requires 'text' (str), got {type(text).__name__}."

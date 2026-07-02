@@ -301,7 +301,7 @@ def safe_load_pipeline(
             # fp16 variant 不可用（文件缺失/校验失败/部分版本抛 RuntimeError），
             # 回退到无 variant 加载。此时 torch_dtype 仍为 float16，但加载的是
             # fp32 权重再转 fp16（数值可能偏离预量化 variant）。对 VAE 已有
-            # _upcast_vae_fp32 兜底，但为安全起见，已知 fp16 不安全模型应转 fp32。
+            # upcast_pipeline_components 兜底，但为安全起见，已知 fp16 不安全模型应转 fp32。
             first_exc = exc
             logger.warning(
                 "fp16 variant load failed for %s: %s; retrying without variant.",

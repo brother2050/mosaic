@@ -17,12 +17,9 @@
 
 .. note::
    本模块是 ``safe_int`` / ``safe_float`` 的唯一定义处。
-   :mod:`mosaic.nodes.image._image_utils` /
-   :mod:`mosaic.nodes.video._video_utils` /
-   :mod:`mosaic.nodes.text._text_utils` 中的同名函数已改为从此处 re-export，
-   以统一语义：``value`` 为 ``None`` 且未提供 ``default`` 时抛 ``ValueError``，
-   提供 ``default`` 时回退 ``default``。各域节点应统一从本模块（或各域
-   ``_*_utils`` 的 re-export）导入，避免重复实现。
+   各域节点（``image`` / ``video`` / ``text``）统一从本模块直接导入，
+   避免重复实现。``value`` 为 ``None`` 且未提供 ``default`` 时抛
+   ``ValueError``，提供 ``default`` 时回退 ``default``。
 """
 
 from __future__ import annotations

@@ -1,10 +1,10 @@
 """图像节点公共工具函数。
 
-提供安全的类型转换与参数范围校验，统一图像生成节点的输入处理逻辑。
+提供参数范围校验，统一图像生成节点的输入处理逻辑。安全的类型转换
+(:func:`safe_int` / :func:`safe_float`) 统一由
+:mod:`mosaic.nodes.coerce` 提供，各节点直接从该模块导入。
 
 核心功能：
-- :func:`safe_int` / :func:`safe_float`：将用户输入安全转换为 int/float，
-  转换失败时抛出包含参数名与实际值的清晰 ``ValueError``。
 - :func:`validate_image_dimensions`：校验图像尺寸上下限，防止过小导致
   崩溃或过大导致显存溢出（与 E3 大图像内存保护相关）。
 - :func:`validate_guidance_scale` / :func:`validate_num_inference_steps` /
@@ -13,8 +13,6 @@
 
 from __future__ import annotations
 
-from mosaic.nodes.coerce import safe_float, safe_int  # noqa: F401
-
 __all__ = [
     "MAX_IMAGE_DIMENSION",
     "MIN_IMAGE_DIMENSION",
@@ -22,8 +20,6 @@ __all__ = [
     "MAX_INFERENCE_STEPS",
     "MIN_INFERENCE_STEPS",
     "ALIGNMENT_MULTIPLE",
-    "safe_int",
-    "safe_float",
     "validate_image_dimensions",
     "validate_guidance_scale",
     "validate_num_inference_steps",
@@ -40,13 +36,6 @@ MAX_GUIDANCE_SCALE = 20.0  # guidance_scale 上限
 MAX_INFERENCE_STEPS = 100  # 推理步数上限
 MIN_INFERENCE_STEPS = 1  # 推理步数下限
 ALIGNMENT_MULTIPLE = 8  # diffusers 要求图像尺寸为 8 的倍数
-
-
-# ---------------------------------------------------------------------------
-# 安全类型转换（re-export 自 mosaic.nodes.coerce，保持向后兼容）
-# ---------------------------------------------------------------------------
-# safe_int / safe_float 由 mosaic.nodes.coerce 统一实现，此处仅 re-export，
-# 以兼容历史导入 ``from mosaic.nodes.image._image_utils import safe_int``。
 
 
 # ---------------------------------------------------------------------------

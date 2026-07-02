@@ -203,13 +203,6 @@ class BaseImageNode(Node):
             f"(missing model_index.json).\n{hint}"
         )
 
-    def _upcast_vae_fp32(self) -> None:
-        """[已弃用] 请使用 upcast_pipeline_components()。
-
-        保留仅为向后兼容（子类可能直接调用此方法）。
-        """
-        upcast_pipeline_components(self._pipeline, self._model_name, self._logger)
-
     @abc.abstractmethod
     def _load_pipeline(self) -> None:
         """子类实现：实际加载 diffusers Pipeline。

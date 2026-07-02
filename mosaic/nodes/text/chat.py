@@ -14,11 +14,10 @@ from mosaic.core.node import NodeSpec
 from mosaic.core.registry import registry
 from mosaic.core.types import MosaicData
 
+from mosaic.nodes.coerce import safe_float, safe_int
 from mosaic.nodes.text._base import BaseTextNode
 from mosaic.nodes.text._text_utils import (
     check_prompt_length,
-    safe_float,
-    safe_int,
     validate_max_new_tokens,
     validate_temperature,
     validate_top_p,

@@ -1,13 +1,13 @@
 """文本节点公共工具函数。
 
-提供安全的类型转换、生成参数范围校验与超长 prompt 的上下文长度保护，
-统一文本生成节点（``TextGenerator``/``Chat``/``TextSummarizer``/
-``Translator``/``TextRewriter``）的输入处理逻辑，与
-:mod:`mosaic.nodes.image._image_utils` 保持一致的设计风格。
+提供生成参数范围校验与超长 prompt 的上下文长度保护，统一文本生成节点
+（``TextGenerator``/``Chat``/``TextSummarizer``/``Translator``/
+``TextRewriter``）的输入处理逻辑，与
+:mod:`mosaic.nodes.image._image_utils` 保持一致的设计风格。安全的类型转换
+(:func:`safe_int` / :func:`safe_float`) 统一由
+:mod:`mosaic.nodes.coerce` 提供，各节点直接从该模块导入。
 
 核心功能：
-- :func:`safe_int` / :func:`safe_float`：将用户输入安全转换为 int/float，
-  转换失败时抛出包含参数名与实际值的清晰 ``ValueError``。
 - :func:`validate_max_new_tokens` / :func:`validate_temperature` /
   :func:`validate_top_p`：校验因果语言模型生成参数的取值范围。
 - :func:`estimate_tokens` / :func:`check_prompt_length`：粗略估算 prompt
@@ -18,15 +18,11 @@ from __future__ import annotations
 
 import logging
 
-from mosaic.nodes.coerce import safe_float, safe_int  # noqa: F401
-
 __all__ = [
     "MAX_CONTEXT_LENGTH",
     "MAX_TEMPERATURE",
     "MAX_NEW_TOKENS",
     "MIN_NEW_TOKENS",
-    "safe_int",
-    "safe_float",
     "validate_max_new_tokens",
     "validate_temperature",
     "validate_top_p",
@@ -46,13 +42,6 @@ MAX_NEW_TOKENS = 8192
 MIN_NEW_TOKENS = 1
 #: 采样温度上限（transformers 常用上限为 2.0）。
 MAX_TEMPERATURE = 2.0
-
-
-# ---------------------------------------------------------------------------
-# 安全类型转换（re-export 自 mosaic.nodes.coerce，保持向后兼容）
-# ---------------------------------------------------------------------------
-# safe_int / safe_float 由 mosaic.nodes.coerce 统一实现，此处仅 re-export，
-# 以兼容历史导入 ``from mosaic.nodes.text._text_utils import safe_int``。
 
 
 # ---------------------------------------------------------------------------

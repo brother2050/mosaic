@@ -13,11 +13,10 @@ from typing import Any
 from mosaic.core.registry import registry
 from mosaic.core.types import MosaicData
 
+from mosaic.nodes.coerce import safe_float, safe_int
 from mosaic.nodes.image._base import BaseImageNode
 from mosaic.nodes.image._image_utils import (
     ALIGNMENT_MULTIPLE,
-    safe_float,
-    safe_int,
     validate_guidance_scale,
     validate_image_dimensions,
     validate_num_inference_steps,
@@ -58,7 +57,7 @@ class TextToImage(BaseImageNode):
     ...     negative_prompt="blurry, low quality",
     ...     width=1024, height=1024,
     ... ))
-    >>> result["images"][0].save("cat.png")
+    >>> result["image"].save("cat.png")
     """
 
     name: str = "text-to-image"
@@ -135,7 +134,7 @@ class TextToImage(BaseImageNode):
         Returns
         -------
         MosaicData
-            包含 ``images`` (list[PIL.Image])、``seed`` (int)、
+            包含 ``image`` (PIL.Image)、``seed`` (int)、
             ``prompt`` (str)、``model_name`` (str)。
 
         Raises
@@ -222,8 +221,7 @@ class TextToImage(BaseImageNode):
             )
 
         result = MosaicData(
-            images=images,
-            image=images[0],  # 兼容下游单数 image 字段
+            image=images[0] if images else None,
             seed=seed,
             prompt=prompt,
             model_name=self._model_name,

@@ -378,7 +378,7 @@ class TestE2EIntermediates:
         gen_names = [n for n in pipe.intermediate_names if "generator" in n]
         assert len(gen_names) >= 1
         gen_output = pipe.get_intermediate(gen_names[0])
-        assert "text" in gen_output or "prompt" in gen_output
+        assert "text" in gen_output
 
         # 可以获取第二个节点的中间产物
         sum_names = [n for n in pipe.intermediate_names if "summarizer" in n]

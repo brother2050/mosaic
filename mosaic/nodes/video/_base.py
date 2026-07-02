@@ -158,10 +158,6 @@ class BaseVideoNode(Node):
         upcast_pipeline_components(self._pipeline, self._model_name, self._logger)
         self._loaded = True
 
-    def _upcast_vae_fp32(self) -> None:
-        """[已弃用] 请使用 upcast_pipeline_components()。"""
-        upcast_pipeline_components(self._pipeline, self._model_name, self._logger)
-
     @abc.abstractmethod
     def _load_model(self) -> None:
         """子类实现：实际加载模型。

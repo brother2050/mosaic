@@ -57,7 +57,7 @@
 
 | 字段 | 类型 | 说明 |
 |---|---|---|
-| `prompt` | str | 生成的文本 |
+| `text` | str | 生成的文本 |
 | `input_tokens` | int | 输入 token 数 |
 | `output_tokens` | int | 输出 token 数 |
 
@@ -69,7 +69,7 @@ from mosaic.nodes.text import TextGenerator
 
 gen = TextGenerator(model="Qwen/Qwen2.5-7B-Instruct")
 result = gen.run(MosaicData(prompt="写一首关于春天的诗", temperature=0.8))
-print(result.get("prompt"))
+print(result.get("text"))
 ```
 
 #### 许可证
@@ -410,7 +410,7 @@ print(result.get("predicted_labels"))
 
 | 字段 | 类型 | 说明 |
 |---|---|---|
-| `images` | list[PIL.Image] | 生成的图像列表 |
+| `image` | PIL.Image | 生成的图像 |
 | `seed` | int | 实际使用的随机种子 |
 | `prompt` | str | 输入 prompt |
 | `model_name` | str | 模型名称 |
@@ -428,7 +428,7 @@ result = t2i.run(MosaicData(
     negative_prompt="blurry, low quality",
     seed=42,
 ))
-result.get("images")[0].save("cat.png")
+result.get("image").save("cat.png")
 ```
 
 ---

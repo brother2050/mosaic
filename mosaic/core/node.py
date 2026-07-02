@@ -71,8 +71,8 @@ class NodeSpec:
             "domain": self.domain,
             "description": self.description,
             "version": self.version,
-            "input_types": list(self.input_types),
-            "output_types": list(self.output_types),
+            "input_types": self.input_types,
+            "output_types": self.output_types,
             "model_info": dict(self.model_info),
         }
 
@@ -152,12 +152,9 @@ class Node(abc.ABC):
             if hasattr(type(self), key):
                 setattr(self, key, value)
             else:
-                # 未知 kwargs 不抛异常（保持向后兼容），但发出告警以
-                # 帮助用户发现参数名拼写错误。
-                self._logger.warning(
-                    "%s received unknown kwarg %r=%r; ignored. "
-                    "Check for typos in parameter names.",
-                    type(self).__name__, key, value,
+                # 未知 kwargs 直接抛 TypeError，避免参数名拼写错误被静默忽略。
+                raise TypeError(
+                    f"{type(self).__name__} received unknown kwarg {key!r}={value!r}."
                 )
 
     # -- 抽象方法（子类必须实现）------------------------------------------

@@ -13,10 +13,9 @@ from typing import Any
 from mosaic.core.registry import registry
 from mosaic.core.types import MosaicData
 
+from mosaic.nodes.coerce import safe_float, safe_int
 from mosaic.nodes.image._base import BaseImageNode
 from mosaic.nodes.image._image_utils import (
-    safe_float,
-    safe_int,
     validate_guidance_scale,
     validate_image_dimensions,
     validate_num_inference_steps,
@@ -127,12 +126,8 @@ class Inpainting(BaseImageNode):
         self._emit_start()
         t0 = time.perf_counter()
         try:
-            # 校验输入：优先读取单数 image，回退到复数 images[0]
+            # 校验输入
             image = input_data.get("image")
-            if image is None:
-                images_list = input_data.get("images")
-                if images_list and isinstance(images_list, (list, tuple)):
-                    image = images_list[0]
             if image is None:
                 raise ValueError(
                     f"Inpainting requires 'image' (PIL.Image), "

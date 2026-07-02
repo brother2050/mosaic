@@ -35,10 +35,10 @@ def example_1_text_to_image():
         seed=42,
     ))
 
-    images = result.get("images")
-    images[0].save("output_text_to_image.png")
-    print(f"已生成：{images[0].size}, 保存到 output_text_to_image.png")
-    return images[0]
+    image = result.get("image")
+    image.save("output_text_to_image.png")
+    print(f"已生成：{image.size}, 保存到 output_text_to_image.png")
+    return image
 
 
 def example_2_image_to_image():

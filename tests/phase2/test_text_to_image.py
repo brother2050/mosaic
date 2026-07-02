@@ -48,10 +48,8 @@ class TestTextToImage:
         result = node.run(MosaicData(prompt="a cat sitting on a sofa"))
 
         # Output structure
-        assert "images" in result
-        assert isinstance(result["images"], list)
-        assert len(result["images"]) == 1
-        assert isinstance(result["images"][0], Image.Image)
+        assert "image" in result
+        assert isinstance(result["image"], Image.Image)
         assert result["prompt"] == "a cat sitting on a sofa"
         assert result["model_name"] == "stabilityai/stable-diffusion-xl-base-1.0"
         assert isinstance(result["seed"], int)

@@ -26,6 +26,7 @@ from __future__ import annotations
 import time
 from typing import Any
 
+from mosaic.core.device_utils import upcast_pipeline_components
 from mosaic.core.node import NodeSpec
 from mosaic.core.registry import registry
 from mosaic.core.types import MosaicData
@@ -171,7 +172,7 @@ class IdentityKeeper(BaseConsistencyNode):
         self._apply_optimizations()
         # InstantID / IP-Adapter-Face / PhotoMaker 均基于 SDXL，VAE 已兼容 fp16，
         # 但 upcast 为幂等操作，统一调用以防御未来引入 SD1.5 基础模型时的黑图风险。
-        self._upcast_vae_fp32()
+        upcast_pipeline_components(self._pipeline, self._model_name, self._logger)
         self._loaded = True
 
     def _resolve_dtype_and_variant(self) -> tuple[Any, str | None]:

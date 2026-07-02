@@ -29,7 +29,6 @@ from mosaic.core.device_utils import (
     resolve_device,
     resolve_dtype,
     run_diffusers_pipeline,
-    upcast_pipeline_components,
 )
 from mosaic.core.events import EventBus, EventType, get_event_bus
 from mosaic.core.node import Node, NodeSpec
@@ -156,10 +155,6 @@ class BaseDigitalHumanNode(Node):
             enable_attention_slicing=True,
             enable_vae_slicing=True,
         )
-
-    def _upcast_vae_fp32(self) -> None:
-        """[已弃用] 请使用 upcast_pipeline_components()。"""
-        upcast_pipeline_components(self._pipeline, self._model_name, self._logger)
 
     # ------------------------------------------------------------------
     # 人物图像处理工具

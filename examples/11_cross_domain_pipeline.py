@@ -35,8 +35,8 @@ from mosaic.nodes.video import WanVideo
 def scenario_1_text_to_video():
     """场景 1：文本 → 图像 → 视频 → 导出（完整创作链）。
 
-    TextGenerator 输出 ``prompt`` 字段，可直接与 TextToImage 等
-    diffusers 下游节点串联。此示例使用显式逐节点调用展示完整数据流转。
+    TextGenerator 输出 ``text`` 字段。此示例使用显式逐节点调用展示
+    完整数据流转，将生成文本作为下游 TextToImage 等节点的 prompt 传入。
     """
     print("\n" + "=" * 60)
     print("场景 1: 文本 → 图像 → 视频 → 导出")
@@ -57,7 +57,7 @@ def scenario_1_text_to_video():
         prompt="A majestic dragon flying over a medieval castle at sunset",
         seed=42,
     ))
-    description = r1.get("prompt")
+    description = r1.get("text")
 
     # 2. 根据描述生成图像
     r2 = t2i.run(MosaicData(prompt=description, seed=42))

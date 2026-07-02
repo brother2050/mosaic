@@ -4,13 +4,15 @@
 提取各视频生成 / 处理节点中重复的辅助逻辑，集中维护以避免在多个节点
 中复制粘贴相同实现。包括：
 
-* 安全的类型转换：:func:`safe_int` / :func:`safe_float`
 * 通用参数范围校验：:func:`validate_common_video_params`
 * Pipeline 输出帧提取：:func:`extract_frames_from_output`
 * 随机种子准备：:func:`prepare_seed`
 * CogVideoX 帧数调整：:func:`adjust_num_frames_cogvideox`
 * HunyuanVideo 帧数调整：:func:`adjust_num_frames_hunyuan`
 * 模型路径校验：:func:`validate_model_path`
+
+安全的类型转换 (:func:`safe_int` / :func:`safe_float`) 统一由
+:mod:`mosaic.nodes.coerce` 提供，各节点直接从该模块导入。
 
 这些函数由 :class:`~mosaic.nodes.video._base.BaseVideoNode` 的各子类按需
 导入使用。``torch`` / ``numpy`` / ``PIL`` 均采用惰性导入，与视频域其它
@@ -24,11 +26,7 @@ import random
 import re
 from typing import Any
 
-from mosaic.nodes.coerce import safe_float, safe_int  # noqa: F401
-
 __all__ = [
-    "safe_int",
-    "safe_float",
     "validate_common_video_params",
     "extract_frames_from_output",
     "prepare_seed",
@@ -41,16 +39,6 @@ __all__ = [
 # HuggingFace repo ID 形如 "org/name"：仅含一次斜杠、无前导斜杠，
 # 两段均以字母数字开头且仅含 ``[A-Za-z0-9_.-]``。
 _HF_REPO_ID_RE = re.compile(r"^[A-Za-z0-9][\w.-]*/[A-Za-z0-9][\w.-]*$")
-
-
-# ----------------------------------------------------------------------
-# 安全类型转换（A1，re-export 自 mosaic.nodes.coerce）
-# ----------------------------------------------------------------------
-# safe_int / safe_float 由 mosaic.nodes.coerce 统一实现，此处仅 re-export，
-# 以兼容历史导入 ``from mosaic.nodes.video._video_utils import safe_int``。
-# 注意：旧版 safe_int 签名含未使用的 ``default`` 参数（死参数），统一后
-# ``default`` 生效——当 ``value`` 为 None 且提供 ``default`` 时返回 ``default``，
-# 未提供时抛 ``ValueError``。现有调用方均为 2 参调用，行为不变。
 
 
 # ----------------------------------------------------------------------

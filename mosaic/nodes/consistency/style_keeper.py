@@ -30,6 +30,7 @@ from __future__ import annotations
 import time
 from typing import Any
 
+from mosaic.core.device_utils import upcast_pipeline_components
 from mosaic.core.node import NodeSpec
 from mosaic.core.registry import registry
 from mosaic.core.types import MosaicData
@@ -315,7 +316,7 @@ class StyleKeeper(BaseConsistencyNode):
         self._apply_optimizations()
         # SD 1.5 (reference-only) 的 VAE 在 float16 下会产生 NaN → 黑图；
         # SDXL (ip-adapter / style-aligned) 的 VAE 已兼容 fp16，upcast 幂等。
-        self._upcast_vae_fp32()
+        upcast_pipeline_components(self._pipeline, self._model_name, self._logger)
         self._loaded = True
 
     def _resolve_dtype_and_variant(self) -> tuple[Any, str | None]:

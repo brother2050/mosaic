@@ -35,12 +35,9 @@ from typing import Any
 from mosaic.core.registry import registry
 from mosaic.core.types import MosaicData, VideoData
 
+from mosaic.nodes.coerce import safe_float, safe_int
 from mosaic.nodes.video._base import BaseVideoNode
-from mosaic.nodes.video._video_utils import (
-    safe_float,
-    safe_int,
-    validate_common_video_params,
-)
+from mosaic.nodes.video._video_utils import validate_common_video_params
 
 __all__ = ["ImageToVideo"]
 
