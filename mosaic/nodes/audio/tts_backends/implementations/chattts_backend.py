@@ -456,7 +456,7 @@ class ChatTTSBackend(TTSBackend):
         self._dvae.load_weights(
             weights_path=dvae_path,
             device=self._device,
-            dtype=self._dtype,
+            dtype="float32",
         )
 
         # ------------------------------------------------------------------
@@ -481,7 +481,7 @@ class ChatTTSBackend(TTSBackend):
         self._vocos.load_weights(
             weights_path=vocos_path,
             device=self._device,
-            dtype=self._dtype,
+            dtype="float32",
         )
 
         # ------------------------------------------------------------------
