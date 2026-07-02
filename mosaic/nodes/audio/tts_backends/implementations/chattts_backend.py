@@ -416,6 +416,15 @@ class ChatTTSBackend(TTSBackend):
             gpt_model_path,
             gpt_weights_path,
         )
+
+        # Embed 权重路径（必须在 load_weights 之前查找）
+        self._embed_path = HFModelManager.find_weight(
+            model_dir, "Embed", subdirs=["asset", ""]
+        )
+        self._logger.debug(
+            "ChatTTS Embed weights path: %s", self._embed_path or "(not found)"
+        )
+
         self._acoustic_model = LlamaARModel(
             model_path=gpt_model_path,
             num_vq=self._num_vq,
@@ -489,16 +498,6 @@ class ChatTTSBackend(TTSBackend):
         # Layer 3: 复合声码器 —— 组合 DVAE + Vocos
         # ------------------------------------------------------------------
         self._vocoder = _CompositeVocoder(self._dvae, self._vocos)
-
-        # ------------------------------------------------------------------
-        # Embed 权重路径（说话人嵌入，供 sample_random_speaker 等使用）
-        # ------------------------------------------------------------------
-        self._embed_path = HFModelManager.find_weight(
-            model_dir, "Embed", subdirs=["asset", ""]
-        )
-        self._logger.debug(
-            "ChatTTS Embed weights path: %s", self._embed_path or "(not found)"
-        )
 
         # ------------------------------------------------------------------
         # Layer 4: 流式适配器 —— 按需构建
