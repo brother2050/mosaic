@@ -3,11 +3,11 @@
 
 在已有视频的末尾追加新生成的帧，实现视频“向后延长”。基于
 THUDM CogVideoX 模型（与 :mod:`~mosaic.nodes.video.text_to_video` 相同的
-``diffusers.CogVideoXPipeline``）。
+``DiffusionPipeline`` 自动检测加载）。
 
 设计要点
 --------
-* 复用 ``CogVideoXPipeline``（文生视频）加载方式：``_load_model`` 与
+* 复用 ``DiffusionPipeline`` 自动检测加载方式（文生视频）：``_load_model`` 与
   :class:`~mosaic.nodes.video.text_to_video.TextToVideo` 一致，便于共享
   显存与缓存。
 * 续写流程：取输入视频尾部 ``overlap_frames`` 帧作为“过渡锚点”，用
@@ -147,7 +147,7 @@ class VideoContinuation(BaseVideoNode):
         self._enable_vae_slicing: bool = enable_vae_slicing
 
     def _load_model(self) -> None:
-        """加载 CogVideoXPipeline（与 TextToVideo 相同）。"""
+        """通过 DiffusionPipeline 自动检测加载（与 TextToVideo 相同）。"""
         import torch  # type: ignore
         from diffusers import DiffusionPipeline  # type: ignore
         from mosaic.nodes._model_loader import safe_load_pipeline

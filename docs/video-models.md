@@ -17,16 +17,16 @@
 
 Mosaic 通过 diffusers 的 Pipeline 接口集成了 4 个主流视频生成模型：
 
-| 模型 | 节点 | diffusers Pipeline | diffusers 版本 | 显存需求 |
+| 模型 | 节点 | 加载方式 | diffusers 版本 | 显存需求 |
 |---|---|---|---|---|
-| **Wan2.1-14B** | `WanVideo` | `WanPipeline` | >= 0.33.0 | ~30GB |
-| **Wan2.1-1.3B** | `WanVideo` | `WanPipeline` | >= 0.33.0 | ~8GB |
-| **Wan2.2-A14B** | `WanVideo` | `WanPipeline` | >= 0.35.0 | ~30GB |
-| **HunyuanVideo** | `HunyuanVideo` | `HunyuanVideoPipeline` | >= 0.32.0 | ~60GB |
-| **LTX-Video** | `LTXVideo` | `LTXPipeline` | >= 0.32.0 | ~12GB |
-| **CogVideoX-5B** | `TextToVideo` | `CogVideoXPipeline` | >= 0.27.0 | ~18GB |
-| **CogVideoX-2B** | `TextToVideo` | `CogVideoXPipeline` | >= 0.27.0 | ~9GB |
-| **SVD** | `ImageToVideo` | `StableVideoDiffusionPipeline` | >= 0.27.0 | ~10GB |
+| **Wan2.1-14B** | `WanVideo` | `DiffusionPipeline` 自动检测 | >= 0.33.0 | ~30GB |
+| **Wan2.1-1.3B** | `WanVideo` | `DiffusionPipeline` 自动检测 | >= 0.33.0 | ~8GB |
+| **Wan2.2-A14B** | `WanVideo` | `DiffusionPipeline` 自动检测 | >= 0.35.0 | ~30GB |
+| **HunyuanVideo** | `HunyuanVideo` | `DiffusionPipeline` 自动检测 | >= 0.32.0 | ~60GB |
+| **LTX-Video** | `LTXVideo` | `DiffusionPipeline` 自动检测 | >= 0.32.0 | ~12GB |
+| **CogVideoX-5B** | `TextToVideo` | `DiffusionPipeline` 自动检测 | >= 0.27.0 | ~18GB |
+| **CogVideoX-2B** | `TextToVideo` | `DiffusionPipeline` 自动检测 | >= 0.27.0 | ~9GB |
+| **SVD** | `ImageToVideo` | `DiffusionPipeline` 自动检测 | >= 0.27.0 | ~10GB |
 
 > **Wan2.2 完整仓库 ID**：`Wan2.2-A14B` 对应的 diffusers 仓库为 `Wan-AI/Wan2.2-T2V-A14B-Diffusers`。
 
@@ -427,12 +427,12 @@ result = encoder.run(MosaicData(
 
 ## 常见问题排查
 
-### Q1: 加载时 `WanPipeline not found in diffusers`
+### Q1: 加载视频模型时报 `KeyError` 或 `Pipeline not found`
 
-需要 `diffusers >= 0.33.0`：
+Mosaic 使用 `DiffusionPipeline` 自动检测机制加载视频模型，需要 `diffusers >= 0.33.0`：
 
 ```bash
-pip install --upgrade diffusers>=0.33.0
+pip install --upgrade "diffusers>=0.33.1"
 ```
 
 ### Q2: Wan2.1-14B 找不到权重

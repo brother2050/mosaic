@@ -5,7 +5,7 @@
 
 设计要点
 --------
-* 使用 ``diffusers.StableVideoDiffusionPipeline`` 加载 SVD-XT 模型。
+* 通过 DiffusionPipeline 自动检测加载 SVD-XT 模型。
 * SVD 不接受文字 prompt，视频运动幅度由 ``motion_bucket_id``
   （范围 1-255，默认 127）控制：值越大运动越剧烈。
 * 输入图片需统一 resize 到 1024x576（SVD 训练分辨率）。

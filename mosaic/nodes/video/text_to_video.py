@@ -5,7 +5,7 @@
 
 设计要点
 --------
-* 使用 ``diffusers.CogVideoXPipeline`` 加载 CogVideoX-5b（约 18GB 显存）
+* 通过 DiffusionPipeline 自动检测加载 CogVideoX-5b（约 18GB 显存）
   或 CogVideoX-2b（约 9GB 显存）。
 * 支持 attention_slicing、vae_slicing 显存优化。
 * CogVideoX 要求 ``num_frames`` 为特定值（49 或 85），非有效值时

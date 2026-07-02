@@ -1,13 +1,12 @@
 # mosaic/nodes/video/wan_video.py
 """WanVideo 节点 —— 基于 Wan2.1 / Wan2.2 的文生视频。
 
-支持 Wan-AI 的 Wan2.1 和 Wan2.2 系列视频生成模型，通过 diffusers 的
-``WanPipeline`` 加载。Wan 系列使用 DiT (Diffusion Transformer) 架构，
+支持 Wan-AI 的 Wan2.1 和 Wan2.2 系列视频生成模型，通过 DiffusionPipeline 自动检测加载。Wan 系列使用 DiT (Diffusion Transformer) 架构，
 支持中英文提示词，输出高质量视频。
 
 设计要点
 --------
-* 使用 ``diffusers.WanPipeline`` 加载模型，需 diffusers >= 0.33.0
+* 通过 DiffusionPipeline 自动检测加载模型，需 diffusers >= 0.33.0
   （Wan2.2 需 >= 0.35.0）。
 * **重要**：HF 仓库需使用 ``-Diffusers`` 后缀的版本，例如
   ``Wan-AI/Wan2.1-T2V-14B-Diffusers``（非 ``Wan-AI/Wan2.1-T2V-14B``）。

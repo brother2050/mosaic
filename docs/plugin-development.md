@@ -214,9 +214,12 @@ class MyVideoNode(BaseVideoNode):
     
     def _load_model(self):
         # 复用 BaseVideoNode 的设备/精度解析
-        from diffusers import MyPipeline
-        self._pipeline = MyPipeline.from_pretrained(
+        from diffusers import DiffusionPipeline
+        from mosaic.nodes._model_loader import safe_load_pipeline
+        self._pipeline = safe_load_pipeline(
+            DiffusionPipeline,
             self._model_name,
+            dtype_str=self._dtype_str,
             torch_dtype=self._resolve_dtype(),
         ).to(self._resolve_device())
     

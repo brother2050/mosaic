@@ -1,7 +1,7 @@
 # mosaic/nodes/image/text_to_image.py
 """TextToImage 节点 —— 根据文字 prompt 生成图片。
 
-使用 ``diffusers.StableDiffusionXLPipeline`` 加载 SDXL 基础模型，根据正向/
+通过 DiffusionPipeline 自动检测加载 SDXL 基础模型，根据正向/
 反向提示词生成图像。支持控制输出分辨率、推理步数、引导系数与随机种子。
 """
 

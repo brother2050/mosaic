@@ -106,7 +106,7 @@ class Stylizer(BaseImageNode):
         """加载图生图 Pipeline（自动检测，复用图生图流程）。
 
         使用 :func:`auto_load_pipeline` 以 ``task="image-to-image"`` 自动匹配
-        Pipeline 类（如 SDXL 模型会加载 ``StableDiffusionXLImg2ImgPipeline``），
+        Pipeline 类（如 SDXL 模型由 ``DiffusionPipeline`` 自动检测加载），
         与 :class:`ImageToImage` 节点保持一致，避免显式引用特定 Pipeline 类。
         """
         from mosaic.nodes._model_loader import auto_load_pipeline

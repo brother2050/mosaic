@@ -1,7 +1,7 @@
 # mosaic/nodes/image/inpainting.py
 """Inpainting 节点 —— 根据 mask 遮罩区域重新绘制图片内容。
 
-使用 ``diffusers.StableDiffusionXLInpaintPipeline`` 加载 SDXL Inpainting 模型，
+通过 DiffusionPipeline 自动检测加载 SDXL Inpainting 模型，
 根据原始图片、遮罩图片与提示词，仅重绘遮罩标记的区域。
 """
 

@@ -1,7 +1,7 @@
 # mosaic/nodes/image/image_to_image.py
 """ImageToImage 节点 —— 基于输入图片和 prompt 进行风格转换/修改。
 
-使用 ``diffusers.StableDiffusionXLImg2ImgPipeline`` 加载 SDXL Refiner，
+通过 DiffusionPipeline 自动检测加载 SDXL Refiner，
 根据输入图片与提示词生成修改后的图片。``strength`` 参数控制变换强度。
 """
 

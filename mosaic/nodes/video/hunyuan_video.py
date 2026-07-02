@@ -1,12 +1,12 @@
 # mosaic/nodes/video/hunyuan_video.py
 """HunyuanVideo 节点 —— 基于腾讯混元视频生成模型。
 
-使用 ``diffusers.HunyuanVideoPipeline`` 加载腾讯 HunyuanVideo 模型。
+通过 DiffusionPipeline 自动检测加载腾讯 HunyuanVideo 模型。
 HunyuanVideo 是一个大规模视频生成模型，支持中英文提示词，输出高分辨率视频。
 
 设计要点
 --------
-* 使用 ``diffusers.HunyuanVideoPipeline`` 加载，需 diffusers >= 0.32.0。
+* 通过 DiffusionPipeline 自动检测加载，需 diffusers >= 0.32.0。
 * HF 仓库 ``hunyuanvideo-community/HunyuanVideo`` 可直接使用 ``from_pretrained``。
 * 支持 ``enable_model_cpu_offload()`` 和 ``vae.enable_tiling()``。
 * 模型较大（~13B 参数），建议使用 ``bfloat16`` 精度。

@@ -1,7 +1,7 @@
 # mosaic/nodes/image/upscaler.py
 """Upscaler 节点 —— 将低分辨率图片放大并增强画质。
 
-使用 ``diffusers.StableDiffusionUpscalePipeline`` 加载 SD x4 Upscaler 模型，
+通过 DiffusionPipeline 自动检测加载 SD x4 Upscaler 模型，
 将输入图片放大到更高分辨率，同时通过扩散过程增强细节。
 """
 
@@ -64,7 +64,7 @@ class Upscaler(BaseImageNode):
         super().__init__(model=model, **kwargs)
 
     def _load_pipeline(self) -> None:
-        """加载 StableDiffusionUpscalePipeline。"""
+        """通过 DiffusionPipeline 自动检测加载。"""
         from mosaic.nodes._model_loader import auto_load_pipeline
 
         torch_dtype = self._resolve_dtype()

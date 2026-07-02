@@ -1,13 +1,13 @@
 # mosaic/nodes/video/ltx_video.py
 """LTXVideo 节点 —— 基于 Lightricks LTX-Video 的文生视频。
 
-使用 ``diffusers.LTXPipeline`` 加载 Lightricks 的 LTX-Video 模型。
+通过 DiffusionPipeline 自动检测加载 Lightricks 的 LTX-Video 模型。
 LTX-Video 是一个高效的轻量级视频生成模型，支持快速生成（仅需数秒），
 适合实时应用场景。
 
 设计要点
 --------
-* 使用 ``diffusers.LTXPipeline`` 加载，需 diffusers >= 0.32.0。
+* 通过 DiffusionPipeline 自动检测加载，需 diffusers >= 0.32.0。
 * HF 仓库 ``Lightricks/LTX-Video`` 可直接使用 ``from_pretrained``。
 * 支持 ``enable_model_cpu_offload()`` 和 ``vae.enable_tiling()``。
 * 模型较小（~2B 参数），可在 12GB 显卡上运行。

@@ -257,12 +257,20 @@ class IdentityKeeper(BaseConsistencyNode):
                 StableDiffusionXLControlNetPipeline,
             )
 
-            controlnet = ControlNetModel.from_pretrained(
-                self._model_name,
-                subfolder="ControlNetModel",
-                torch_dtype=torch_dtype,
-                variant=variant,
-            )
+            try:
+                controlnet = ControlNetModel.from_pretrained(
+                    self._model_name,
+                    subfolder="ControlNetModel",
+                    torch_dtype=torch_dtype,
+                    variant=variant,
+                )
+            except (OSError, EnvironmentError):
+                # fp16 variant 不可用时回退到默认权重
+                controlnet = ControlNetModel.from_pretrained(
+                    self._model_name,
+                    subfolder="ControlNetModel",
+                    torch_dtype=torch_dtype,
+                )
             self._pipeline = self._safe_from_pretrained(
                 StableDiffusionXLControlNetPipeline,
                 controlnet=controlnet,
@@ -638,13 +646,40 @@ class IdentityKeeper(BaseConsistencyNode):
     def unload(self) -> None:
         """释放 Pipeline 资源。"""
         if self._pipeline is not None:
-            # 移至 CPU 再置空，加速 GPU 显存回收
-            try:
-                self._pipeline.to("cpu")
-            except Exception:
-                pass
+            from mosaic.core.model_cache import model_cache
+
+            # 优先使用加载时附加的缓存键（精确匹配），回退到运行时类型推断
+            cache_cls = getattr(
+                self._pipeline, "_mosaic_cache_cls", None
+            )
+            if not isinstance(cache_cls, str):
+                cache_cls = type(self._pipeline)
+            cache_dtype = getattr(
+                self._pipeline, "_mosaic_cache_dtype", None
+            )
+            if not isinstance(cache_dtype, str):
+                cache_dtype = "default"
+            cache_device = getattr(
+                self._pipeline, "_mosaic_cache_device", None
+            )
+            if not isinstance(cache_device, str):
+                cache_device = None
+            # remove 返回 True 表示引用归零，可安全搬运到 CPU
+            released = model_cache.remove(
+                cache_cls,
+                self._model_name,
+                cache_dtype,
+                cache_device,
+            )
+            if released:
+                try:
+                    self._pipeline.to("cpu")
+                except Exception:
+                    pass
             self._pipeline = None
-            # 触发 GPU 显存回收
+            import gc
+
+            gc.collect()
             from mosaic.core.device_utils import empty_device_cache
 
             empty_device_cache()
