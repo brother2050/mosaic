@@ -432,7 +432,11 @@ def _get_dvae_class() -> Any:
                     from ChatTTS.model.dvae import DVAE as OfficialDVAE
                     from ChatTTS.config import Config
                     from dataclasses import asdict
-                except ImportError:
+                except ImportError as e:
+                    import logging
+                    logging.getLogger(__name__).warning(
+                        "ChatTTS DVAE 不可用，回退到自实现: %s", e
+                    )
                     return None
 
                 try:

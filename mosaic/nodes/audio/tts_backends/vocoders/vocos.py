@@ -631,7 +631,9 @@ class VocosVocoder(Vocoder):
     def _run_model(self, mel: Any) -> Any:
         """运行当前可用的内部模型（官方或自实现）。"""
         if self._use_official and self._official is not None:
-            return self._official(mel)
+            # 官方 Vocos.decode() 跳过 feature_extractor，直接走 backbone + head
+            # forward() 会先运行 feature_extractor（期望原始音频），不能用
+            return self._official.decode(mel)
         if self._impl is not None:
             return self._impl(mel)
         raise RuntimeError("No vocoder model available.")
@@ -647,7 +649,11 @@ class VocosVocoder(Vocoder):
         try:
             from vocos import Vocos as VocosOfficial
             from vocos.pretrained import instantiate_class
-        except ImportError:
+        except ImportError as e:
+            import logging
+            logging.getLogger(__name__).warning(
+                "vocos 包不可用，回退到自实现: %s", e
+            )
             return None
 
         try:
