@@ -761,6 +761,25 @@ class ChatTTSWeightConverter(WeightConverter):
             if match:
                 layer_indices.add(int(match.group(1)))
         if layer_indices:
-            config["num_layers"] = len(layer_indices)
+            # 使用 LlamaConfig 的标准字段名 num_hidden_layers
+            # （而非 num_layers，LlamaConfig 不识别 num_layers）
+            config["num_hidden_layers"] = len(layer_indices)
+            config["num_layers"] = len(layer_indices)  # 向后兼容
+
+        # 补齐 LlamaConfig 必需字段
+        if "hidden_size" in config:
+            hs = config["hidden_size"]
+            # num_attention_heads：ChatTTS 默认 12（768/64=12）
+            if "num_attention_heads" not in config:
+                config["num_attention_heads"] = max(1, hs // 64)
+            # num_key_value_heads：GQA=MHA
+            if "num_key_value_heads" not in config:
+                config["num_key_value_heads"] = config["num_attention_heads"]
+            # intermediate_size：标准 4x hidden_size
+            if "intermediate_size" not in config:
+                config["intermediate_size"] = hs * 4
+            # max_position_embeddings
+            if "max_position_embeddings" not in config:
+                config["max_position_embeddings"] = 2048
 
         return config

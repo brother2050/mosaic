@@ -290,6 +290,14 @@ class GPT2ARModel(AcousticModel):
         if os.path.exists(config_path):
             config = GPT2Config.from_pretrained(weights_path)
             config.vocab_size = self._semantic_vocab_size
+            # 关键：将 config.json 的维度回写到 self，确保 Embedding
+            # 与 GPT2LMHeadModel 使用相同的 n_embd。
+            self.hidden_size = config.n_embd
+            self._num_layers = getattr(config, "n_layer", self._num_layers)
+            self._num_heads = getattr(config, "n_head", self._num_heads)
+            self._max_position_embeddings = getattr(
+                config, "n_positions", self._max_position_embeddings
+            )
         else:
             config = GPT2Config(
                 vocab_size=self._semantic_vocab_size,

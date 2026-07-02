@@ -165,6 +165,17 @@ class LlamaARModelBase(AcousticModel):
         if os.path.exists(config_path):
             config = LlamaConfig.from_pretrained(weights_path)
             config.vocab_size = vocab_size
+            # 关键：将 config.json 的维度回写到 self，确保 DualEmbedding
+            # 与 LlamaForCausalLM 使用相同的 hidden_size。
+            # 否则 Llama 用 config.json 的 hidden_size(如768)，
+            # DualEmbedding 用构造默认的 self._hidden_size(如512)，
+            # 导致 generate 时维度不匹配崩溃。
+            self._hidden_size = config.hidden_size
+            self._num_layers = getattr(config, "num_hidden_layers", self._num_layers)
+            self._num_heads = getattr(config, "num_attention_heads", self._num_heads)
+            self._max_position_embeddings = getattr(
+                config, "max_position_embeddings", self._max_position_embeddings
+            )
         else:
             config = LlamaConfig(
                 vocab_size=vocab_size,
@@ -803,6 +814,16 @@ class LlamaARModel(LlamaARModelBase):
 
         spk = speaker_embedding.to(emb.device, emb.dtype)
         spk = spk / (spk.norm(dim=-1, keepdim=True) + 1e-9)
+
+        # 说话人嵌入维度（如 ChatTTS 的 256）可能与 hidden_size（如 768）
+        # 不一致，torch.where 要求最后一维相同。通过补零或截断对齐。
+        hidden_dim = emb.shape[-1]
+        if spk.shape[-1] != hidden_dim:
+            if spk.shape[-1] < hidden_dim:
+                pad_size = hidden_dim - spk.shape[-1]
+                spk = torch.nn.functional.pad(spk, (0, pad_size))
+            else:
+                spk = spk[..., :hidden_dim]
 
         pos = 0 if spk_emb_pos is None else spk_emb_pos
 
