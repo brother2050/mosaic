@@ -25,8 +25,10 @@ def mock_translator():
     # 构造一个 mock translator 实例
     mock_trans = MagicMock()
     mock_trans.run.return_value = MosaicData(
-        content="[1] Hello, welcome to Mosaic framework.\n[2] This is a multimodal AI generation system.\n[3] Supports text, image, audio, and subtitle.\n[4] Let's start exploring.\n[5] Thank you for using it.",
-        language="en",
+        translated_text="[1] Hello, welcome to Mosaic framework.\n[2] This is a multimodal AI generation system.\n[3] Supports text, image, audio, and subtitle.\n[4] Let's start exploring.\n[5] Thank you for using it.",
+        source_language="zh",
+        target_language="en",
+        translation_mode="generic",
     )
     mock_trans.name = "translator"
 

@@ -330,7 +330,7 @@ for chunk in tts.run_stream(
         first_chunk_time = time.time() - start
         print(f"首批延迟: {first_chunk_time * 1000:.0f}ms")
     chunk_idx += 1
-    print(f"chunk #{chunk_idx}: {chunk.duration:.2f}s")
+    print(f"chunk #{chunk_idx}: {chunk.metadata.get('duration', 0):.2f}s")
     # 实际播放：play(chunk)
 ```
 

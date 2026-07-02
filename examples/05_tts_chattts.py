@@ -25,7 +25,7 @@ def example_1_basic_synthesis():
     print("\n=== 示例 1：基础合成（24kHz）===")
 
     tts = TTS(backend="chattts", language="zh")
-    result = tts.run(MosaicData(text="你好，欢迎使用 Mosaic 框架！", seed=42))
+    result = tts.run(MosaicData(text="你好，欢迎使用 Mosaic 框架！"))
 
     audio = result.get("audio")
     sf.write("output_chattts_basic.wav", audio.waveform, audio.sample_rate)
@@ -60,23 +60,29 @@ def example_2_prosody_control():
 
 
 def example_3_random_voices():
-    """示例 3：随机音色（不同 seed）。"""
-    print("\n=== 示例 3：随机音色（seed 控制）===")
+    """示例 3：随机音色。
+
+    注意：``TTS.run`` 不读取 ``seed`` 参数 —— 即便传入也会被忽略，
+    因此「相同 seed 总是生成相同音色」并不成立。ChatTTS 的随机音色由
+    后端内部状态决定，无法通过 ``TTS`` 节点的 ``seed`` 复现；如需可控
+    音色，请直接使用 ``ChatTTSBackend``，或通过 ``speaker`` 指定参考音频。
+    """
+    print("\n=== 示例 3：随机音色 ===")
 
     tts = TTS(backend="chattts", language="zh")
 
-    # 相同 seed 总是生成相同音色
-    r1 = tts.run(MosaicData(text="同一句话", seed=42))
-    r2 = tts.run(MosaicData(text="同一句话", seed=42))
+    # TTS 节点不读取 seed，多次合成不会因 seed 而复现同一音色
+    r1 = tts.run(MosaicData(text="同一句话"))
+    r2 = tts.run(MosaicData(text="同一句话"))
     assert r1.get("duration", 0) > 0 and r2.get("duration", 0) > 0
-    print("Seed 42 两次生成音色一致")
+    print("两次合成完成（音色由后端内部状态决定，不受 seed 控制）")
 
-    # 不同 seed 音色不同
-    for seed in [42, 123, 999, 2024, 8888]:
-        result = tts.run(MosaicData(text=f"这是第 {seed} 号声音", seed=seed))
+    # 多次合成示例
+    for i in [1, 2, 3, 4, 5]:
+        result = tts.run(MosaicData(text=f"这是第 {i} 号声音"))
         audio = result.get("audio")
-        sf.write(f"output_chattts_voice_{seed}.wav", audio.waveform, audio.sample_rate)
-        print(f"Seed {seed} 已保存")
+        sf.write(f"output_chattts_voice_{i}.wav", audio.waveform, audio.sample_rate)
+        print(f"第 {i} 号已保存")
 
 
 def example_4_streaming():

@@ -37,7 +37,7 @@ pipeline = Pipeline([
 
 # 运行
 result = pipeline.run(MosaicData(prompt="画一只在月球上骑车的熊猫"))
-print(result.get("image"))  # ImageData
+print(result.get("image"))  # PIL.Image
 ```
 
 **执行流程**：
@@ -115,7 +115,7 @@ pipeline.add(Branch([
 pipeline.add(Merge())
 
 result = pipeline.run(MosaicData(text="一段文本"))
-print(result.get("image"))    # ImageData
+print(result.get("image"))    # PIL.Image
 print(result.get("audio"))    # AudioData
 print(result.get("subtitle")) # SubtitleData
 ```
@@ -548,10 +548,12 @@ from mosaic import MosaicData
 def tts_with_cache(text):
     key = hashlib.md5(text.encode()).hexdigest()
     cache_path = f"./tts_cache/{key}.wav"
+    import soundfile as sf
     if os.path.exists(cache_path):
-        return AudioData.load(cache_path)
+        wf, sr = sf.read(cache_path)
+        return AudioData(waveform=wf, sample_rate=sr)
     audio = TTS(backend="chattts").run(MosaicData(text=text)).get("audio")
-    audio.save(cache_path)
+    sf.write(cache_path, audio.waveform, audio.sample_rate)
     return audio
 ```
 

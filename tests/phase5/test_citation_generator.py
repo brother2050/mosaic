@@ -265,8 +265,8 @@ class TestCitationGeneratorParseCitations:
         citation_map = {1: 0, 2: 1, 3: 2}
         answer = "多项研究[1-3]表明机器学习是重要领域。"
         citations = gen._parse_citations(answer, sample_retrieval_results[:3], citation_map)
-        # range [1-3] is split into individual numbers 1, 3 (dash-separated, not range-expanded)
-        assert len(citations) >= 2, f"范围引用 [1-3] 应解析出至少 2 个引用，得到 {len(citations)}"
+        # range [1-3] is expanded into individual numbers 1, 2, 3
+        assert len(citations) == 3, f"范围引用 [1-3] 应解析出 3 个引用，得到 {len(citations)}"
 
     def test_parse_no_citations(self, sample_retrieval_results, cpu_scheduler, fresh_bus):
         """_parse_citations 无引用时返回空列表。"""

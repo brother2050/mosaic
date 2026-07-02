@@ -69,8 +69,10 @@ def integration_mocks():
     # Mock Translator
     mock_trans = MagicMock()
     mock_trans.run.return_value = MosaicData(
-        content="[1] Hello, this is a test audio.",
-        language="en",
+        translated_text="[1] Hello, this is a test audio.",
+        source_language="zh",
+        target_language="en",
+        translation_mode="generic",
     )
     mock_trans.name = "translator"
 

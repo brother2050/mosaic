@@ -39,14 +39,14 @@ def example_2_minimal_sample_clone():
     """示例 2：极少样本克隆（仅需 5-10 秒参考音频）。"""
     print("\n=== 示例 2：极少样本克隆（5-10 秒）===")
 
-    tts = TTS(
-        backend="sovits",
-        ref_audio="short_ref.wav",   # 5-10 秒
-    )
+    # ref_audio 不是 TTS 的构造参数（传入会触发 TypeError）；
+    # 参考音频路径通过 run 调用中的 speaker 参数传入
+    tts = TTS(backend="sovits")
 
     result = tts.run(MosaicData(
         text="这是用 5 秒参考音频克隆的声音，合成任意新文本。",
         language="zh",
+        speaker="short_ref.wav",
     ))
     audio = result.get("audio")
     sf.write("output_sovits_cloned.wav", audio.waveform, audio.sample_rate)
@@ -57,15 +57,14 @@ def example_3_cross_language():
     """示例 3：跨语言合成。"""
     print("\n=== 示例 3：跨语言合成 ===")
 
-    tts = TTS(
-        backend="sovits",
-        ref_audio="chinese_ref.wav",
-    )
+    # ref_audio 不是 TTS 的构造参数，参考音频路径通过 speaker 传入
+    tts = TTS(backend="sovits")
 
     # 用中文音色合成英文
     result = tts.run(MosaicData(
         text="This is a Chinese voice speaking English.",
         language="en",
+        speaker="chinese_ref.wav",
     ))
     audio = result.get("audio")
     sf.write("output_sovits_cross_lang.wav", audio.waveform, audio.sample_rate)

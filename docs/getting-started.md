@@ -88,8 +88,8 @@ Mosaic 环境诊断
 ==================================================
 
   ✓  Python 3.10.12
-  ✓  torch 已安装 (v2.12.1)
-  ✓  transformers 已安装 (v5.12.1)
+  ✓  torch 已安装 (v2.x.x)
+  ✓  transformers 已安装 (v4.x.x)
   ✓  diffusers 已安装 (v0.32.0)
   ✓  GPU 可用: NVIDIA A100 80GB (80.0 GB 显存)
   ⚠  soundfile 未安装（可选依赖）
@@ -447,7 +447,8 @@ class MyNode(Node):
     domain = "custom"
 
     def run(self, input_data):
-        return input_data.set("result", "hello")
+        input_data["result"] = "hello"
+        return input_data
 ```
 
 ### Domain（域）
@@ -492,11 +493,11 @@ pipe2 = Chat() | TextToImage()
 
 ### MosaicData（数据）
 
-节点间传递的不可变数据容器。支持 `.get(key)` / `.set(key, value)`，类型化字段由各域定义（`ImageData` / `VideoData` / `AudioData` / `SubtitleData` / `DocumentData`）。
+节点间传递的不可变数据容器。支持 `.get(key)` / `data[key] = value`，类型化字段由各域定义（`ImageData` / `VideoData` / `AudioData` / `SubtitleData` / `DocumentData`）。
 
 ```python
 data = MosaicData(prompt="hello")
-data = data.set("result", "world")
+data["result"] = "world"
 data.get("prompt")   # "hello"
 data.get("result")   # "world"
 ```
@@ -655,7 +656,8 @@ class MyNode(Node):
     name = "my-node"
     domain = "custom"
     def run(self, data):
-        return data.set("out", self._compute(data.get("in")))
+        data["out"] = self._compute(data.get("in"))
+        return data
 
 # 方式 2：CLI 模板
 # mosaic create-node --domain custom --name my-node

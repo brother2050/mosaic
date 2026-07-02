@@ -744,7 +744,11 @@ result = t2v.run(MosaicData(
     num_frames=49,
     fps=8,
 ))
-result.get("video").save("cat.mp4")
+video = result.get("video")
+# 使用 VideoEncoder 节点将帧编码为视频文件
+from mosaic.nodes.export import VideoEncoder
+encoder = VideoEncoder(format="mp4")
+encoder(MosaicData(frames=video.frames, fps=video.fps, output_path="cat.mp4"))
 ```
 
 ---
@@ -931,7 +935,11 @@ result = i2v.run(MosaicData(
     num_frames=25,
     fps=7,
 ))
-result.get("video").save("scene.mp4")
+video = result.get("video")
+# 使用 VideoEncoder 节点将帧编码为视频文件
+from mosaic.nodes.export import VideoEncoder
+encoder = VideoEncoder(format="mp4")
+encoder(MosaicData(frames=video.frames, fps=video.fps, output_path="scene.mp4"))
 ```
 
 ---
@@ -1114,7 +1122,9 @@ from mosaic.nodes.audio import TTS
 
 tts = TTS(backend="chattts", language="zh")
 result = tts.run(MosaicData(text="你好世界"))
-result.get("audio").save("hello.wav")
+import soundfile as sf
+audio = result.get("audio")
+sf.write("hello.wav", audio.waveform, audio.sample_rate)
 ```
 
 详见 [TTS 完整指南](tts-guide.md)。
@@ -1201,7 +1211,9 @@ from mosaic.nodes.audio import MusicGenerator
 
 music = MusicGenerator()
 result = music.run(MosaicData(prompt="轻快的钢琴背景音乐", duration=10.0))
-result.get("audio").save("bgm.wav")
+import soundfile as sf
+audio = result.get("audio")
+sf.write("bgm.wav", audio.waveform, audio.sample_rate)
 ```
 
 ---
@@ -1242,7 +1254,9 @@ from mosaic.nodes.audio import SoundEffectGenerator
 
 sfx = SoundEffectGenerator()
 result = sfx.run(MosaicData(prompt="雨声打在窗户上", duration=5.0))
-result.get("audio").save("rain.wav")
+import soundfile as sf
+audio = result.get("audio")
+sf.write("rain.wav", audio.waveform, audio.sample_rate)
 ```
 
 ---
@@ -1293,7 +1307,9 @@ result = clone.run(MosaicData(
     reference_audio="reference.wav",
     text="这是克隆的声音",
 ))
-result.get("audio").save("cloned.wav")
+import soundfile as sf
+audio = result.get("audio")
+sf.write("cloned.wav", audio.waveform, audio.sample_rate)
 # VoiceClone 仅支持 edge-tts 风格匹配；真实音色克隆请使用 TTS(backend="sovits") + speaker=参考音频路径
 ```
 
@@ -1678,7 +1694,11 @@ result = driver.run(MosaicData(
     driving_video="talk.mp4",
     fps=25,
 ))
-result.get("video").save("avatar.mp4")
+video = result.get("video")
+# 使用 VideoEncoder 节点将帧编码为视频文件
+from mosaic.nodes.export import VideoEncoder
+encoder = VideoEncoder(format="mp4")
+encoder(MosaicData(frames=video.frames, fps=video.fps, output_path="avatar.mp4"))
 ```
 
 ---
@@ -1736,7 +1756,11 @@ result = lip.run(MosaicData(
     face_image="face.jpg",
     audio="speech.wav",
 ))
-result.get("video").save("lipsync.mp4")
+video = result.get("video")
+# 使用 VideoEncoder 节点将帧编码为视频文件
+from mosaic.nodes.export import VideoEncoder
+encoder = VideoEncoder(format="mp4")
+encoder(MosaicData(frames=video.frames, fps=video.fps, output_path="lipsync.mp4"))
 ```
 
 ---
@@ -2244,6 +2268,7 @@ text → ChatTokenizer → LlamaARModel → DVAE+Vocos → StreamAdapter → wav
 | `language` | str | `zh` | 默认语言代码 |
 | `use_flash_attention` | bool | `True` | 声学模型是否使用 Flash Attention |
 | `streaming_enabled` | bool | `True` | 是否启用流式合成 |
+| `stream_batch` | int | `24` | 流式合成每次生成的 token 批次大小 |
 | `scheduler` | Any \| None | `None` | 显存调度器实例 |
 | `repo_id` | str \| None | `None` | HuggingFace 仓库 ID |
 
@@ -2293,6 +2318,7 @@ text → FishTokenizer → FishLlamaARModel → VQDecoder+HiFiGAN → StreamAdap
 | `language` | str | `zh` | 默认语言代码 |
 | `use_flash_attention` | bool | `True` | 声学模型是否使用 Flash Attention |
 | `streaming_enabled` | bool | `True` | 是否启用流式合成 |
+| `stream_batch` | int | `24` | 流式合成每次生成的 token 批次大小 |
 | `scheduler` | Any \| None | `None` | 显存调度器实例 |
 | `repo_id` | str \| None | `None` | HuggingFace 仓库 ID |
 
@@ -2340,6 +2366,7 @@ text → SoVITSTokenizer → GPT2ARModel → SoVITSDecoder → StreamAdapter →
 | `speaker_encoder_model` | str | `default` | 说话人编码器模型 |
 | `language` | str | `zh` | 默认语言代码 |
 | `streaming_enabled` | bool | `True` | 是否启用流式合成 |
+| `stream_batch` | int | `16` | 流式合成每次生成的 token 批次大小 |
 | `scheduler` | Any \| None | `None` | 显存调度器实例 |
 | `repo_id` | str \| None | `None` | HuggingFace 仓库 ID |
 

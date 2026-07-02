@@ -32,42 +32,44 @@ def example_1_basic():
 
 
 def example_2_instruct_control():
-    """示例 2：SFT 指令控制情感。"""
+    """示例 2：SFT 指令控制情感。
+
+    注意：``TTS.run`` 不读取 ``instruct`` 参数 —— 传入会被静默忽略，
+    无法实现情感指令控制。CosyVoice 的指令控制（instruct）属于后端特有
+    能力，需直接使用 ``CosyVoiceBackend``，而非 ``TTS`` 节点：
+
+        from mosaic.nodes.audio.tts_backends.implementations.cosyvoice_backend import (
+            CosyVoiceBackend,
+        )
+        backend = CosyVoiceBackend(model_path="model_path")
+        backend.load(device="cuda", dtype="float16")
+        for inst in ["高兴地", "悲伤地", "愤怒地"]:
+            audio = backend.synthesize("今天天气真好", language="zh", instruct=inst)
+    """
     print("\n=== 示例 2：情感指令 ===")
-
-    tts = TTS(backend="cosyvoice", language="zh")
-
-    instructs = ["高兴地", "悲伤地", "愤怒地", "惊讶地", "平静地", "兴奋地"]
-
-    for inst in instructs:
-        result = tts.run(MosaicData(
-            text="今天天气真好",
-            language="zh",
-            instruct=inst,
-        ))
-        audio = result.get("audio")
-        sf.write(f"output_cosyvoice_{inst}.wav", audio.waveform, audio.sample_rate)
-        print(f"  [{inst}] 已保存")
+    print("说明：TTS 节点不支持 instruct，需直接使用 CosyVoiceBackend（见 docstring）。")
 
 
 def example_3_ode_steps_benchmark():
-    """示例 3：ODE 步数对比（5/10/20 步的质量差异）。"""
-    print("\n=== 示例 3：ODE 步数对比 ===")
+    """示例 3：ODE 步数对比（5/10/20 步的质量差异）。
 
-    text = "这是一段测试文本，用于比较不同 ODE 步数下的合成质量。"
+    注意：``ode_steps`` 不是 ``TTS`` 节点的构造参数（传入会触发
+    ``TypeError``）。ODE 步数属于 CosyVoice 后端的推理参数，需直接使用
+    ``CosyVoiceBackend`` 并通过 ``num_ode_steps`` 指定，且在 ``synthesize``
+    前需调用 ``load``：
 
-    for steps in [5, 10, 20, 50]:
-        tts = TTS(
-            backend="cosyvoice",
-            language="zh",
-            ode_steps=steps,
+        from mosaic.nodes.audio.tts_backends.implementations.cosyvoice_backend import (
+            CosyVoiceBackend,
         )
-        result = tts.run(MosaicData(text=text, language="zh"))
-        audio = result.get("audio")
-        sf.write(f"output_cosyvoice_ode_{steps}.wav", audio.waveform, audio.sample_rate)
-        print(f"  步数 {steps:2d}: {result.get('duration'):.2f}s")
-
-    print("\n质量排序（通常）：5 步 < 10 步 < 20 步 ≤ 50 步")
+        text = "这是一段测试文本，用于比较不同 ODE 步数下的合成质量。"
+        for steps in [5, 10, 20, 50]:
+            backend = CosyVoiceBackend(model_path="model_path", num_ode_steps=steps)
+            backend.load(device="cuda", dtype="float16")
+            audio = backend.synthesize(text, language="zh")
+    """
+    print("\n=== 示例 3：ODE 步数对比 ===")
+    print("说明：TTS 节点不支持 ode_steps，需直接使用 CosyVoiceBackend（见 docstring）。")
+    print("质量排序（通常）：5 步 < 10 步 < 20 步 ≤ 50 步")
     print("速度排序（通常）：5 步 > 10 步 > 20 步 > 50 步")
 
 
@@ -75,15 +77,14 @@ def example_4_voice_cloning():
     """示例 4：语音克隆（speech tokens + speaker embedding）。"""
     print("\n=== 示例 4：语音克隆 ===")
 
-    tts = TTS(
-        backend="cosyvoice",
-        ref_audio="reference_zh.wav",
-        ref_text="参考音频的文字内容",
-    )
+    # ref_audio/ref_text 不是 TTS 的构造参数（传入会触发 TypeError）；
+    # 参考音频路径通过 run 调用中的 speaker 参数传入
+    tts = TTS(backend="cosyvoice")
 
     result = tts.run(MosaicData(
         text="这是用 3-10 秒参考音频克隆的声音。",
         language="zh",
+        speaker="reference_zh.wav",
     ))
     audio = result.get("audio")
     sf.write("output_cosyvoice_cloned.wav", audio.waveform, audio.sample_rate)
@@ -95,15 +96,13 @@ def example_5_cross_lingual():
     print("\n=== 示例 5：跨语言克隆 ===")
 
     # 用中文参考音频合成英文
-    tts = TTS(
-        backend="cosyvoice",
-        ref_audio="chinese_ref.wav",
-        ref_text="这是中文参考音频。",
-    )
+    # ref_audio/ref_text 不是 TTS 的构造参数，参考音频路径通过 speaker 传入
+    tts = TTS(backend="cosyvoice")
 
     result = tts.run(MosaicData(
         text="This is cross-lingual voice cloning.",
         language="en",
+        speaker="chinese_ref.wav",
     ))
     audio = result.get("audio")
     sf.write("output_cosyvoice_cross_lingual.wav", audio.waveform, audio.sample_rate)

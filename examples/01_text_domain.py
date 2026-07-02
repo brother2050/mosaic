@@ -31,7 +31,6 @@ def example_1_text_generation():
         MosaicData(
             prompt="用三句话描述春天的早晨",
             temperature=0.7,
-            seed=42,
         )
     )
 
@@ -44,11 +43,12 @@ def example_2_chat():
     """示例 2：多轮对话。"""
     print("\n=== 示例 2：多轮对话 ===")
 
-    chat = Chat(system_prompt="你是一个 Python 教学助手")
+    chat = Chat()
 
     # 第一轮：构建 messages 列表（role + content）
+    # Chat 构造函数不接受 system_prompt，需通过 MosaicData 在 run 调用中传入
     messages = [{"role": "user", "content": "什么是装饰器？"}]
-    r1 = chat.run(MosaicData(messages=messages))
+    r1 = chat.run(MosaicData(messages=messages, system_prompt="你是一个 Python 教学助手"))
     print(f"用户：什么是装饰器？")
     print(f"助手：{r1.get('reply')}\n")
 

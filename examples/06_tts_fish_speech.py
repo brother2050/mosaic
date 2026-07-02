@@ -55,14 +55,12 @@ def example_3_voice_cloning():
     """示例 3：语音克隆（10-30 秒参考音频）。"""
     print("\n=== 示例 3：语音克隆 ===")
 
-    tts = TTS(
-        backend="fish",
-        ref_audio="reference_voice.wav",   # 10-30 秒参考音频
-        ref_text="参考音频的文字内容",
-    )
+    # ref_audio/ref_text 不是 TTS 的构造参数（传入会触发 TypeError）；
+    # 参考音频路径通过 run 调用中的 speaker 参数传入
+    tts = TTS(backend="fish")
 
     # 任意新文本都会用参考音频的音色
-    result = tts.run(MosaicData(text="这是用参考音频克隆的声音，合成新文本。", language="zh"))
+    result = tts.run(MosaicData(text="这是用参考音频克隆的声音，合成新文本。", language="zh", speaker="reference_voice.wav"))
     audio = result.get("audio")
     sf.write("output_fish_cloned.wav", audio.waveform, audio.sample_rate)
     print(f"已克隆：{result.get('duration'):.2f}s")
@@ -73,15 +71,13 @@ def example_4_cross_lingual_clone():
     print("\n=== 示例 4：跨语种克隆 ===")
 
     # 用中文参考音频合成英文
-    tts = TTS(
-        backend="fish",
-        ref_audio="chinese_ref.wav",
-        ref_text="这是中文参考音频。",
-    )
+    # ref_audio/ref_text 不是 TTS 的构造参数，参考音频路径通过 speaker 传入
+    tts = TTS(backend="fish")
 
     result = tts.run(MosaicData(
         text="Cross-lingual voice cloning in English.",
         language="en",
+        speaker="chinese_ref.wav",
     ))
     audio = result.get("audio")
     sf.write("output_fish_cross_lingual.wav", audio.waveform, audio.sample_rate)

@@ -114,9 +114,9 @@ class TestSubtitleGeneratorFormats:
         assert subtitle.subtitle_format == "srt", "format 应为 'srt'"
 
         # 转为 SRT 字符串验证
-        srt_str = subtitle.get("srt_text")
-        if srt_str:
-            assert "-->" in srt_str, "SRT 格式应包含 '-->'"
+        from mosaic.nodes.subtitle._base import BaseSubtitleNode
+        srt_str = BaseSubtitleNode._to_srt(subtitle.segments)
+        assert "-->" in srt_str, "SRT 格式应包含 '-->'"
 
     def test_vtt_output(self, mock_asr_for_subtitle, sample_audio, cpu_scheduler):
         """T_SUBGEN_05：输出 VTT 格式正确。"""
