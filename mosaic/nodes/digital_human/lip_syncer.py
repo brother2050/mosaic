@@ -264,25 +264,11 @@ class LipSyncer(BaseDigitalHumanNode):
             )
             self._model = self._model.to(device)
         except ImportError:
-            self._logger.warning(
-                "'musetalk' package not found. Attempting structured "
-                "checkpoint loading from %s.",
-                self._model_name,
-            )
-            if not os.path.isdir(self._model_name):
-                raise ImportError(
-                    "MuseTalk backend requires the 'musetalk' package or a "
-                    "local checkpoint directory. Install via "
-                    "`pip install musetalk` or set `model` to a local path."
-                )
-            unet_ckpt = os.path.join(self._model_name, "unet.pth")
-            if not os.path.exists(unet_ckpt):
-                raise FileNotFoundError(
-                    f"MuseTalk UNet checkpoint not found at {unet_ckpt!r}."
-                )
-            self._model = {
-                "unet": torch.load(unet_ckpt, map_location=device, weights_only=False),
-            }
+            raise ImportError(
+                "musetalk 未安装，无法加载模型。请安装 musetalk：\n"
+                "  pip install musetalk\n"
+                "或使用其他后端。"
+            ) from None
 
         # wav2vec 音频特征提取器（可选：加载失败时仅 debug 日志，不阻断）
         try:
@@ -345,28 +331,11 @@ class LipSyncer(BaseDigitalHumanNode):
                 )
                 self._discriminator = None
         except ImportError:
-            self._logger.warning(
-                "'wav2lip' package not found. Attempting structured "
-                "checkpoint loading from %s.",
-                self._model_name,
-            )
-            if not os.path.isdir(self._model_name):
-                raise ImportError(
-                    "Wav2Lip backend requires the 'wav2lip' package or a "
-                    "local checkpoint directory. Install via "
-                    "`pip install wav2lip` or set `model` to a local path."
-                )
-            gen_ckpt = os.path.join(self._model_name, "wav2lip.pth")
-            if not os.path.exists(gen_ckpt):
-                raise FileNotFoundError(
-                    f"Wav2Lip generator checkpoint not found at {gen_ckpt!r}."
-                )
-            self._model = {
-                "generator": torch.load(gen_ckpt, map_location=device, weights_only=False),
-            }
-            disc_ckpt = os.path.join(self._model_name, "wav2lip-disc.pth")
-            if os.path.exists(disc_ckpt):
-                self._discriminator = torch.load(disc_ckpt, map_location=device, weights_only=False)
+            raise ImportError(
+                "wav2lip 未安装，无法加载模型。请安装 wav2lip：\n"
+                "  pip install wav2lip\n"
+                "或使用其他后端。"
+            ) from None
 
     def _load_sadtalker(self) -> None:
         """加载 SadTalker 口型模块。
@@ -389,27 +358,11 @@ class LipSyncer(BaseDigitalHumanNode):
                 dtype=dtype,
             )
         except ImportError:
-            self._logger.warning(
-                "'sadtalker' package not found. Attempting structured "
-                "checkpoint loading from %s.",
-                self._model_name,
-            )
-            if not os.path.isdir(self._model_name):
-                raise ImportError(
-                    "SadTalker backend requires the 'sadtalker' package or a "
-                    "local checkpoint directory. Install via "
-                    "`pip install sadtalker` or set `model` to a local path."
-                )
-            components: dict[str, Any] = {}
-            for name in ("mapping", "generator", "kp_extractor", "renderer"):
-                ckpt = os.path.join(self._model_name, f"{name}.pth")
-                if os.path.exists(ckpt):
-                    components[name] = torch.load(ckpt, map_location=device, weights_only=False)
-            if not components:
-                raise FileNotFoundError(
-                    f"No SadTalker checkpoints found under {self._model_name!r}."
-                )
-            self._model = components
+            raise ImportError(
+                "sadtalker 未安装，无法加载模型。请安装 sadtalker：\n"
+                "  pip install sadtalker\n"
+                "或使用其他后端。"
+            ) from None
 
     def _try_init_onnx(self) -> None:
         """尝试初始化 ONNX Runtime 会话以加速推理。

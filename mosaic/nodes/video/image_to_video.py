@@ -182,6 +182,10 @@ class ImageToVideo(BaseVideoNode):
         """
         from PIL import Image  # type: ignore
 
+        # 防御：SVD pipeline 不支持 RGBA（如 BackgroundRemover 输出），统一转 RGB
+        if image.mode != "RGB":
+            image = image.convert("RGB")
+
         target_size = _SVD_INPUT_SIZE  # (width, height)
         if image.size != target_size:
             image = image.resize(target_size, Image.Resampling.LANCZOS)

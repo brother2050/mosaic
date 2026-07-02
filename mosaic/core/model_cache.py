@@ -128,6 +128,29 @@ class ModelCache:
                 return entry.obj
             return None
 
+    def contains(
+        self,
+        pipeline_class: str | type | None,
+        model_name: str,
+        dtype: str | None,
+        device: str | None = None,
+    ) -> bool:
+        """探测缓存中是否存在指定键的条目（不增加引用计数）。
+
+        用于 scheduler 在淘汰决策时判断目标节点是否会 cache hit，
+        而不会像 :meth:`get` 那样增加 refcount。
+
+        Returns
+        -------
+        bool
+            存在返回 True，不存在或缓存禁用返回 False。
+        """
+        if not self._enabled:
+            return False
+        key = self._make_key(pipeline_class, model_name, dtype, device)
+        with self._lock:
+            return key in self._cache
+
     def put(
         self,
         pipeline_class: str | type,

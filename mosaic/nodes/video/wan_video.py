@@ -17,9 +17,9 @@
 
 显存需求
 --------
-* ``Wan-AI/Wan2.1-T2V-14B-Diffusers``：约 30GB（fp16）
-* ``Wan-AI/Wan2.1-T2V-1.3B-Diffusers``：约 8GB（fp16，轻量版）
-* ``Wan-AI/Wan2.2-T2V-A14B-Diffusers``：约 30GB（fp16）
+* ``Wan-AI/Wan2.1-T2V-14B-Diffusers``：约 30GB（bfloat16）
+* ``Wan-AI/Wan2.1-T2V-1.3B-Diffusers``：约 8GB（bfloat16，轻量版）
+* ``Wan-AI/Wan2.2-T2V-A14B-Diffusers``：约 30GB（bfloat16）
 
 许可证
 ------
@@ -71,7 +71,8 @@ class WanVideo(BaseVideoNode):
     device:
         推理设备，默认 ``"cuda"``。
     dtype:
-        推理精度，默认 ``"float16"``。Wan2.2 推荐 ``"bfloat16"``。
+        推理精度，默认 ``"bfloat16"``（Wan2.1 原生 bf16）。
+        Wan2.2 同样推荐 ``"bfloat16"``。
     enable_cpu_offload:
         是否启用 ``enable_model_cpu_offload()``，默认 ``True``。
         将模型各组件按需从 CPU 移到 GPU，显著降低显存峰值。
@@ -111,7 +112,7 @@ class WanVideo(BaseVideoNode):
         self,
         model: str = "Wan-AI/Wan2.1-T2V-14B-Diffusers",
         device: str = "cuda",
-        dtype: str = "float16",
+        dtype: str = "bfloat16",
         enable_cpu_offload: bool = True,
         enable_vae_tiling: bool = True,
         **kwargs: Any,

@@ -120,6 +120,20 @@ def extract_frames_from_output(output: Any, logger: Any = None) -> list:
 
     if hasattr(output, "frames"):
         raw = output.frames
+        # PIL 嵌套列表：List[List[PIL.Image]]（diffusers pipeline 默认 output_type="pil"）
+        if isinstance(raw, list):
+            from PIL import Image
+            # 展平嵌套列表，取第一个 batch
+            frames = []
+            for item in raw:
+                if isinstance(item, list):
+                    for img in item:
+                        if isinstance(img, Image.Image):
+                            frames.append(img)
+                elif isinstance(item, Image.Image):
+                    frames.append(item)
+            if frames:
+                return frames
         # 可能是 tensor 或 list
         if hasattr(raw, "cpu"):
             raw = raw.cpu()

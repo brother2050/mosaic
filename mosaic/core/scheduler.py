@@ -283,15 +283,41 @@ class Scheduler:
                 # 会命中），则实际不需要额外显存，跳过淘汰——避免"先淘汰旧节点
                 # （缓存引用归零被删除）→ 再加载新节点（cache miss 从磁盘重载）"
                 # 的抖动问题。
+                #
+                # 必须比较完整的 cache 键（pipeline_class + dtype + device），
+                # 不能仅比较 _model_name。否则同模型名但不同 pipeline_class
+                # （如 TextToImage vs ImageToImage 同用 SDXL）或不同 dtype
+                # 时 cache miss，但调度器以为共享跳过淘汰 → CUDA OOM。
                 model_name = getattr(node, "_model_name", None)
+                node_dtype = getattr(node, "_dtype_str", None)
                 if model_name:
+                    from mosaic.core.model_cache import model_cache
+
                     for loaded_name in list(self._loaded_names):
                         loaded_node = self._tracked.get(loaded_name)
                         if (
-                            loaded_node is not None
-                            and loaded_name != name
-                            and getattr(loaded_node, "_model_name", None)
-                            == model_name
+                            loaded_node is None
+                            or loaded_name == name
+                        ):
+                            continue
+                        # 模型名必须相同
+                        if getattr(loaded_node, "_model_name", None) != model_name:
+                            continue
+                        # dtype 必须相同（不同 dtype = 不同缓存条目）
+                        if (
+                            node_dtype is not None
+                            and getattr(loaded_node, "_dtype_str", None) != node_dtype
+                        ):
+                            continue
+                        # 用 model_cache 的 contains 方法精确探测是否会命中
+                        # （不会增加 refcount）
+                        if model_cache.contains(
+                            getattr(
+                                loaded_node._pipeline, "_mosaic_cache_cls", None
+                            ) if loaded_node.is_loaded() else None,
+                            model_name,
+                            node_dtype,
+                            None,
                         ):
                             needed = 0.0
                             break
@@ -390,11 +416,10 @@ class Scheduler:
         try:
             node.load()
         except Exception:  # noqa: BLE001
-            # 加载失败：若 node.load() 部分成功（已置 _loaded=True），卸载
-            # 以保持节点状态与调度器记录一致。
+            # 即使 _loaded=False，_pipeline 可能已被设置（model_cache.get 已执行，
+            # refcount 已+1），需要 unload 释放引用计数
             try:
-                if node.is_loaded():
-                    node.unload()
+                node.unload()
             except Exception:  # noqa: BLE001
                 pass
             raise
