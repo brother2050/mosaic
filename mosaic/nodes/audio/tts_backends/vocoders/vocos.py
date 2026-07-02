@@ -649,8 +649,41 @@ class VocosVocoder(Vocoder):
             if os.path.isdir(weights_path):
                 model = VocosOfficial.from_pretrained(weights_path)
             else:
-                # 官方包不便于从单文件直接构造，回退到自实现
-                return None
+                # 单文件权重：尝试在同级/父目录 config/ 下找到 config.yaml
+                # 例如 weights_path=edge-tts/asset/Vocos.safetensors
+                # 则 config_path=edge-tts/config/vocos.yaml
+                import os
+
+                weights_dir = os.path.dirname(weights_path)
+                parent_dir = os.path.dirname(weights_dir)
+                basename = os.path.splitext(os.path.basename(weights_path))[0]
+                # 尝试多种 config 路径
+                config_candidates = [
+                    os.path.join(weights_dir, "config.yaml"),
+                    os.path.join(parent_dir, "config", f"{basename.lower()}.yaml"),
+                    os.path.join(parent_dir, "config", "vocos.yaml"),
+                ]
+                config_path = None
+                for c in config_candidates:
+                    if os.path.isfile(c):
+                        config_path = c
+                        break
+                if config_path is None:
+                    return None
+
+                model = VocosOfficial.from_hparams(config_path)
+                # 加载权重文件
+                import torch
+
+                if weights_path.endswith(".safetensors"):
+                    from safetensors.torch import load_file
+
+                    state_dict = load_file(weights_path)
+                else:
+                    state_dict = torch.load(
+                        weights_path, map_location="cpu", weights_only=False
+                    )
+                model.load_state_dict(state_dict, strict=False)
         except Exception:  # noqa: BLE001
             return None
 
