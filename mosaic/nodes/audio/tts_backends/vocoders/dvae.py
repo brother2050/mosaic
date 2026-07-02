@@ -268,6 +268,11 @@ def _get_dvae_class() -> Any:
                     codes = self._indices_to_codes(flat_idx)  # [B, T, codebook_dim]
                     codes = codes * self.scales[r]  # 逐维缩放
                     codes_summed = codes if codes_summed is None else codes_summed + codes
+                # 确保与权重 dtype 一致（量化计算可能产生 float32，
+                # 但模型权重可能是 float16）
+                w = self.project_out.weight
+                if codes_summed.dtype != w.dtype:
+                    codes_summed = codes_summed.to(w.dtype)
                 # project_out: [B, T, dim]
                 return self.project_out(codes_summed)
 
