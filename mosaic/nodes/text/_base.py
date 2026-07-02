@@ -96,6 +96,10 @@ class BaseTextNode(Node):
         # 运行时持有的模型与 tokenizer（load 后填充）
         self._model: Any = None
         self._tokenizer: Any = None
+        # model_cache 缓存键信息（_load_model 后填充，供 unload 使用）
+        self._cache_cls: str = "AutoModelForCausalLM"
+        self._cache_dtype: str = "default"
+        self._cache_device: str | None = None
 
     # ------------------------------------------------------------------
     # 模型加载 / 卸载
@@ -119,26 +123,16 @@ class BaseTextNode(Node):
         self._loaded = True
 
     def _load_model(self) -> None:
-        """实际加载 transformers 模型与 tokenizer。"""
-        from transformers import AutoModelForCausalLM, AutoTokenizer  # type: ignore
+        """实际加载 transformers 模型与 tokenizer。
+
+        通过 :func:`safe_load_model` / :func:`safe_load_processor` 走
+        :class:`ModelCache`，使同模型同 dtype 的多个节点实例共享同一份
+        模型权重，避免内存中出现多份重复数据。
+        """
         import torch  # type: ignore
+        from transformers import AutoModelForCausalLM, AutoTokenizer  # type: ignore
 
-        from mosaic.nodes._model_loader import _resolve_cache_dir
-
-        # 显式传递 cache_dir，确保 HF_HOME 对所有文本节点生效
-        cache_dir = _resolve_cache_dir()
-
-        # 加载 tokenizer
-        tokenizer_kwargs: dict = {"trust_remote_code": self._trust_remote_code}
-        if cache_dir is not None:
-            tokenizer_kwargs["cache_dir"] = cache_dir
-        self._tokenizer = AutoTokenizer.from_pretrained(
-            self._model_name,
-            **tokenizer_kwargs,
-        )
-        # 处理无 pad_token 的情况
-        if self._tokenizer.pad_token is None:
-            self._tokenizer.pad_token = self._tokenizer.eos_token
+        from mosaic.nodes._model_loader import safe_load_model, safe_load_processor
 
         # 解析精度
         dtype_map = {
@@ -148,28 +142,30 @@ class BaseTextNode(Node):
         }
         resolved_dtype = dtype_map.get(self._torch_dtype, torch.float16)
 
-        # 加载模型（transformers 4.17+ 推荐 dtype= 替代 torch_dtype=）
-        load_kwargs: dict = {
-            "device_map": self._device_map,
-            "trust_remote_code": self._trust_remote_code,
-        }
-        if cache_dir is not None:
-            load_kwargs["cache_dir"] = cache_dir
-        # 优先使用 dtype 参数（新版 transformers），回退 torch_dtype（旧版兼容）
-        try:
-            self._model = AutoModelForCausalLM.from_pretrained(
-                self._model_name,
-                dtype=resolved_dtype,
-                **load_kwargs,
-            )
-        except TypeError:
-            # 旧版 transformers 不支持 dtype 参数
-            self._model = AutoModelForCausalLM.from_pretrained(
-                self._model_name,
-                torch_dtype=resolved_dtype,
-                **load_kwargs,
-            )
+        # 加载 tokenizer（走 model_cache，同模型只加载一次）
+        self._tokenizer = safe_load_processor(
+            AutoTokenizer,
+            self._model_name,
+            trust_remote_code=self._trust_remote_code,
+        )
+        # 处理无 pad_token 的情况
+        if self._tokenizer.pad_token is None:
+            self._tokenizer.pad_token = self._tokenizer.eos_token
+
+        # 加载模型（走 model_cache，同模型同 dtype 只加载一次）
+        self._model = safe_load_model(
+            AutoModelForCausalLM,
+            self._model_name,
+            dtype=resolved_dtype,
+            device_map=self._device_map,
+            trust_remote_code=self._trust_remote_code,
+        )
         self._model.eval()
+
+        # 保存缓存键信息，供 unload 时移除
+        self._cache_cls = "AutoModelForCausalLM"
+        self._cache_dtype = str(resolved_dtype)
+        self._cache_device = None  # device_map="auto" 模式下无显式 device
 
         self._logger.info(
             "Model %s loaded (dtype=%s, device_map=%s).",
@@ -181,17 +177,23 @@ class BaseTextNode(Node):
     def unload(self) -> None:
         """释放模型与 tokenizer。
 
-        本方法执行实际资源清理。它由 ``Scheduler.release`` /
-        ``Scheduler._evict`` 回调，不应在其中调用
-        ``scheduler.release(self)`` 以免递归。
-
-        将模型移至 CPU 再置空（``device_map="auto"`` 的模型可能不支持
-        ``.to("cpu")``，故用 try/except 兜底），随后 ``gc.collect()`` 与
-        ``empty_device_cache()`` 回收 GPU 显存，避免仅置空引用导致显存泄漏。
+        从 :class:`ModelCache` 移除缓存条目，断开强引用后触发 GC 与
+        GPU 显存回收。将模型移至 CPU 再置空（``device_map="auto"`` 的模型
+        可能不支持 ``.to("cpu")``，故用 try/except 兜底），随后
+        ``gc.collect()`` 与 ``empty_device_cache()`` 回收 GPU 显存。
         """
+        from mosaic.core.model_cache import model_cache
+
         if self._model is not None:
+            # 从 model_cache 移除，避免强引用导致显存无法释放
+            model_cache.remove(
+                self._cache_cls,
+                self._model_name,
+                self._cache_dtype,
+                self._cache_device,
+            )
+            # 移至 CPU 再置空，加速 GPU 显存回收
             try:
-                # device_map="auto" 的模型可能不支持 .to("cpu")
                 self._model = self._model.to("cpu")
             except Exception:
                 pass
@@ -203,6 +205,12 @@ class BaseTextNode(Node):
 
             empty_device_cache()
         if self._tokenizer is not None:
+            model_cache.remove(
+                "AutoTokenizer",
+                self._model_name,
+                "default",
+                None,
+            )
             self._tokenizer = None
         self._loaded = False
         self._logger.info("Model %s unloaded.", self._model_name)

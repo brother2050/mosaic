@@ -114,18 +114,29 @@ class Translator(BaseTextNode):
             super()._load_model()
 
     def _load_translation_model(self) -> None:
-        """加载 MarianMT/NLLB 翻译模型与 tokenizer。"""
+        """加载 MarianMT/NLLB 翻译模型与 tokenizer（走 model_cache）。"""
         from transformers import AutoModelForSeq2SeqLM, AutoTokenizer  # type: ignore
 
-        self._tokenizer = AutoTokenizer.from_pretrained(
-            self._model_name, trust_remote_code=self._trust_remote_code
+        from mosaic.nodes._model_loader import safe_load_model, safe_load_processor
+
+        self._tokenizer = safe_load_processor(
+            AutoTokenizer,
+            self._model_name,
+            trust_remote_code=self._trust_remote_code,
         )
         if self._tokenizer.pad_token is None:
             self._tokenizer.pad_token = self._tokenizer.eos_token
-        self._model = AutoModelForSeq2SeqLM.from_pretrained(
-            self._model_name, trust_remote_code=self._trust_remote_code
+        self._model = safe_load_model(
+            AutoModelForSeq2SeqLM,
+            self._model_name,
+            dtype=None,
+            trust_remote_code=self._trust_remote_code,
         )
         self._model.eval()
+        # 专用翻译模型无 dtype 限制，缓存键用 "default"
+        self._cache_cls = "AutoModelForSeq2SeqLM"
+        self._cache_dtype = "default"
+        self._cache_device = None
         self._logger.info("Translation model %s loaded.", self._model_name)
 
     # ------------------------------------------------------------------

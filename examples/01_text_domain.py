@@ -151,6 +151,10 @@ def example_7_combined_pipeline():
     TextGenerator 输出 ``text`` 字段，Translator 同样接受 ``text`` 输入，
     字段名已统一，可直接使用 ``|`` 管道运算符；此处用显式的逐节点
     调用来展示完整数据流转。
+
+    三个节点默认都使用 ``Qwen/Qwen2.5-7B-Instruct``，框架通过
+    :class:`ModelCache` 自动共享同一份模型权重——即使创建多个节点实例，
+    模型也只加载一次，不会出现内存中多份重复数据。
     """
     print("\n=== 示例 7：组合流水线（生成 → 翻译 → 摘要）===")
 
