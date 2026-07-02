@@ -191,6 +191,34 @@ class LlamaARModelBase(AcousticModel):
             )
         return config
 
+    def _find_embed_file(self, weights_path: str) -> str | None:
+        """查找 Embed 权重文件（处理大小写）。
+
+        官方文件名是 ``Embed.safetensors``（大写 E），Linux 区分大小写。
+        """
+        import os
+
+        # 尝试多种大小写和扩展名
+        candidates = [
+            "Embed.safetensors",
+            "embed.safetensors",
+            "Embed.pt",
+            "embed.pt",
+            "Embed.bin",
+            "embed.bin",
+        ]
+        for name in candidates:
+            path = os.path.join(weights_path, name)
+            if os.path.isfile(path):
+                return path
+        # 也在 asset 子目录查找
+        for sub in ["asset", ""]:
+            for name in candidates:
+                path = os.path.join(weights_path, sub, name)
+                if os.path.isfile(path):
+                    return path
+        return None
+
     def _load_llama_weights(self, model: Any, weights_path: str) -> Any:
         """将权重加载到 LlamaForCausalLM 实例。
 
@@ -370,13 +398,34 @@ class DualEmbedding:
         import torch.nn as nn
 
         class _DualEmbeddingImpl(nn.Module):
-            """ChatTTS 双路径嵌入层的真实实现。"""
+            """ChatTTS 双路径嵌入层的真实实现。
+
+            与官方 ``ChatTTS.model.embed.Embed`` 结构完全一致：
+            - ``emb_text`` / ``emb_code[]``：输入嵌入
+            - ``head_text`` / ``head_code[]``：输出投影（weight_norm）
+
+            state_dict key 与官方 ``Embed.safetensors`` 完全匹配。
+            """
 
             def __init__(self) -> None:
                 super().__init__()
                 self.emb_text = nn.Embedding(num_text_tokens, hidden_size)
                 self.emb_code = nn.ModuleList(
                     [nn.Embedding(num_audio_tokens, hidden_size) for _ in range(num_vq)]
+                )
+                # 输出投影层（与官方一致，使用 weight_norm）
+                self.head_text = nn.utils.weight_norm(
+                    nn.Linear(hidden_size, num_text_tokens, bias=False),
+                    name="weight",
+                )
+                self.head_code = nn.ModuleList(
+                    [
+                        nn.utils.weight_norm(
+                            nn.Linear(hidden_size, num_audio_tokens, bias=False),
+                            name="weight",
+                        )
+                        for _ in range(num_vq)
+                    ]
                 )
 
             def forward(
@@ -539,12 +588,38 @@ class LlamaARModel(LlamaARModelBase):
         )
 
         # 6. 加载 Embed 权重
-        embed_path = os.path.join(weights_path, "embed.safetensors")
-        if os.path.exists(embed_path):
+        # 官方 Embed.safetensors 包含 emb_text/emb_code/head_text/head_code
+        # head_text/head_code 是输出投影层，缺失会导致 GPT 无法正确生成 token
+        embed_path = self._find_embed_file(weights_path)
+        if embed_path:
             from safetensors.torch import load_file  # type: ignore
 
             embed_state = load_file(embed_path)
-            embed_layer.load_state_dict(embed_state, strict=False)
+            result = embed_layer.load_state_dict(embed_state, strict=False)
+            import logging
+            logger = logging.getLogger(__name__)
+            model_keys = set(embed_layer.state_dict().keys())
+            file_keys = set(embed_state.keys())
+            matched = model_keys & file_keys
+            missing = model_keys - file_keys
+            unexpected = file_keys - model_keys
+            logger.info(
+                "Embed 权重加载: 模型 %d key, 文件 %d key, "
+                "匹配 %d, 缺失 %d, 多余 %d (path=%s)",
+                len(model_keys), len(file_keys),
+                len(matched), len(missing), len(unexpected),
+                embed_path,
+            )
+            if missing:
+                logger.warning("Embed 缺失 key: %s", sorted(missing)[:10])
+            if unexpected:
+                logger.warning("Embed 多余 key: %s", sorted(unexpected)[:10])
+        else:
+            import logging
+            logging.getLogger(__name__).warning(
+                "Embed 权重文件未找到! 在 %s 下查找 embed.safetensors/Embed.safetensors",
+                weights_path,
+            )
 
         # 7. 移动到指定 device 和 dtype
         model = model.to(device=device, dtype=torch_dtype)
@@ -633,6 +708,7 @@ class LlamaARModel(LlamaARModelBase):
                         inputs_embeds=cur_embeds,
                         past_key_values=past_key_values,
                         use_cache=True,
+                        output_hidden_states=True,
                     )
                 except _cache_retry_exc:
                     # transformers v5 cache 兼容性回退：禁用 KV cache 重试
@@ -640,21 +716,22 @@ class LlamaARModel(LlamaARModelBase):
                     outputs = self._model(
                         inputs_embeds=cur_embeds,
                         use_cache=False,
+                        output_hidden_states=True,
                     )
-            logits = outputs.logits
+
+            # 官方 ChatTTS 用 Embed.head_code 做输出投影，不是 LlamaForCausalLM 的 lm_head
+            # lm_head.weight 是随机初始化的（日志中有警告），用它会导致生成异常 token
+            # 使用最后一层 hidden_states 做投影
+            hidden_states = outputs.hidden_states[-1]  # [batch, seq, hidden_size]
             past_key_values = getattr(outputs, "past_key_values", None)
 
-            next_logits = logits[:, -1, :]
+            # 用 head_code 做输出投影
+            next_hidden = hidden_states[:, -1:, :]  # [batch, 1, hidden_size]
 
-            # 对每个 VQ 组分别采样
+            # 对每个 VQ 组分别用 head_code[i] 投影并采样
             new_tokens = []
             for vq_idx in range(num_vq):
-                vq_logits = next_logits.clone()
-                audio_start = self._num_text_tokens + vq_idx * self._num_audio_tokens
-                audio_end = audio_start + self._num_audio_tokens
-                mask = torch.full_like(vq_logits, float("-inf"))
-                mask[:, audio_start:audio_end] = 0.0
-                vq_logits = vq_logits + mask
+                vq_logits = self._embed_layer.head_code[vq_idx](next_hidden).squeeze(1)  # [batch, num_audio_tokens]
 
                 if temperature != 1.0:
                     vq_logits = vq_logits / temperature
